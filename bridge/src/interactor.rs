@@ -26,7 +26,6 @@ use crate::protocol::{
     DeviceCommunicator, DeviceError, DictionaryEntry, TelemetryReading, TelemetryValue,
     VersionInfo, VERSION_STRING_LENGTH,
 };
-use crate::serial::communicator::SerialDeviceCommunicator;
 use crate::serial::manager::SerialReaderManager;
 
 /// Metadata signal internal names that the bridge extracts from cyclical
@@ -188,7 +187,7 @@ async fn send_store_init(
 // ──────────────────────────────────────────────────────────────
 
 /// PHASE 2a: get_data_handles — sends CMD_CODE_GET_HANDLES.
-fn get_data_handles(device: &mut SerialDeviceCommunicator) -> Result<Vec<u16>, String> {
+fn get_data_handles(device: &mut impl DeviceCommunicator) -> Result<Vec<u16>, String> {
     let data = device
         .request(CMD_CODE_GET_HANDLES, &[])
         .map_err(|e| format!("get_data_handles failed: {e}"))?;
@@ -223,7 +222,7 @@ fn get_data_handles(device: &mut SerialDeviceCommunicator) -> Result<Vec<u16>, S
 
 /// PHASE 2b: get_all_data_attributes — gets attributes for each handle.
 fn get_all_data_attributes(
-    device: &mut SerialDeviceCommunicator,
+    device: &mut impl DeviceCommunicator,
     handles: &[u16],
     attr_cache: &mut HashMap<u16, DataAttribute>,
 ) -> Result<Vec<DataAttribute>, String> {
@@ -280,7 +279,7 @@ fn get_all_data_attributes(
 
 /// PHASE 2c: get_dictionary — iteratively fetches entire dictionary.
 fn get_dictionary(
-    device: &mut SerialDeviceCommunicator,
+    device: &mut impl DeviceCommunicator,
     dict_cache: &mut HashMap<u16, String>,
 ) -> Result<Vec<DictionaryEntry>, String> {
     const MAX_DICT_ENTRIES: usize = 20_000;
@@ -394,7 +393,7 @@ fn read_raw_value(bytes: &[u8], size: usize, data_type: DataType) -> i64 {
 /// Read cyclical values from the device and produce telemetry readings,
 /// while extracting metadata signals for the `TherapySetup` frame.
 fn read_cyclical_values(
-    device: &mut SerialDeviceCommunicator,
+    device: &mut impl DeviceCommunicator,
     state: &mut CyclicalState,
 ) -> Result<Vec<TelemetryReading>, DeviceError> {
     let data = device.request(CMD_CODE_GET_CYCLICAL_VALUES, &[])?;
@@ -584,7 +583,7 @@ impl MetadataTracker {
 /// * `tx_readings` - Channel to send outgoing `BridgeFrame`s to the WS client.
 /// * `rx_commands` - Channel to receive incoming `ServerFrame`s from the WS client.
 pub async fn run_bridge(
-    device: &mut SerialDeviceCommunicator,
+    device: &mut impl DeviceCommunicator,
     manager: &SerialReaderManager,
     serial_number: &str,
     tx_readings: mpsc::Sender<BridgeFrame>,
@@ -693,6 +692,26 @@ pub async fn run_bridge(
     manager.set_running().await;
     tracing::info!("[bridge] entering cyclical loop");
 
+    // ── Heartbeat task (every 30s) ──
+    // Runs independently — exits automatically when tx_readings closes.
+    let hb_tx = tx_readings.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.tick().await; // Skip immediate first tick — give init time
+        loop {
+            interval.tick().await;
+            if hb_tx
+                .send(BridgeFrame::Heartbeat { machine_id })
+                .await
+                .is_err()
+            {
+                tracing::debug!("[bridge] heartbeat channel closed, stopping");
+                break;
+            }
+            tracing::trace!("[bridge] heartbeat sent");
+        }
+    });
+
     let mut meta_tracker = MetadataTracker::new();
 
     loop {
@@ -758,7 +777,7 @@ pub async fn run_bridge(
 }
 
 /// Phase 1 (serial): Get version info from device.
-fn get_versions(device: &mut SerialDeviceCommunicator) -> Result<VersionInfo, String> {
+fn get_versions(device: &mut impl DeviceCommunicator) -> Result<VersionInfo, String> {
     let data = device
         .request(CMD_CODE_GET_VERSIONS, &[])
         .map_err(|e| format!("CMD_GET_VERSIONS failed: {e}"))?;
@@ -815,7 +834,7 @@ fn get_versions(device: &mut SerialDeviceCommunicator) -> Result<VersionInfo, St
 
 /// Full serial initialization (Phases 2a–2c) for unknown versions.
 fn full_serial_init(
-    device: &mut SerialDeviceCommunicator,
+    device: &mut impl DeviceCommunicator,
     state: &mut CyclicalState,
 ) -> Result<(), String> {
     // Phase 2a: Get data handles

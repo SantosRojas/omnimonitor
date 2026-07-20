@@ -16,20 +16,15 @@
 //! Readings flow: serial → `tx_readings` channel → WS → server
 //! Commands flow: server → WS → `tx_commands` channel → serial task
 
-mod interactor;
-mod protocol;
-mod serial;
-mod ws_client;
-
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc};
 
-use crate::interactor::run_bridge;
-use crate::protocol::frames::{BridgeFrame, ServerFrame};
-use crate::serial::communicator::{SerialConfig, SerialDeviceCommunicator};
-use crate::serial::manager::SerialReaderManager;
-use crate::ws_client::connect_and_run;
+use bridge::interactor::run_bridge;
+use bridge::protocol::frames::{BridgeFrame, ServerFrame};
+use bridge::serial::communicator::{SerialConfig, SerialDeviceCommunicator};
+use bridge::serial::manager::SerialReaderManager;
+use bridge::ws_client::connect_and_run;
 
 /// Default serial port parameters.
 const DEFAULT_BAUD: u32 = 115200;

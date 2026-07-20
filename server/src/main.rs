@@ -172,6 +172,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let version_repo = VersionRepo::new(pool.clone());
     let user_repo = UserRepo::new(pool.clone());
 
+    // ── Stale machine checker (every 30s, 60s timeout) ──
+    let stale_checker_repo = machine_repo.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            match stale_checker_repo.set_stale_machines_offline(60).await {
+                Ok(count) => {
+                    if count > 0 {
+                        info!("Marked {} stale machine(s) offline", count);
+                    }
+                }
+                Err(e) => error!("Stale machine check failed: {}", e),
+            }
+        }
+    });
+
     // ── Seed admin user ────────────────────────────
     let existing = user_repo.find_by_username("admin").await.ok().flatten();
     if existing.is_none() {

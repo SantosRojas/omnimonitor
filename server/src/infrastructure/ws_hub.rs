@@ -150,10 +150,19 @@ pub enum BrowserEvent {
         cycle: u64,
         readings: Vec<BridgeTelemetryReading>,
     },
+    ReadingsReplay {
+        machine_id: i64,
+        readings: Vec<BridgeTelemetryReading>,
+        replay_window_secs: i64,
+    },
     MachineStatus {
         machine_id: i64,
         status: String,
         last_seen_at: String,
+    },
+    RESTFallback {
+        machine_id: i64,
+        message: String,
     },
 }
 
@@ -607,6 +616,78 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                 match cmd {
                     BrowserCommand::Subscribe { machine_id } => {
                         state.subscribe_machine(machine_id, browser_tx.clone()).await;
+
+                        // ── Replay last 60 seconds of readings ──
+                        let since = Utc::now()
+                            - chrono::Duration::try_seconds(60)
+                                .unwrap_or(chrono::Duration::seconds(60));
+                        match state.readings_repo.query_by_machine_since(machine_id, since, Some(200)).await
+                        {
+                            Ok(readings) if !readings.is_empty() => {
+                                let bridge_readings: Vec<BridgeTelemetryReading> = readings
+                                    .iter()
+                                    .map(|r| BridgeTelemetryReading {
+                                        id: Some(r.id),
+                                        timestamp: r
+                                            .recorded_at
+                                            .map(|t| t.to_rfc3339())
+                                            .unwrap_or_default(),
+                                        therapy_id: r.therapy_id,
+                                        signal_id: r.signal_id.unwrap_or(0),
+                                        internal_name: String::new(),
+                                        raw_value: r.raw_value.unwrap_or(0),
+                                        value: r.value,
+                                        unit: r.unit.clone().unwrap_or_default(),
+                                        display_value: r.display_label.clone(),
+                                        phase: r.phase.clone(),
+                                    })
+                                    .collect();
+
+                                let replay_event = BrowserEvent::ReadingsReplay {
+                                    machine_id,
+                                    readings: bridge_readings,
+                                    replay_window_secs: 60,
+                                };
+                                if let Ok(json) = serde_json::to_string(&replay_event) {
+                                    let _ = browser_tx.send(json);
+                                }
+                            }
+                            Ok(_) => {
+                                // No readings in last 60s — check gap via latest reading
+                                let gap_check = state
+                                    .readings_repo
+                                    .query_by_machine(machine_id, Some(1))
+                                    .await
+                                    .ok()
+                                    .and_then(|r| r.into_iter().next());
+
+                                if let Some(last) = gap_check {
+                                    let age = Utc::now()
+                                        - last.recorded_at.unwrap_or(Utc::now());
+                                    if age > chrono::Duration::try_minutes(5)
+                                        .unwrap_or(chrono::Duration::minutes(5))
+                                    {
+                                        let fallback = BrowserEvent::RESTFallback {
+                                            machine_id,
+                                            message: format!(
+                                                "Last reading was {:.0} minutes ago. \
+                                                 Use REST API for historical data.",
+                                                age.num_minutes()
+                                            ),
+                                        };
+                                        if let Ok(json) = serde_json::to_string(&fallback) {
+                                            let _ = browser_tx.send(json);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to query readings for replay (machine {}): {}",
+                                    machine_id, e
+                                );
+                            }
+                        }
                     }
                     BrowserCommand::Unsubscribe { machine_id } => {
                         let mut subs = state.browser_subs.write().await;

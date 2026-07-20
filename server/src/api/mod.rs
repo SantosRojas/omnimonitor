@@ -10,7 +10,7 @@ pub mod therapies;
 
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{middleware, Router};
 
 use crate::infrastructure::postgres::{
     machine_repo::MachineRepo, patient_repo::PatientRepo, readings_repo::ReadingsRepo,
@@ -35,9 +35,16 @@ pub struct AppState {
 
 /// Build the complete REST API router by merging all sub-routers.
 /// Returns Router<()> after providing state via .with_state().
+///
+/// Routes are split into two groups:
+/// - Unprotected: `/auth/register`, `/auth/login` — no JWT required
+/// - Protected: everything else — JWT auth middleware applied
 pub fn build_router(state: Arc<AppState>) -> Router {
-    Router::new()
-        .merge(auth::router(state.clone()))
+    // Unprotected routes — no auth required
+    let unprotected = auth::router(state.clone());
+
+    // Protected routes — JWT auth middleware applied to all
+    let protected = Router::new()
         .merge(machines::router(state.clone()))
         .merge(patients::router(state.clone()))
         .merge(therapies::router(state.clone()))
@@ -45,4 +52,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(signals::router(state.clone()))
         .merge(dashboards::router(state.clone()))
         .merge(export::router(state.clone()))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::auth_middleware,
+        ));
+
+    Router::new()
+        .merge(unprotected)
+        .merge(protected)
 }

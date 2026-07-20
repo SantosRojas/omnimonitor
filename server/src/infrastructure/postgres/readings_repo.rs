@@ -187,6 +187,32 @@ impl ReadingsRepo {
         Ok(rows)
     }
 
+    /// Query readings for a machine recorded since the given timestamp.
+    pub async fn query_by_machine_since(
+        &self,
+        machine_id: i64,
+        since: DateTime<Utc>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Reading>, RepoError> {
+        let limit = limit.unwrap_or(1000);
+
+        let rows = sqlx::query_as::<_, Reading>(
+            r#"
+            SELECT * FROM readings
+            WHERE machine_id = $1 AND recorded_at >= $2
+            ORDER BY recorded_at ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(machine_id)
+        .bind(since)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
+
     /// Get the latest reading for each signal for a machine (live dashboard summary).
     pub async fn machine_summary(&self, machine_id: i64) -> Result<Vec<TherapyDetailReading>, RepoError> {
         let rows = sqlx::query_as::<_, TherapyDetailReading>(
