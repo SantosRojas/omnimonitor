@@ -1,0 +1,1009 @@
+//! Bridge interactor — initialization protocol and cyclical data loop.
+//!
+//! Orchestrates the serial ↔ WebSocket pipeline:
+//!
+//! 1. **Init protocol**: registers with the server, queries version fingerprint,
+//!    and either loads cached configuration or performs a full serial init
+//!    (get_versions → get_data_handles → get_all_data_attributes → get_dictionary).
+//!
+//! 2. **Cyclical loop**: reads cyclical values from the OMNI device, detects
+//!    metadata signal changes (therapy_type, kit, weight, patient_id), sends
+//!    `TherapySetup` frames on metadata change, and sends `Readings` frames
+//!    with non-metadata signals.
+//!
+//! 3. **Failure tracking**: records successes and failures via `SerialReaderManager`.
+
+use std::collections::HashMap;
+
+use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
+
+use crate::protocol::frames::{BridgeFrame, ServerFrame};
+use crate::protocol::{
+    CMD_CODE_GET_CYCLICAL_VALUES, CMD_CODE_GET_DATA_ATTRS, CMD_CODE_GET_HANDLES,
+    CMD_CODE_GET_NEXT_DICT_STR, CMD_CODE_GET_VERSIONS, CMD_CODE_NAK, DataAttribute, DataType,
+    DeviceCommunicator, DeviceError, DictionaryEntry, TelemetryReading, TelemetryValue,
+    VersionInfo, VERSION_STRING_LENGTH,
+};
+use crate::serial::communicator::SerialDeviceCommunicator;
+use crate::serial::manager::SerialReaderManager;
+
+/// Metadata signal internal names that the bridge extracts from cyclical
+/// data and sends as `TherapySetup` frames (never as readings).
+const META_THERAPY_MODE: &str = "g_therapy_mode_set";
+const META_KIT_TYPE: &str = "d_kit_type_str";
+const META_PATIENT_WEIGHT: &str = "g_patient_data_weight_set";
+const META_PATIENT_ID: &str = "g_patient_id_str";
+
+/// Cycle interval when no readings are available (device not responding).
+const IDLE_CYCLE_MS: u64 = 1000;
+
+/// State held across the cyclical loop.
+struct CyclicalState {
+    handles: Vec<u16>,
+    attr_cache: HashMap<u16, DataAttribute>,
+    dict_cache: HashMap<u16, String>,
+    /// Last known metadata values for change detection.
+    metadata_cache: HashMap<String, Option<Value>>,
+    patient_id_str: String,
+    cycle: u64,
+}
+
+impl CyclicalState {
+    fn new() -> Self {
+        Self {
+            handles: Vec::new(),
+            attr_cache: HashMap::new(),
+            dict_cache: HashMap::new(),
+            metadata_cache: HashMap::new(),
+            patient_id_str: String::new(),
+            cycle: 0,
+        }
+    }
+
+    /// Load configuration from a `VersionConfig` received from the server.
+    fn load_from_version_config(
+        &mut self,
+        attrs: Vec<DataAttribute>,
+        dictionary: Vec<DictionaryEntry>,
+    ) {
+        self.attr_cache.clear();
+        self.handles.clear();
+        self.dict_cache.clear();
+
+        for attr in &attrs {
+            self.handles.push(attr.handle);
+            self.attr_cache.insert(attr.handle, attr.clone());
+        }
+        for entry in &dictionary {
+            self.dict_cache.insert(entry.dict_id, entry.text.clone());
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Init protocol helpers
+// ──────────────────────────────────────────────────────────────
+
+/// Sends a `Register` frame and waits for an `Ack` response.
+async fn send_register(
+    serial_number: &str,
+    tx_readings: &mpsc::Sender<BridgeFrame>,
+    rx_commands: &mut mpsc::Receiver<ServerFrame>,
+) -> Result<(), String> {
+    let frame = BridgeFrame::Register {
+        serial_number: serial_number.to_owned(),
+        mac_addr: None,
+    };
+    tx_readings.send(frame).await.map_err(|e| format!("Failed to send register: {e}"))?;
+
+    // Wait for Ack (with timeout)
+    let timeout = Duration::from_secs(10);
+    loop {
+        match tokio::time::timeout(timeout, rx_commands.recv()).await {
+            Ok(Some(ServerFrame::Ack)) => return Ok(()),
+            Ok(Some(ServerFrame::Error { message })) => {
+                return Err(format!("Server error during register: {message}"));
+            }
+            Ok(Some(_)) => {
+                // Unexpected frame — keep waiting for Ack
+                continue;
+            }
+            Ok(None) => return Err("Server command channel closed".into()),
+            Err(_) => return Err("Timeout waiting for register Ack".into()),
+        }
+    }
+}
+
+/// Sends an `InitQuery` frame and returns the server's response.
+async fn send_init_query(
+    fingerprint: &str,
+    tx_readings: &mpsc::Sender<BridgeFrame>,
+    rx_commands: &mut mpsc::Receiver<ServerFrame>,
+) -> Result<InitQueryResult, String> {
+    let frame = BridgeFrame::InitQuery {
+        fingerprint: fingerprint.to_owned(),
+    };
+    tx_readings.send(frame).await.map_err(|e| format!("Failed to send init_query: {e}"))?;
+
+    let timeout = Duration::from_secs(30);
+    loop {
+        match tokio::time::timeout(timeout, rx_commands.recv()).await {
+            Ok(Some(ServerFrame::VersionConfig { attributes, dictionary })) => {
+                return Ok(InitQueryResult::Known { attributes, dictionary });
+            }
+            Ok(Some(ServerFrame::UnknownVersion)) => {
+                return Ok(InitQueryResult::Unknown);
+            }
+            Ok(Some(ServerFrame::Error { message })) => {
+                return Err(format!("Server error during init_query: {message}"));
+            }
+            Ok(Some(_)) => continue, // ignore Ack or other frames
+            Ok(None) => return Err("Server command channel closed".into()),
+            Err(_) => return Err("Timeout waiting for init_query response".into()),
+        }
+    }
+}
+
+enum InitQueryResult {
+    Known {
+        attributes: Vec<DataAttribute>,
+        dictionary: Vec<DictionaryEntry>,
+    },
+    Unknown,
+}
+
+/// Sends a `StoreInit` frame and waits for `Ack`.
+async fn send_store_init(
+    version: &VersionInfo,
+    attributes: &[DataAttribute],
+    dictionary: &[DictionaryEntry],
+    tx_readings: &mpsc::Sender<BridgeFrame>,
+    rx_commands: &mut mpsc::Receiver<ServerFrame>,
+) -> Result<(), String> {
+    let frame = BridgeFrame::StoreInit {
+        version: version.clone(),
+        attributes: attributes.to_vec(),
+        dictionary: dictionary.to_vec(),
+    };
+    tx_readings.send(frame).await.map_err(|e| format!("Failed to send store_init: {e}"))?;
+
+    let timeout = Duration::from_secs(60);
+    loop {
+        match tokio::time::timeout(timeout, rx_commands.recv()).await {
+            Ok(Some(ServerFrame::Ack)) => return Ok(()),
+            Ok(Some(ServerFrame::Error { message })) => {
+                return Err(format!("Server error during store_init: {message}"));
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) => return Err("Server command channel closed".into()),
+            Err(_) => return Err("Timeout waiting for store_init Ack".into()),
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Serial protocol helpers (init Phases 2a–2c)
+// ──────────────────────────────────────────────────────────────
+
+/// PHASE 2a: get_data_handles — sends CMD_CODE_GET_HANDLES.
+fn get_data_handles(device: &mut SerialDeviceCommunicator) -> Result<Vec<u16>, String> {
+    let data = device
+        .request(CMD_CODE_GET_HANDLES, &[])
+        .map_err(|e| format!("get_data_handles failed: {e}"))?;
+
+    if data.len() < 4 {
+        return Err("Handles response too short".into());
+    }
+
+    let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
+    if resp_cmd == CMD_CODE_NAK {
+        return Err(format!("NAK in get_data_handles"));
+    }
+
+    let num_handles = u16::from_le_bytes(data[2..4].try_into().unwrap()) as usize;
+    let expected_len = 4 + num_handles * 2;
+    if data.len() < expected_len {
+        return Err(format!(
+            "Expected {expected_len} bytes for {num_handles} handles, got {}",
+            data.len()
+        ));
+    }
+
+    let mut handles = Vec::with_capacity(num_handles);
+    for i in 0..num_handles {
+        let offset = 4 + i * 2;
+        let handle = u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap());
+        handles.push(handle);
+    }
+
+    Ok(handles)
+}
+
+/// PHASE 2b: get_all_data_attributes — gets attributes for each handle.
+fn get_all_data_attributes(
+    device: &mut SerialDeviceCommunicator,
+    handles: &[u16],
+    attr_cache: &mut HashMap<u16, DataAttribute>,
+) -> Result<Vec<DataAttribute>, String> {
+    let mut attrs = Vec::with_capacity(handles.len());
+    attr_cache.clear();
+
+    for &handle in handles {
+        let handle_bytes = handle.to_le_bytes();
+        let data = device
+            .request(CMD_CODE_GET_DATA_ATTRS, &handle_bytes)
+            .map_err(|e| format!("get_data_attrs for handle 0x{handle:04X} failed: {e}"))?;
+
+        if data.len() < 12 {
+            return Err(format!(
+                "Data attrs response too short for handle 0x{handle:04X}"
+            ));
+        }
+
+        let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
+        if resp_cmd == CMD_CODE_NAK {
+            return Err(format!("NAK in get_data_attrs for handle 0x{handle:04X}"));
+        }
+
+        let data_type = DataType::from(u16::from_le_bytes(data[2..4].try_into().unwrap()));
+        let size = u16::from_le_bytes(data[4..6].try_into().unwrap());
+        let factor = u16::from_le_bytes(data[6..8].try_into().unwrap());
+        let label_did = u16::from_le_bytes(data[8..10].try_into().unwrap());
+        let unit_did = u16::from_le_bytes(data[10..12].try_into().unwrap());
+
+        let name_bytes = &data[12..];
+        let internal_name = if let Some(null_pos) = name_bytes.iter().position(|&b| b == 0) {
+            String::from_utf8_lossy(&name_bytes[..null_pos]).to_string()
+        } else {
+            String::from_utf8_lossy(name_bytes).trim().to_string()
+        };
+
+        let attr = DataAttribute {
+            handle,
+            data_type,
+            size,
+            conversion_factor: factor,
+            label_did,
+            unit_did,
+            signal_id: 0, // Will be assigned by server
+            internal_name,
+        };
+
+        attr_cache.insert(handle, attr.clone());
+        attrs.push(attr);
+    }
+
+    Ok(attrs)
+}
+
+/// PHASE 2c: get_dictionary — iteratively fetches entire dictionary.
+fn get_dictionary(
+    device: &mut SerialDeviceCommunicator,
+    dict_cache: &mut HashMap<u16, String>,
+) -> Result<Vec<DictionaryEntry>, String> {
+    const MAX_DICT_ENTRIES: usize = 20_000;
+    let mut entries = Vec::new();
+    dict_cache.clear();
+    let mut prev_id: u16 = 0;
+    let mut seen_ids = std::collections::HashSet::new();
+
+    loop {
+        let id_bytes = prev_id.to_le_bytes();
+        let data = device
+            .request(CMD_CODE_GET_NEXT_DICT_STR, &id_bytes)
+            .map_err(|e| format!("get_dictionary failed at prev_id={prev_id}: {e}"))?;
+
+        if data.len() < 4 {
+            return Err("Dictionary response too short".into());
+        }
+
+        let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
+        if resp_cmd == CMD_CODE_NAK {
+            return Err(format!("NAK in get_dictionary at prev_id={prev_id}"));
+        }
+
+        let dict_id = u16::from_le_bytes(data[2..4].try_into().unwrap());
+
+        // dict_id == 0 means end of dictionary
+        if dict_id == 0 {
+            break;
+        }
+
+        if !seen_ids.insert(dict_id) {
+            return Err(format!(
+                "Dictionary loop detected: repeated dict_id={dict_id} after {} entries",
+                entries.len()
+            ));
+        }
+
+        let str_bytes = &data[4..];
+        let text = if let Some(null_pos) = str_bytes.iter().position(|&b| b == 0) {
+            String::from_utf8_lossy(&str_bytes[..null_pos]).to_string()
+        } else {
+            String::from_utf8_lossy(str_bytes).to_string()
+        };
+
+        let entry = DictionaryEntry {
+            dict_id,
+            text: text.clone(),
+        };
+        dict_cache.insert(dict_id, text);
+        entries.push(entry);
+
+        if entries.len() >= MAX_DICT_ENTRIES {
+            return Err(format!(
+                "Dictionary exceeded safety limit ({MAX_DICT_ENTRIES} entries)"
+            ));
+        }
+
+        prev_id = dict_id;
+    }
+
+    Ok(entries)
+}
+
+/// Read raw integer value from bytes based on size and data type.
+fn read_raw_value(bytes: &[u8], size: usize, data_type: DataType) -> i64 {
+    let is_signed = matches!(
+        data_type,
+        DataType::InputNumberSigned | DataType::OutputNumberSigned
+    );
+
+    match size {
+        1 => {
+            if is_signed {
+                bytes[0] as i8 as i64
+            } else {
+                bytes[0] as i64
+            }
+        }
+        2 => {
+            let val = u16::from_le_bytes(bytes[..2].try_into().unwrap());
+            if is_signed {
+                val as i16 as i64
+            } else {
+                val as i64
+            }
+        }
+        4 => {
+            let val = u32::from_le_bytes(bytes[..4].try_into().unwrap());
+            if is_signed {
+                val as i32 as i64
+            } else {
+                val as i64
+            }
+        }
+        _ => {
+            if size >= 2 {
+                u16::from_le_bytes(bytes[..2].try_into().unwrap()) as i64
+            } else if !bytes.is_empty() {
+                bytes[0] as i64
+            } else {
+                0
+            }
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Cyclical loop
+// ──────────────────────────────────────────────────────────────
+
+/// Read cyclical values from the device and produce telemetry readings,
+/// while extracting metadata signals for the `TherapySetup` frame.
+fn read_cyclical_values(
+    device: &mut SerialDeviceCommunicator,
+    state: &mut CyclicalState,
+) -> Result<Vec<TelemetryReading>, DeviceError> {
+    let data = device.request(CMD_CODE_GET_CYCLICAL_VALUES, &[])?;
+
+    if data.len() < 2 {
+        return Err(DeviceError::ParseError("Cyclical response too short".into()));
+    }
+
+    let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
+    if resp_cmd == CMD_CODE_NAK {
+        let err_code = if data.len() >= 4 {
+            u16::from_le_bytes(data[2..4].try_into().unwrap())
+        } else {
+            0
+        };
+        return Err(DeviceError::Nak(err_code));
+    }
+
+    let values_data = &data[2..];
+    let mut offset = 0;
+    let mut readings = Vec::new();
+
+    for &handle in &state.handles {
+        let attr = match state.attr_cache.get(&handle) {
+            Some(a) => a,
+            None => {
+                tracing::warn!("No attribute for handle 0x{handle:04X}, skipping");
+                continue;
+            }
+        };
+
+        let size = attr.size as usize;
+        if offset + size > values_data.len() {
+            tracing::warn!(
+                "Insufficient data at offset {offset} for '{}' (need {size} bytes)",
+                attr.internal_name
+            );
+            break;
+        }
+
+        let slice = &values_data[offset..offset + size];
+        let raw_value = read_raw_value(slice, size, attr.data_type);
+
+        let physical_value = match attr.data_type {
+            DataType::DiaString | DataType::VersionString => {
+                let text = if let Some(null_pos) = slice.iter().position(|&b| b == 0) {
+                    String::from_utf8_lossy(&slice[..null_pos])
+                } else {
+                    String::from_utf8_lossy(slice)
+                };
+                TelemetryValue::String(text.trim().to_string())
+            }
+            _ => {
+                if attr.conversion_factor > 0 {
+                    TelemetryValue::Number(raw_value as f64 / attr.conversion_factor as f64)
+                } else {
+                    TelemetryValue::Number(raw_value as f64)
+                }
+            }
+        };
+
+        // Lookup unit string from in-memory dictionary cache
+        let unit = state
+            .dict_cache
+            .get(&attr.unit_did)
+            .cloned()
+            .unwrap_or_default();
+
+        offset += size;
+
+        // ── Metadata detection ──
+        match attr.internal_name.as_str() {
+            META_PATIENT_ID => {
+                if let TelemetryValue::String(ref s) = physical_value {
+                    let trimmed = s.trim().to_string();
+                    if !trimmed.is_empty() {
+                        state.patient_id_str = trimmed;
+                    }
+                }
+            }
+            META_THERAPY_MODE
+            | META_KIT_TYPE
+            | META_PATIENT_WEIGHT => {
+                let value = match &physical_value {
+                    TelemetryValue::Number(n) => Some(Value::Number(
+                        serde_json::Number::from_f64(*n).unwrap_or(serde_json::Number::from(0)),
+                    )),
+                    TelemetryValue::String(s) => Some(Value::String(s.clone())),
+                };
+                state
+                    .metadata_cache
+                    .insert(attr.internal_name.clone(), value);
+                // Skip — metadata signals are NOT included in readings
+                continue;
+            }
+            _ => {}
+        }
+
+        // ── Build reading (non-metadata signals only) ──
+        readings.push(TelemetryReading {
+            id: None,
+            timestamp: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            therapy_id: None,
+            serial_session_id: None,
+            signal_id: attr.signal_id,
+            internal_name: attr.internal_name.clone(),
+            raw_value,
+            physical_value,
+            unit,
+            display_value: None,
+            phase: None,
+        });
+    }
+
+    Ok(readings)
+}
+
+/// Build a `TherapySetup` frame from the current metadata cache.
+fn build_therapy_setup(state: &CyclicalState, machine_id: i64) -> BridgeFrame {
+    let therapy_type = state
+        .metadata_cache
+        .get(META_THERAPY_MODE)
+        .and_then(|v| v.as_ref())
+        .and_then(|v| v.as_str().map(|s| s.to_owned()));
+
+    let kit = state
+        .metadata_cache
+        .get(META_KIT_TYPE)
+        .and_then(|v| v.as_ref())
+        .and_then(|v| v.as_str().map(|s| s.to_owned()));
+
+    let weight = state
+        .metadata_cache
+        .get(META_PATIENT_WEIGHT)
+        .and_then(|v| v.as_ref())
+        .and_then(|v| v.as_f64());
+
+    BridgeFrame::TherapySetup {
+        machine_id,
+        patient_id_str: state.patient_id_str.clone(),
+        therapy_type,
+        kit,
+        weight,
+    }
+}
+
+/// Tracks whether metadata has changed since the last `TherapySetup` was sent.
+struct MetadataTracker {
+    last_sent: Option<HashMap<String, Option<Value>>>,
+}
+
+impl MetadataTracker {
+    fn new() -> Self {
+        Self { last_sent: None }
+    }
+
+    /// Returns `true` if the metadata has changed since the last sent snapshot.
+    fn has_changed(&self, current: &HashMap<String, Option<Value>>) -> bool {
+        match &self.last_sent {
+            None => true,
+            Some(prev) => prev != current,
+        }
+    }
+
+    /// Update the snapshot to the current metadata state.
+    fn snapshot(&mut self, current: &HashMap<String, Option<Value>>) {
+        self.last_sent = Some(current.clone());
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Main entry point
+// ──────────────────────────────────────────────────────────────
+
+/// Runs the full bridge interactor loop.
+///
+/// 1. **Init protocol**: register → init_query → (load cache | full serial init)
+/// 2. **Cyclical loop**: read cyclical values → detect metadata → send frames
+///
+/// # Arguments
+///
+/// * `device` - The serial device communicator (already opened).
+/// * `manager` - The serial reader manager for failure tracking.
+/// * `serial_number` - The machine's serial number.
+/// * `tx_readings` - Channel to send outgoing `BridgeFrame`s to the WS client.
+/// * `rx_commands` - Channel to receive incoming `ServerFrame`s from the WS client.
+pub async fn run_bridge(
+    device: &mut SerialDeviceCommunicator,
+    manager: &SerialReaderManager,
+    serial_number: &str,
+    tx_readings: mpsc::Sender<BridgeFrame>,
+    mut rx_commands: mpsc::Receiver<ServerFrame>,
+) {
+    tracing::info!("[bridge] starting interactor for {serial_number}");
+
+    // ════════════════════════════════════════════════════════════
+    //  PHASE 1: IDENTIFICATION — Get Version Numbers
+    // ════════════════════════════════════════════════════════════
+    tracing::info!("[bridge] [1] CMD_GET_VERSIONS");
+
+    let version = match get_versions(device) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("[bridge] get_versions failed: {e}");
+            manager.record_failure().await;
+            return;
+        }
+    };
+
+    let fingerprint = version.fingerprint();
+    tracing::info!("[bridge] fingerprint: {fingerprint}");
+
+    // ════════════════════════════════════════════════════════════
+    //  PHASE 2: WS INIT PROTOCOL
+    // ════════════════════════════════════════════════════════════
+
+    // Step 1: Register with server
+    tracing::info!("[bridge] sending register...");
+    if let Err(e) = send_register(serial_number, &tx_readings, &mut rx_commands).await {
+        tracing::error!("[bridge] register failed: {e}");
+        manager.record_failure().await;
+        return;
+    }
+    tracing::info!("[bridge] registered successfully");
+
+    // Step 2: Query server for version cache
+    tracing::info!("[bridge] sending init_query...");
+    let mut state = CyclicalState::new();
+
+    match send_init_query(&fingerprint, &tx_readings, &mut rx_commands).await {
+        Ok(InitQueryResult::Known {
+            attributes,
+            dictionary,
+        }) => {
+            tracing::info!(
+                "[bridge] server has cached config ({} attrs, {} dict entries)",
+                attributes.len(),
+                dictionary.len()
+            );
+            state.load_from_version_config(attributes, dictionary);
+        }
+        Ok(InitQueryResult::Unknown) => {
+            tracing::info!("[bridge] server does not know this version — performing full serial init");
+            if let Err(e) = full_serial_init(device, &mut state) {
+                tracing::error!("[bridge] full serial init failed: {e}");
+                manager.record_failure().await;
+                return;
+            }
+
+            // Send store_init to server
+            let attrs: Vec<DataAttribute> = state.attr_cache.values().cloned().collect();
+            let dict: Vec<DictionaryEntry> = state
+                .dict_cache
+                .iter()
+                .map(|(id, text)| DictionaryEntry {
+                    dict_id: *id,
+                    text: text.clone(),
+                })
+                .collect();
+
+            tracing::info!(
+                "[bridge] sending store_init ({} attrs, {} dict entries)...",
+                attrs.len(),
+                dict.len()
+            );
+
+            if let Err(e) = send_store_init(&version, &attrs, &dict, &tx_readings, &mut rx_commands).await {
+                tracing::error!("[bridge] store_init failed: {e}");
+                manager.record_failure().await;
+                return;
+            }
+            tracing::info!("[bridge] store_init acknowledged");
+        }
+        Err(e) => {
+            tracing::error!("[bridge] init_query failed: {e}");
+            manager.record_failure().await;
+            return;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    //  PHASE 3: CYCLICAL LOOP
+    // ════════════════════════════════════════════════════════════
+
+    // Get machine_id from server (send a minimal init to get our machine_id back)
+    // The server assigns machine_id during register — we receive it back in the first
+    // server frame. For now we default to machine_id = 0 and rely on the server to
+    // match by serial_number. The server will assign the real machine_id.
+    // In practice, the server sends back an Ack with machine_info after register.
+    // For this implementation, machine_id=0 and the server resolves it from the
+    // serial_number in each frame.
+    let machine_id: i64 = 0; // Server resolves from serial_number
+
+    manager.set_running().await;
+    tracing::info!("[bridge] entering cyclical loop");
+
+    let mut meta_tracker = MetadataTracker::new();
+
+    loop {
+        // Check for pending therapy close
+        if let Some(therapy_id) = manager.take_pending_therapy_close().await {
+            tracing::info!("[bridge] pending therapy close: {therapy_id}");
+            // The server closes therapy on its side. We reset state.
+            state.metadata_cache.clear();
+            meta_tracker = MetadataTracker::new();
+        }
+
+        // Read cyclical values
+        match read_cyclical_values(device, &mut state) {
+            Ok(readings) => {
+                manager.record_success().await;
+
+                // ── Metadata change detection ──
+                if meta_tracker.has_changed(&state.metadata_cache) {
+                    let therapy_setup = build_therapy_setup(&state, machine_id);
+                    tracing::info!(
+                        "[bridge] metadata changed, sending TherapySetup"
+                    );
+                    if tx_readings.send(therapy_setup).await.is_err() {
+                        tracing::error!("[bridge] tx_readings closed, stopping");
+                        break;
+                    }
+                    meta_tracker.snapshot(&state.metadata_cache);
+                }
+
+                // ── Send readings (non-metadata signals only) ──
+                if !readings.is_empty() {
+                    let readings_frame = BridgeFrame::Readings {
+                        machine_id,
+                        cycle: state.cycle,
+                        readings,
+                    };
+                    if tx_readings.send(readings_frame).await.is_err() {
+                        tracing::error!("[bridge] tx_readings closed, stopping");
+                        break;
+                    }
+                    state.cycle += 1;
+                }
+            }
+            Err(DeviceError::Timeout) => {
+                tracing::warn!("[bridge] cyclical read timeout");
+                manager.record_failure().await;
+                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
+            }
+            Err(DeviceError::Nak(err_code)) => {
+                tracing::warn!("[bridge] cyclical read NAK (code=0x{err_code:04X})");
+                manager.record_warning().await;
+                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
+            }
+            Err(e) => {
+                tracing::error!("[bridge] cyclical read error: {e}");
+                manager.record_failure().await;
+                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
+            }
+        }
+    }
+
+    tracing::info!("[bridge] interactor loop ended");
+}
+
+/// Phase 1 (serial): Get version info from device.
+fn get_versions(device: &mut SerialDeviceCommunicator) -> Result<VersionInfo, String> {
+    let data = device
+        .request(CMD_CODE_GET_VERSIONS, &[])
+        .map_err(|e| format!("CMD_GET_VERSIONS failed: {e}"))?;
+
+    if data.len() < 2 {
+        return Err("Response too short for versions".into());
+    }
+
+    let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
+    if resp_cmd == CMD_CODE_NAK {
+        let err_code = if data.len() >= 4 {
+            u16::from_le_bytes(data[2..4].try_into().unwrap())
+        } else {
+            0
+        };
+        return Err(format!("NAK in get_versions (code=0x{err_code:04X})"));
+    }
+
+    let expected_len = 2 + 2 + (7 * VERSION_STRING_LENGTH) + (3 * VERSION_STRING_LENGTH);
+    if data.len() < expected_len {
+        return Err(format!(
+            "Versions response too short: {} bytes, expected >= {expected_len}",
+            data.len()
+        ));
+    }
+
+    let language_id = u16::from_le_bytes(data[2..4].try_into().unwrap());
+
+    let read_version = |offset: usize| -> String {
+        let slice = &data[offset..offset + VERSION_STRING_LENGTH];
+        let text = if let Some(null_pos) = slice.iter().position(|&b| b == 0) {
+            String::from_utf8_lossy(&slice[..null_pos])
+        } else {
+            String::from_utf8_lossy(slice)
+        };
+        text.trim().to_string()
+    };
+
+    let base = 4;
+    Ok(VersionInfo {
+        language_id,
+        system_sw: read_version(base),
+        dss_fw: read_version(base + 16),
+        dss_hw: read_version(base + 32),
+        css_fw: read_version(base + 48),
+        css_hw: read_version(base + 64),
+        pss_fw: read_version(base + 80),
+        pss_hw: read_version(base + 96),
+        language1: read_version(base + 112),
+        language2: read_version(base + 128),
+        language3: read_version(base + 144),
+    })
+}
+
+/// Full serial initialization (Phases 2a–2c) for unknown versions.
+fn full_serial_init(
+    device: &mut SerialDeviceCommunicator,
+    state: &mut CyclicalState,
+) -> Result<(), String> {
+    // Phase 2a: Get data handles
+    tracing::info!("[bridge] [2] CMD_GET_HANDLES");
+    let handles = get_data_handles(device)?;
+    state.handles = handles.clone();
+    tracing::info!("[bridge] got {} handle(s)", handles.len());
+
+    // Phase 2b: Get data attributes for each handle
+    tracing::info!("[bridge] [3] CMD_GET_DATA_ATTRS for {} handle(s)...", handles.len());
+    let attrs = get_all_data_attributes(device, &handles, &mut state.attr_cache)?;
+    tracing::info!("[bridge] got {} attribute(s)", attrs.len());
+
+    // Phase 2c: Get dictionary
+    tracing::info!("[bridge] [4] CMD_GET_NEXT_DICT_STR (building dictionary)...");
+    let dict = get_dictionary(device, &mut state.dict_cache)?;
+    tracing::info!("[bridge] dictionary complete: {} entries", dict.len());
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    /// Check that metadata signal constants match expected values.
+    #[test]
+    fn metadata_signal_names_correct() {
+        assert_eq!(META_THERAPY_MODE, "g_therapy_mode_set");
+        assert_eq!(META_KIT_TYPE, "d_kit_type_str");
+        assert_eq!(META_PATIENT_WEIGHT, "g_patient_data_weight_set");
+        assert_eq!(META_PATIENT_ID, "g_patient_id_str");
+    }
+
+    /// MetadataTracker starts as changed (first cycle always sends TherapySetup).
+    #[test]
+    fn metadata_tracker_starts_changed() {
+        let tracker = MetadataTracker::new();
+        let current = HashMap::new();
+        assert!(tracker.has_changed(&current));
+    }
+
+    /// MetadataTracker detects no change when same values are provided.
+    #[test]
+    fn metadata_tracker_no_change() {
+        let mut tracker = MetadataTracker::new();
+        let mut current = HashMap::new();
+        current.insert("test".to_string(), Some(Value::String("val".to_owned())));
+        assert!(tracker.has_changed(&current));
+        tracker.snapshot(&current);
+        assert!(!tracker.has_changed(&current));
+    }
+
+    /// MetadataTracker detects change when value differs.
+    #[test]
+    fn metadata_tracker_detects_change() {
+        let mut tracker = MetadataTracker::new();
+        let mut current = HashMap::new();
+        current.insert("test".to_string(), Some(Value::String("val".to_owned())));
+        tracker.snapshot(&current);
+
+        let mut changed = HashMap::new();
+        changed.insert("test".to_string(), Some(Value::String("new_val".to_owned())));
+        assert!(tracker.has_changed(&changed));
+    }
+
+    /// Build TherapySetup with all fields populated.
+    #[test]
+    fn build_therapy_setup_all_fields() {
+        let mut state = CyclicalState::new();
+        state.patient_id_str = "PAT-001".to_owned();
+        state.metadata_cache.insert(
+            META_THERAPY_MODE.to_owned(),
+            Some(Value::String("HD".to_owned())),
+        );
+        state.metadata_cache.insert(
+            META_KIT_TYPE.to_owned(),
+            Some(Value::String("FX100".to_owned())),
+        );
+        state.metadata_cache.insert(
+            META_PATIENT_WEIGHT.to_owned(),
+            Some(Value::Number(serde_json::Number::from_f64(70.5).unwrap())),
+        );
+
+        let frame = build_therapy_setup(&state, 1);
+        match frame {
+            BridgeFrame::TherapySetup {
+                machine_id,
+                patient_id_str,
+                therapy_type,
+                kit,
+                weight,
+            } => {
+                assert_eq!(machine_id, 1);
+                assert_eq!(patient_id_str, "PAT-001");
+                assert_eq!(therapy_type, Some("HD".to_owned()));
+                assert_eq!(kit, Some("FX100".to_owned()));
+                assert!((weight.unwrap() - 70.5).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected TherapySetup frame"),
+        }
+    }
+
+    /// Build TherapySetup with minimal fields (no metadata discovered yet).
+    #[test]
+    fn build_therapy_setup_minimal() {
+        let state = CyclicalState::new();
+        let frame = build_therapy_setup(&state, 42);
+        match frame {
+            BridgeFrame::TherapySetup {
+                machine_id,
+                patient_id_str,
+                therapy_type,
+                kit,
+                weight,
+            } => {
+                assert_eq!(machine_id, 42);
+                assert_eq!(patient_id_str, "");
+                assert_eq!(therapy_type, None);
+                assert_eq!(kit, None);
+                assert_eq!(weight, None);
+            }
+            _ => panic!("Expected TherapySetup frame"),
+        }
+    }
+
+    /// CyclicalState::load_from_version_config populates caches correctly.
+    #[test]
+    fn load_from_version_config_populates_cache() {
+        let mut state = CyclicalState::new();
+        let attr = DataAttribute {
+            handle: 1,
+            data_type: DataType::InputNumberUnsigned,
+            size: 2,
+            conversion_factor: 10,
+            label_did: 100,
+            unit_did: 200,
+            signal_id: 5,
+            internal_name: "pressure".into(),
+        };
+        let dict = DictionaryEntry {
+            dict_id: 200,
+            text: "mmHg".into(),
+        };
+
+        state.load_from_version_config(vec![attr], vec![dict]);
+
+        assert_eq!(state.handles, vec![1]);
+        assert!(state.attr_cache.contains_key(&1));
+        assert_eq!(state.dict_cache.get(&200), Some(&"mmHg".to_owned()));
+    }
+
+    /// Read raw value helper works for various types/sizes.
+    #[test]
+    fn read_raw_value_various_types() {
+        // Unsigned 1 byte
+        let bytes = [0xFFu8];
+        assert_eq!(read_raw_value(&bytes, 1, DataType::InputNumberUnsigned), 255);
+
+        // Signed 1 byte
+        assert_eq!(read_raw_value(&bytes, 1, DataType::InputNumberSigned), -1);
+
+        // Unsigned 2 bytes LE
+        let bytes = [0x00, 0x80];
+        assert_eq!(read_raw_value(&bytes, 2, DataType::InputNumberUnsigned), 32768);
+
+        // Signed 2 bytes
+        assert_eq!(read_raw_value(&bytes, 2, DataType::InputNumberSigned), -32768);
+
+        // Unsigned 4 bytes LE
+        let bytes = [0xFF, 0xFF, 0xFF, 0x7F];
+        assert_eq!(
+            read_raw_value(&bytes, 4, DataType::InputNumberUnsigned),
+            2147483647
+        );
+
+        // Signed 4 bytes
+        let bytes = [0x00, 0x00, 0x00, 0x80];
+        assert_eq!(read_raw_value(&bytes, 4, DataType::InputNumberSigned), -2147483648);
+    }
+
+    /// Verify metadata signal constants are correctly defined.
+    #[test]
+    fn meta_signal_name_values() {
+        assert_eq!(META_THERAPY_MODE, "g_therapy_mode_set");
+        assert_eq!(META_KIT_TYPE, "d_kit_type_str");
+        assert_eq!(META_PATIENT_WEIGHT, "g_patient_data_weight_set");
+        assert_eq!(META_PATIENT_ID, "g_patient_id_str");
+    }
+}
