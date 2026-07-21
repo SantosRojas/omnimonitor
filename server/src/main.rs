@@ -36,11 +36,19 @@ struct Args {
 }
 
 fn parse_args() -> Args {
-    let mut db_url = "postgres://postgres:postgres@localhost:5432/pdms".to_string();
-    let mut port = 9000u16;
-    let mut jwt_secret = "change-me-in-production".to_string();
-    let mut admin_password = "admin".to_string();
+    // Env var defaults (dotenvy::dotenv() loads .env before this)
+    let mut db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/pdms".to_string());
+    let mut port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(9000);
+    let mut jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "change-me-in-production".to_string());
+    let mut admin_password = std::env::var("ADMIN_PASSWORD")
+        .unwrap_or_else(|_| "admin".to_string());
 
+    // CLI args override env vars (highest priority)
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -51,7 +59,9 @@ fn parse_args() -> Args {
             }
             "--port" => {
                 if let Some(v) = args.next() {
-                    port = v.parse().unwrap_or(9000);
+                    if let Ok(p) = v.parse() {
+                        port = p;
+                    }
                 }
             }
             "--jwt-secret" => {
@@ -99,6 +109,9 @@ async fn health_check() -> &'static str {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load .env (if present — .gitignore already excludes it)
+    let _ = dotenvy::dotenv();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
