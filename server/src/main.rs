@@ -12,6 +12,7 @@ use argon2::PasswordHasher;
 use axum::{routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info};
 
 use server::api::{self, AppState};
@@ -33,6 +34,7 @@ struct Args {
     port: u16,
     jwt_secret: String,
     admin_password: String,
+    frontend_dist: String,
 }
 
 fn parse_args() -> Args {
@@ -47,6 +49,8 @@ fn parse_args() -> Args {
         .unwrap_or_else(|_| "change-me-in-production".to_string());
     let mut admin_password = std::env::var("ADMIN_PASSWORD")
         .unwrap_or_else(|_| "admin".to_string());
+    let mut frontend_dist = std::env::var("FRONTEND_DIST")
+        .unwrap_or_else(|_| "frontend/dist".to_string());
 
     // CLI args override env vars (highest priority)
     let mut args = std::env::args().skip(1);
@@ -74,6 +78,11 @@ fn parse_args() -> Args {
                     admin_password = v;
                 }
             }
+            "--frontend-dist" => {
+                if let Some(v) = args.next() {
+                    frontend_dist = v;
+                }
+            }
             _ => {}
         }
     }
@@ -83,6 +92,7 @@ fn parse_args() -> Args {
         port,
         jwt_secret,
         admin_password,
+        frontend_dist,
     }
 }
 
@@ -221,6 +231,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_check))
         .merge(rest_api)
         .merge(ws_routes)
+        .fallback_service(
+            ServeDir::new(&args.frontend_dist)
+                .not_found_service(ServeFile::new(format!("{}/index.html", args.frontend_dist))),
+        )
         .layer(CorsLayer::permissive());
 
     // ── Start server ──────────────────────────────
