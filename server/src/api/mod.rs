@@ -8,16 +8,26 @@ pub mod patients;
 pub mod signals;
 pub mod therapies;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{middleware, Router};
+use axum::{
+    extract::{
+        ws::WebSocketUpgrade,
+        ConnectInfo, State,
+    },
+    middleware,
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
 
 use crate::infrastructure::postgres::{
     machine_repo::MachineRepo, patient_repo::PatientRepo, readings_repo::ReadingsRepo,
     signal_repo::SignalRepo, therapy_repo::TherapyRepo, user_repo::UserRepo,
     version_repo::VersionRepo,
 };
-use crate::infrastructure::ws_hub::WsHubState;
+use crate::infrastructure::ws_hub::{self, WsHubState};
 
 /// Shared application state available to all handlers (REST + WS).
 #[derive(Debug, Clone)]
@@ -60,4 +70,32 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .merge(unprotected)
         .merge(protected)
+}
+
+/// Build the WebSocket router — NOT wrapped in JWT auth.
+pub fn ws_routes(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/ws/bridge", get(bridge_ws_handler))
+        .route("/ws/browser", get(browser_ws_handler))
+        .with_state(state)
+}
+
+/// Bridge WebSocket handler.
+async fn bridge_ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    tracing::info!("Bridge WS connection from {}", addr);
+    ws.on_upgrade(move |socket| ws_hub::handle_bridge_connection(socket, state.ws_hub.clone()))
+}
+
+/// Browser WebSocket handler.
+async fn browser_ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    tracing::info!("Browser WS connection from {}", addr);
+    ws.on_upgrade(move |socket| ws_hub::handle_browser_connection(socket, state.ws_hub.clone()))
 }

@@ -60,6 +60,7 @@ pub struct RepoBundle {
 }
 
 /// Build a fully-wired Axum router with a test JWT secret.
+/// Includes REST API + WebSocket routes.
 /// Applies migrations first, so the caller does NOT need to call `setup_db`.
 pub async fn build_test_app(pool: PgPool) -> axum::Router {
     setup_db(&pool).await;
@@ -82,5 +83,9 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         user_repo: repos.user,
         ws_hub,
     });
-    build_router(state)
+    let rest_api = build_router(state.clone());
+    let ws_routes = server::api::ws_routes(state);
+    Router::new()
+        .merge(rest_api)
+        .merge(ws_routes)
 }
