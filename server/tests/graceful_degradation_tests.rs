@@ -38,7 +38,7 @@ async fn start_test_env(pool: PgPool) -> (axum::Router, std::net::SocketAddr, St
     let ws_url = format!("ws://{}/ws/bridge", addr);
 
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service())
+        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await
             .expect("Test server failed");
     });
@@ -127,6 +127,28 @@ async fn bridge_connect_full(
     (write, read)
 }
 
+/// Create a signal via REST and return its ID.
+async fn create_signal(app: &axum::Router, token: &str, internal_name: &str) -> i64 {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/signals")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"internal_name": internal_name}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = body_json(resp).await;
+    body["id"].as_i64().unwrap()
+}
+
 /// Get machine_id by serial_number via REST.
 async fn get_machine_id(app: &axum::Router, token: &str, serial: &str) -> i64 {
     let resp = app
@@ -164,6 +186,9 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
 
     let machine_id = get_machine_id(&rest_app, &token, "GD-SN-001").await;
 
+    // Create the signal in the DB (needed for readings FK)
+    let signal_id = create_signal(&rest_app, &token, "sig_a").await;
+
     // Send first batch of readings
     let batch1 = serde_json::json!({
         "type": "Readings",
@@ -174,7 +199,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
                 "id": null,
                 "timestamp": "2026-07-20T10:00:00Z",
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": signal_id,
                 "internal_name": "sig_a",
                 "raw_value": 100,
                 "value": 10.0,
@@ -207,7 +232,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
                 "id": null,
                 "timestamp": "2026-07-20T10:01:00Z",
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": signal_id,
                 "internal_name": "sig_a",
                 "raw_value": 200,
                 "value": 20.0,
@@ -231,6 +256,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -277,6 +303,9 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
     let (mut write, _read) = bridge_connect_full(&ws_url, "RESTART-SN-001").await;
     let machine_id = get_machine_id(&rest_app, &token, "RESTART-SN-001").await;
 
+    // Create the signal in the DB
+    let signal_id = create_signal(&rest_app, &token, "restart_sig").await;
+
     let batch = serde_json::json!({
         "type": "Readings",
         "machine_id": machine_id,
@@ -286,10 +315,10 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
                 "id": null,
                 "timestamp": "2026-07-20T10:00:00Z",
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": signal_id,
                 "internal_name": "restart_sig",
                 "raw_value": 42,
-                "value": 4.2,
+                "value": 42.0,
                 "unit": "amp",
                 "display_value": null,
                 "phase": null,
@@ -307,6 +336,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -327,7 +357,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         assert_eq!(
             s["value"].as_f64().unwrap_or(0.0) as i64,
             42,
-            "Value should be 4.2"
+            "Value should be 42.0"
         );
     }
 
@@ -340,6 +370,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -362,6 +393,10 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
     let (rest_app, _addr, ws_url) = start_test_env(pool.clone()).await;
     let token = get_auth_token(&rest_app, "gduser3").await;
 
+    // Create signals in the DB (needed for readings FK)
+    let a_sig_id = create_signal(&rest_app, &token, "a_sig").await;
+    let b_sig_id = create_signal(&rest_app, &token, "b_sig").await;
+
     // Bridge A
     let (mut write_a, _read_a) = bridge_connect_full(&ws_url, "MULTI-SN-A").await;
     let machine_a = get_machine_id(&rest_app, &token, "MULTI-SN-A").await;
@@ -382,7 +417,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
                 "id": null,
                 "timestamp": "2026-07-20T10:00:00Z",
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": a_sig_id,
                 "internal_name": "a_sig",
                 "raw_value": 111,
                 "value": 11.1,
@@ -407,7 +442,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
                 "id": null,
                 "timestamp": "2026-07-20T10:00:00Z",
                 "therapy_id": null,
-                "signal_id": 2,
+                "signal_id": b_sig_id,
                 "internal_name": "b_sig",
                 "raw_value": 222,
                 "value": 22.2,
@@ -430,6 +465,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_a))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -456,6 +492,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_b))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )

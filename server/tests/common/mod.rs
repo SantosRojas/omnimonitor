@@ -8,6 +8,8 @@
 // because each `tests/*.rs` file compiles as its own crate.
 #![allow(dead_code)]
 
+use axum::Router;
+use axum::routing::get;
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -86,6 +88,37 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
     let rest_api = build_router(state.clone());
     let ws_routes = server::api::ws_routes(state);
     Router::new()
+        .route("/health", get(health_check))
         .merge(rest_api)
         .merge(ws_routes)
+}
+
+/// Health check handler for test app.
+async fn health_check() -> &'static str {
+    "OK"
+}
+
+/// Generate a test JWT token using the shared test secret "test-jwt-secret".
+/// The token has sub=1, role="admin", exp=24h from now.
+pub fn test_jwt() -> String {
+    use chrono::Utc;
+    use jsonwebtoken::{EncodingKey, Header, encode};
+    use server::api::auth::Claims;
+
+    let claims = Claims {
+        sub: 1,
+        role: "admin".into(),
+        exp: (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(b"test-jwt-secret"),
+    )
+    .expect("test JWT encoding failed")
+}
+
+/// Create a reusable auth header value for test requests.
+pub fn auth_header(token: &str) -> (&'static str, String) {
+    ("authorization", format!("Bearer {}", token))
 }

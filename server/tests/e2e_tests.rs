@@ -38,7 +38,7 @@ async fn start_test_env(pool: PgPool) -> (axum::Router, std::net::SocketAddr, St
     let ws_url = format!("ws://{}/ws/bridge", addr);
 
     tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service())
+        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
             .await
             .expect("Test server failed");
     });
@@ -133,6 +133,28 @@ async fn bridge_connect(
     write
 }
 
+/// Create a signal via REST and return its ID.
+async fn create_signal(app: &axum::Router, token: &str, internal_name: &str) -> i64 {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/signals")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"internal_name": internal_name}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: Value = body_json(resp).await;
+    body["id"].as_i64().unwrap()
+}
+
 /// Get machine_id by serial_number via REST.
 async fn get_machine_id(
     app: &axum::Router,
@@ -175,6 +197,9 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
     // ── Step 2: Get machine_id ──
     let machine_id = get_machine_id(&rest_app, &token, "E2E-SN-001").await;
 
+    // ── Step 2b: Create a signal in the DB ──
+    let signal_id = create_signal(&rest_app, &token, "pressure").await;
+
     // ── Step 3: Send readings ──
     let readings_frame = serde_json::json!({
         "type": "Readings",
@@ -185,7 +210,7 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
                 "id": null,
                 "timestamp": "2026-07-20T12:00:00Z",
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": signal_id,
                 "internal_name": "pressure",
                 "raw_value": 1200,
                 "value": 120.0,
@@ -209,6 +234,7 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
         .oneshot(
             Request::builder()
                 .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -299,6 +325,9 @@ async fn e2e_browser_receives_readings_replay_on_subscribe(pool: PgPool) {
     let mut write = bridge_connect(&ws_url, "REPLAY-SN-001").await;
     let machine_id = get_machine_id(&rest_app, &token, "REPLAY-SN-001").await;
 
+    // Create a signal in the DB (needed for readings FK and replay query)
+    let signal_id = create_signal(&rest_app, &token, "replay_signal").await;
+
     // Send readings
     let readings_frame = serde_json::json!({
         "type": "Readings",
@@ -309,7 +338,7 @@ async fn e2e_browser_receives_readings_replay_on_subscribe(pool: PgPool) {
                 "id": null,
                 "timestamp": chrono::Utc::now().to_rfc3339(),
                 "therapy_id": null,
-                "signal_id": 1,
+                "signal_id": signal_id,
                 "internal_name": "replay_signal",
                 "raw_value": 500,
                 "value": 50.0,
