@@ -67,9 +67,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             auth::auth_middleware,
         ));
 
+    // Nest everything under /api prefix
     Router::new()
-        .merge(unprotected)
-        .merge(protected)
+        .nest("/api", Router::new().merge(unprotected).merge(protected))
 }
 
 /// Build the WebSocket router — NOT wrapped in JWT auth.

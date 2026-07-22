@@ -248,9 +248,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Start server ──────────────────────────────
     let addr: SocketAddr = ([0, 0, 0, 0], args.port).into();
     info!("Server listening on http://{}", addr);
+    info!("REST API: http://{}/api/...", addr);
     info!("WS bridge: ws://{}/ws/bridge", addr);
     info!("WS browser: ws://{}/ws/browser", addr);
-    info!("REST API: http://{}/api/...", addr);
     info!("Health: http://{}/health", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
