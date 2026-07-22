@@ -24,7 +24,7 @@ describe("WsManager", () => {
 
     vi.stubGlobal(
       "WebSocket",
-      vi.fn(() => {
+      vi.fn(function MockWebSocketConstructor() {
         const ws: MockWebSocket = {
           onopen: null,
           onmessage: null,

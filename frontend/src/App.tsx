@@ -3,25 +3,27 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { PrivateRoute } from "./ui/components/PrivateRoute";
 import { AppLayout } from "./ui/layouts/AppLayout";
 import { LoginContainer } from "./ui/containers/LoginContainer";
-import DashboardContainer from "./ui/containers/DashboardContainer";
 import ScadaDetailContainer from "./ui/containers/ScadaDetailContainer";
 import { useAuthStore } from "./store/auth-store";
 import AdminPanelContainer from "./ui/containers/AdminPanelContainer";
+import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
+import ConnectionMonitor from "./features/connections/ConnectionMonitor";
+import MachineHistory from "./features/history/MachineHistory";
+import SignalConfig from "./features/signal-config/SignalConfig";
+import EquivalenceConfig from "./features/equivalence-config/EquivalenceConfig";
+import UserProfile from "./features/profile/UserProfile";
+import Settings from "./features/settings/Settings";
 import type { ReactNode } from "react";
-
-/* ── Query client ───────────────────────────────────────────── */
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 10_000,        // 10 s before a background refetch
+      staleTime: 10_000,
       retry: 1,
       refetchOnWindowFocus: false,
     },
   },
 });
-
-/* ── Role guard wrapper for admin‑only routes ───────────────── */
 
 function AdminGuard({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user);
@@ -30,8 +32,6 @@ function AdminGuard({ children }: { children: ReactNode }) {
   }
   return <>{children}</>;
 }
-
-/* ── Root redirect ──────────────────────────────────────────── */
 
 function RootRedirect() {
   const token = useAuthStore((s) => s.token);
@@ -42,24 +42,33 @@ function RootRedirect() {
   return <Navigate to={home} replace />;
 }
 
-/* ── Router definition ──────────────────────────────────────── */
-
 const router = createBrowserRouter([
-  // Public
   { path: "/login", element: <LoginContainer /> },
 
-  // Protected — any authenticated role
   {
     element: <PrivateRoute />,
     children: [
       {
         element: <AppLayout />,
         children: [
-          { path: "dashboard", element: <DashboardContainer /> },
-          {
-            path: "dashboard/:id/scada",
-            element: <ScadaDetailContainer />,
-          },
+          { index: true, element: <Navigate to="/dashboard" replace /> },
+
+          // Dashboard
+          { path: "dashboard", element: <MultiMachineDashboard /> },
+          { path: "dashboard/:id/scada", element: <ScadaDetailContainer /> },
+
+          // Machine detail routes
+          { path: "machines/:machineId/history", element: <MachineHistory /> },
+          { path: "machines/:machineId/signals", element: <SignalConfig /> },
+          { path: "machines/:machineId", element: <ScadaDetailContainer /> },
+
+          // Global pages
+          { path: "connections", element: <ConnectionMonitor /> },
+          { path: "settings/equivalences", element: <EquivalenceConfig /> },
+          { path: "profile", element: <UserProfile /> },
+          { path: "settings", element: <Settings /> },
+
+          // Admin
           {
             path: "admin/*",
             element: (
@@ -73,11 +82,8 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Root — redirect based on auth state
   { path: "/", element: <RootRedirect /> },
 ]);
-
-/* ── App root component ─────────────────────────────────────── */
 
 export function App() {
   return (
