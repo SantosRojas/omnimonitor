@@ -1,7 +1,10 @@
 //! Server binary: REST + dual WebSocket server for omni-pdms-v2.
 //!
 //! Usage:
-//!   cargo run -p server -- --db-url "postgres://user:pass@localhost/pdms" --port 9000
+//!   cargo run -p server [--port 9000] [--db-url "postgres://override:..."]
+//!
+//! DB config via .env (Laravel-style):
+//!   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD
 
 #![allow(clippy::print_stdout)]
 
@@ -12,7 +15,7 @@ use argon2::PasswordHasher;
 use axum::{routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use tracing::{error, info};
 
 use server::api::{self, AppState};
@@ -37,10 +40,18 @@ struct Args {
     frontend_dist: String,
 }
 
+fn build_db_url() -> String {
+    let host = std::env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string());
+    let database = std::env::var("DB_DATABASE").unwrap_or_else(|_| "pdms".to_string());
+    let username = std::env::var("DB_USERNAME").unwrap_or_else(|_| "postgres".to_string());
+    let password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
+    format!("postgres://{username}:{password}@{host}:{port}/{database}")
+}
+
 fn parse_args() -> Args {
     // Env var defaults (dotenvy::dotenv() loads .env before this)
-    let mut db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/pdms".to_string());
+    let mut db_url = build_db_url();
     let mut port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -231,10 +242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_check))
         .merge(rest_api)
         .merge(ws_routes)
-        .fallback_service(
-            ServeDir::new(&args.frontend_dist)
-                .not_found_service(ServeFile::new(format!("{}/index.html", args.frontend_dist))),
-        )
+        .fallback_service(ServeDir::new(&args.frontend_dist))
         .layer(CorsLayer::permissive());
 
     // ── Start server ──────────────────────────────

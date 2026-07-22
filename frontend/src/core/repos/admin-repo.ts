@@ -1,5 +1,4 @@
-import type { User, Patient } from "../types";
-import type { Therapy } from "../types";
+import type { User } from "../types";
 
 export interface AdminRepo {
   // Users

@@ -144,8 +144,8 @@ describe("LoginContainer", () => {
 
   it("shows loading indicator while the request is in flight", async () => {
     // Use a deferred response to keep loading state visible
-    let resolveLogin!: (value: HttpResponse) => void;
-    const deferred = new Promise<HttpResponse>((resolve) => {
+    let resolveLogin!: (value: Response) => void;
+    const deferred = new Promise<Response>((resolve) => {
       resolveLogin = resolve;
     });
 

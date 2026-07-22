@@ -6,7 +6,6 @@ import {
   it,
   vi,
   beforeEach,
-  type MockedFunction,
 } from "vitest";
 import { PrivateRoute } from "../PrivateRoute";
 import { useAuthStore } from "../../../store/auth-store";

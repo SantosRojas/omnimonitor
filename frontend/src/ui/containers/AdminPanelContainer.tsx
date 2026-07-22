@@ -155,7 +155,7 @@ function EquivalencesSection() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? "Edit Equivalence" : "Create Equivalence"}</h3>
-            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id, from: state.editing.from, to: state.editing.to } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
+            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id as number, from: state.editing.from as string, to: state.editing.to as string } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
             <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
           </CardContent>
         </Card>
@@ -202,7 +202,7 @@ function MachineIpsSection() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? "Edit Machine IP" : "Add Machine IP"}</h3>
-            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id, machine_id: state.editing.machine_id, ip_address: state.editing.ip_address } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
+            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id as number, machine_id: state.editing.machine_id as number, ip_address: state.editing.ip_address as string } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
             <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
           </CardContent>
         </Card>

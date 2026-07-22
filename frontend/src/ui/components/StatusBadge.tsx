@@ -32,7 +32,7 @@ const colourClasses: Record<string, string> = {
 };
 
 function badgeColour(status: string): string {
-  return colourClasses[status] ?? colourClasses.completed;
+  return colourClasses[status] ?? colourClasses["completed"]!;
 }
 
 /**

@@ -56,7 +56,7 @@ export default function DashboardContainer() {
     error,
   } = useQuery<ActiveTherapyRow[]>({
     queryKey: ["therapies", "active"],
-    queryFn: () => therapyRepo.list({ status: "active" }) as Promise<ActiveTherapyRow[]>,
+    queryFn: () => therapyRepo.list({ status: "active" }) as unknown as Promise<ActiveTherapyRow[]>,
   });
 
   /* ── WebSocket subscriptions for all active machines ─────────── */

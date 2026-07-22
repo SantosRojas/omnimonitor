@@ -40,7 +40,7 @@ export interface AdminCrudTableProps<T> {
  * data array. Supports optional Edit / Delete action columns, a loading
  * skeleton, and an empty state message.
  */
-export function AdminCrudTable<T extends Record<string, unknown>>({
+export function AdminCrudTable<T>({
   columns,
   data,
   isLoading,
@@ -115,11 +115,11 @@ export function AdminCrudTable<T extends Record<string, unknown>>({
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((row, rowIdx) => (
             <tr
-              key={(row.id as string | number) ?? rowIdx}
+              key={(row as Record<string, unknown>).id as string | number ?? rowIdx}
               className="hover:bg-gray-50/50 transition-colors"
             >
               {columns.map((col) => {
-                const value = row[col.key];
+                const value = (row as Record<string, unknown>)[col.key];
                 return (
                   <td
                     key={col.key}
