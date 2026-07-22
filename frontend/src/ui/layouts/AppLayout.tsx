@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { useAuthStore } from "../../store/auth-store";
+import { useThemeStore } from "../../store/theme-store";
 import { cn } from "../primitives";
 
 const navItems = [
@@ -38,24 +39,11 @@ export function AppLayout() {
   const { user, logout } = useAuthStore();
   const isAdmin = user?.role === "admin";
 
+  const { theme, setTheme, toggle } = useThemeStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("omni-sidebar-collapsed") === "true",
   );
-  const [darkMode, setDarkMode] = useState(
-    () => localStorage.getItem("theme") === "dark",
-  );
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      root.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [darkMode]);
 
   function toggleCollapsed() {
     setCollapsed((prev) => {
@@ -63,10 +51,6 @@ export function AppLayout() {
       localStorage.setItem("omni-sidebar-collapsed", String(next));
       return next;
     });
-  }
-
-  function cycleTheme() {
-    setDarkMode((prev) => !prev);
   }
 
   const handleLogout = () => {
@@ -161,10 +145,10 @@ export function AppLayout() {
         {!collapsed && (
           <div className="mb-2 mt-3 flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
             <button
-              onClick={() => setDarkMode(false)}
+              onClick={() => setTheme("light")}
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
-                !darkMode
+                theme === "light"
                   ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
@@ -173,10 +157,10 @@ export function AppLayout() {
               <Sun className="h-3.5 w-3.5" />
             </button>
             <button
-              onClick={() => setDarkMode(true)}
+              onClick={() => setTheme("dark")}
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
-                darkMode
+                theme === "dark"
                   ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
@@ -189,8 +173,8 @@ export function AppLayout() {
 
         {collapsed && (
           <div className="mt-3 flex justify-center">
-            <Button variant="ghost" size="icon" onClick={cycleTheme} title={darkMode ? "Light" : "Dark"}>
-              {darkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            <Button variant="ghost" size="icon" onClick={toggle} title={theme === "light" ? "Dark" : "Light"}>
+              {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
           </div>
         )}
