@@ -178,6 +178,7 @@ name = "bridge"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dotenvy",
  "futures-util",
  "serde",
  "serde_json",

@@ -12,5 +12,8 @@ pub const MIGRATION_002: &str = include_str!("002_unique_signal_name.sql");
 /// Migration 003: remove unused description column from equivalences.
 pub const MIGRATION_003: &str = include_str!("003_drop_equiv_description.sql");
 
+/// Migration 004: create bridges table for IP-based auth.
+pub const MIGRATION_004: &str = include_str!("004_bridges.sql");
+
 /// Ordered list of all migrations.
-pub const ALL_MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002, MIGRATION_003];
+pub const ALL_MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004];

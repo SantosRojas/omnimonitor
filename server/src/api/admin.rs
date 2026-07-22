@@ -34,6 +34,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/admin/machine-ips", post(create_machine_ip))
         .route("/admin/machine-ips/:id", patch(update_machine_ip))
         .route("/admin/machine-ips/:id", delete(delete_machine_ip))
+        // Bridges CRUD
+        .route("/admin/bridges", get(list_bridges))
+        .route("/admin/bridges", post(create_bridge))
+        .route("/admin/bridges/:id", patch(update_bridge))
+        .route("/admin/bridges/:id", delete(delete_bridge))
         // Therapy Comments
         .route("/admin/therapies/:id/comments", get(list_comments))
         .route("/admin/therapies/:id/comments", post(create_comment))
@@ -84,6 +89,18 @@ pub struct CreateMachineIpRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateMachineIpRequest {
     pub ip_address: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateBridgeRequest {
+    pub ip_address: String,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBridgeRequest {
+    pub label: Option<String>,
+    pub authorized: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -402,6 +419,77 @@ async fn delete_machine_ip(
         ));
     }
 
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Bridges ───────────────────────────────────────────
+
+/// GET /admin/bridges
+async fn list_bridges(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let bridges = state.bridge_repo.list().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )
+    })?;
+    Ok(Json(json!(bridges)))
+}
+
+/// POST /admin/bridges
+async fn create_bridge(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateBridgeRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let bridge = state
+        .bridge_repo
+        .create(&req.ip_address, req.label.as_deref())
+        .await
+        .map_err(|e| match e {
+            RepoError::Conflict(_) => (StatusCode::CONFLICT, Json(json!({"error": e.to_string()}))),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ),
+        })?;
+
+    Ok((StatusCode::CREATED, Json(json!(bridge))))
+}
+
+/// PATCH /admin/bridges/:id
+async fn update_bridge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateBridgeRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let bridge = state
+        .bridge_repo
+        .update(id, req.label.as_deref(), req.authorized)
+        .await
+        .map_err(|e| match e {
+            RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ),
+        })?;
+
+    Ok(Json(json!(bridge)))
+}
+
+/// DELETE /admin/bridges/:id
+async fn delete_bridge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    state.bridge_repo.delete(id).await.map_err(|e| match e {
+        RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),
+        other => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": other.to_string()})),
+        ),
+    })?;
     Ok(StatusCode::NO_CONTENT)
 }
 

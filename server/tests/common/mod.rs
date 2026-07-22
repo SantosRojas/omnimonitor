@@ -15,6 +15,8 @@ use std::sync::Arc;
 
 use server::api::{AppState, build_router};
 use server::infrastructure::postgres::{
+    bridge_repo::BridgeRepo,
+    equivalence_repo::EquivalenceRepo,
     machine_repo::MachineRepo,
     patient_repo::PatientRepo,
     readings_repo::ReadingsRepo,
@@ -38,7 +40,7 @@ pub async fn setup_db(pool: &PgPool) {
 }
 
 /// Create repositories for a test database pool.
-pub fn create_repos(pool: PgPool) -> RepoBundle {
+pub fn create_repos(pool: &PgPool) -> RepoBundle {
     RepoBundle {
         machine: MachineRepo::new(pool.clone()),
         patient: PatientRepo::new(pool.clone()),
@@ -46,7 +48,9 @@ pub fn create_repos(pool: PgPool) -> RepoBundle {
         readings: ReadingsRepo::new(pool.clone()),
         signal: SignalRepo::new(pool.clone()),
         version: VersionRepo::new(pool.clone()),
-        user: UserRepo::new(pool),
+        user: UserRepo::new(pool.clone()),
+        bridge: BridgeRepo::new(pool.clone()),
+        equivalence: EquivalenceRepo::new(pool.clone()),
     }
 }
 
@@ -59,6 +63,8 @@ pub struct RepoBundle {
     pub signal: SignalRepo,
     pub version: VersionRepo,
     pub user: UserRepo,
+    pub bridge: BridgeRepo,
+    pub equivalence: EquivalenceRepo,
 }
 
 /// Build a fully-wired Axum router with a test JWT secret.
@@ -66,16 +72,19 @@ pub struct RepoBundle {
 /// Applies migrations first, so the caller does NOT need to call `setup_db`.
 pub async fn build_test_app(pool: PgPool) -> axum::Router {
     setup_db(&pool).await;
-    let repos = create_repos(pool);
+    let repos = create_repos(&pool);
     let ws_hub = Arc::new(WsHubState::new(
         repos.machine.clone(),
         repos.patient.clone(),
         repos.therapy.clone(),
         repos.readings.clone(),
         repos.version.clone(),
+        repos.bridge.clone(),
     ));
     let state = Arc::new(AppState {
         jwt_secret: "test-jwt-secret".into(),
+        db_pool: pool,
+        equivalence_repo: repos.equivalence,
         machine_repo: repos.machine,
         patient_repo: repos.patient,
         therapy_repo: repos.therapy,
@@ -83,6 +92,7 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         signal_repo: repos.signal,
         version_repo: repos.version,
         user_repo: repos.user,
+        bridge_repo: repos.bridge,
         ws_hub,
     });
     let rest_api = build_router(state.clone());

@@ -14,6 +14,8 @@
 //! 3. **Failure tracking**: records successes and failures via `SerialReaderManager`.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -85,32 +87,34 @@ impl CyclicalState {
 //  Init protocol helpers
 // ──────────────────────────────────────────────────────────────
 
-/// Sends a `Register` frame and waits for an `Ack` response.
+/// Sends a `Register` frame with the bridge's IP address and waits
+/// for a `Registered { bridge_id }` response.
 async fn send_register(
-    serial_number: &str,
+    bridge_ip: &str,
     tx_readings: &mpsc::Sender<BridgeFrame>,
     rx_commands: &mut mpsc::Receiver<ServerFrame>,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     let frame = BridgeFrame::Register {
-        serial_number: serial_number.to_owned(),
-        mac_addr: None,
+        ip_address: bridge_ip.to_owned(),
     };
     tx_readings.send(frame).await.map_err(|e| format!("Failed to send register: {e}"))?;
 
-    // Wait for Ack (with timeout)
     let timeout = Duration::from_secs(10);
     loop {
         match tokio::time::timeout(timeout, rx_commands.recv()).await {
-            Ok(Some(ServerFrame::Ack)) => return Ok(()),
+            Ok(Some(ServerFrame::Registered { bridge_id })) => {
+                tracing::info!("[bridge] registered with bridge_id={}", bridge_id);
+                return Ok(bridge_id);
+            }
             Ok(Some(ServerFrame::Error { message })) => {
                 return Err(format!("Server error during register: {message}"));
             }
             Ok(Some(_)) => {
-                // Unexpected frame — keep waiting for Ack
+                // Unexpected frame — keep waiting for Registered
                 continue;
             }
             Ok(None) => return Err("Server command channel closed".into()),
-            Err(_) => return Err("Timeout waiting for register Ack".into()),
+            Err(_) => return Err("Timeout waiting for register response".into()),
         }
     }
 }
@@ -185,6 +189,36 @@ async fn send_store_init(
 // ──────────────────────────────────────────────────────────────
 //  Serial protocol helpers (init Phases 2a–2c)
 // ──────────────────────────────────────────────────────────────
+
+/// Sends a `MachineIdentify` frame and waits for `MachineIdentified` response.
+async fn send_machine_identify(
+    bridge_id: i64,
+    serial_number: &str,
+    tx_readings: &mpsc::Sender<BridgeFrame>,
+    rx_commands: &mut mpsc::Receiver<ServerFrame>,
+) -> Result<i64, String> {
+    let frame = BridgeFrame::MachineIdentify {
+        bridge_id,
+        serial_number: serial_number.to_owned(),
+    };
+    tx_readings.send(frame).await.map_err(|e| format!("Failed to send machine_identify: {e}"))?;
+
+    let timeout = Duration::from_secs(10);
+    loop {
+        match tokio::time::timeout(timeout, rx_commands.recv()).await {
+            Ok(Some(ServerFrame::MachineIdentified { machine_id })) => {
+                tracing::info!("[bridge] machine identified: id={}", machine_id);
+                return Ok(machine_id);
+            }
+            Ok(Some(ServerFrame::Error { message })) => {
+                return Err(format!("Server error during machine_identify: {message}"));
+            }
+            Ok(Some(_)) => continue,
+            Ok(None) => return Err("Server command channel closed".into()),
+            Err(_) => return Err("Timeout waiting for MachineIdentified".into()),
+        }
+    }
+}
 
 /// PHASE 2a: get_data_handles — sends CMD_CODE_GET_HANDLES.
 fn get_data_handles(device: &mut impl DeviceCommunicator) -> Result<Vec<u16>, String> {
@@ -390,6 +424,23 @@ fn read_raw_value(bytes: &[u8], size: usize, data_type: DataType) -> i64 {
 //  Cyclical loop
 // ──────────────────────────────────────────────────────────────
 
+/// Extract the machine serial number from cyclical readings.
+/// Looks for the `d_serial_number_to_odi` signal discovered during init.
+fn extract_serial_from_readings(readings: &[TelemetryReading]) -> Option<String> {
+    for r in readings {
+        if r.internal_name == "d_serial_number_to_odi" {
+            let serial = match &r.physical_value {
+                TelemetryValue::String(s) => s.trim().to_string(),
+                TelemetryValue::Number(n) => n.to_string(),
+            };
+            if !serial.is_empty() {
+                return Some(serial);
+            }
+        }
+    }
+    None
+}
+
 /// Read cyclical values from the device and produce telemetry readings,
 /// while extracting metadata signals for the `TherapySetup` frame.
 fn read_cyclical_values(
@@ -572,8 +623,9 @@ impl MetadataTracker {
 
 /// Runs the full bridge interactor loop.
 ///
-/// 1. **Init protocol**: register → init_query → (load cache | full serial init)
-/// 2. **Cyclical loop**: read cyclical values → detect metadata → send frames
+/// 1. **Init protocol**: register (by IP) → init_query → (load cache | full serial init)
+/// 2. **Serial discovery**: first cyclical read → extract serial → MachineIdentify
+/// 3. **Cyclical loop**: read cyclical values → detect metadata → send frames
 ///
 /// # Arguments
 ///
@@ -582,14 +634,16 @@ impl MetadataTracker {
 /// * `serial_number` - The machine's serial number.
 /// * `tx_readings` - Channel to send outgoing `BridgeFrame`s to the WS client.
 /// * `rx_commands` - Channel to receive incoming `ServerFrame`s from the WS client.
+/// * `bridge_ip` - The bridge's own IP address for IP-based register auth.
 pub async fn run_bridge(
     device: &mut impl DeviceCommunicator,
     manager: &SerialReaderManager,
-    serial_number: &str,
+    _serial_number: &str,
     tx_readings: mpsc::Sender<BridgeFrame>,
     mut rx_commands: mpsc::Receiver<ServerFrame>,
+    bridge_ip: &str,
 ) {
-    tracing::info!("[bridge] starting interactor for {serial_number}");
+    tracing::info!("[bridge] starting interactor for bridge_ip={bridge_ip}");
 
     // ════════════════════════════════════════════════════════════
     //  PHASE 1: IDENTIFICATION — Get Version Numbers
@@ -612,14 +666,19 @@ pub async fn run_bridge(
     //  PHASE 2: WS INIT PROTOCOL
     // ════════════════════════════════════════════════════════════
 
-    // Step 1: Register with server
-    tracing::info!("[bridge] sending register...");
-    if let Err(e) = send_register(serial_number, &tx_readings, &mut rx_commands).await {
-        tracing::error!("[bridge] register failed: {e}");
-        manager.record_failure().await;
-        return;
-    }
-    tracing::info!("[bridge] registered successfully");
+    // Step 1: Register with server by IP → get bridge_id
+    tracing::info!("[bridge] sending register (IP={bridge_ip})...");
+    let bridge_id = match send_register(bridge_ip, &tx_readings, &mut rx_commands).await {
+        Ok(id) => {
+            tracing::info!("[bridge] registered successfully, bridge_id={id}");
+            id
+        }
+        Err(e) => {
+            tracing::error!("[bridge] register failed: {e}");
+            manager.record_failure().await;
+            return;
+        }
+    };
 
     // Step 2: Query server for version cache
     tracing::info!("[bridge] sending init_query...");
@@ -680,35 +739,33 @@ pub async fn run_bridge(
     //  PHASE 3: CYCLICAL LOOP
     // ════════════════════════════════════════════════════════════
 
-    // Get machine_id from server (send a minimal init to get our machine_id back)
-    // The server assigns machine_id during register — we receive it back in the first
-    // server frame. For now we default to machine_id = 0 and rely on the server to
-    // match by serial_number. The server will assign the real machine_id.
-    // In practice, the server sends back an Ack with machine_info after register.
-    // For this implementation, machine_id=0 and the server resolves it from the
-    // serial_number in each frame.
-    let machine_id: i64 = 0; // Server resolves from serial_number
+    // Use Arc<AtomicI64> so the heartbeat task and main loop share the
+    // resolved machine_id (starts at 0 until serial discovery completes).
+    let machine_id = Arc::new(AtomicI64::new(0));
+    let mut serial_resolved = false;
 
     manager.set_running().await;
-    tracing::info!("[bridge] entering cyclical loop");
+    tracing::info!("[bridge] entering cyclical loop (bridge_id={bridge_id})");
 
     // ── Heartbeat task (every 30s) ──
-    // Runs independently — exits automatically when tx_readings closes.
+    // Uses the shared atomic machine_id — updates when serial is resolved.
     let hb_tx = tx_readings.clone();
+    let hb_machine_id = machine_id.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         interval.tick().await; // Skip immediate first tick — give init time
         loop {
             interval.tick().await;
+            let mid = hb_machine_id.load(Ordering::Relaxed);
             if hb_tx
-                .send(BridgeFrame::Heartbeat { machine_id })
+                .send(BridgeFrame::Heartbeat { machine_id: mid })
                 .await
                 .is_err()
             {
                 tracing::debug!("[bridge] heartbeat channel closed, stopping");
                 break;
             }
-            tracing::trace!("[bridge] heartbeat sent");
+            tracing::trace!("[bridge] heartbeat sent (machine_id={mid})");
         }
     });
 
@@ -728,9 +785,41 @@ pub async fn run_bridge(
             Ok(readings) => {
                 manager.record_success().await;
 
+                // ── Serial discovery (first successful cycle only) ──
+                if !serial_resolved {
+                    if let Some(serial) = extract_serial_from_readings(&readings) {
+                        tracing::info!(
+                            "[bridge] discovered serial '{serial}' from cyclical data, sending MachineIdentify..."
+                        );
+                        match send_machine_identify(
+                            bridge_id,
+                            &serial,
+                            &tx_readings,
+                            &mut rx_commands,
+                        )
+                        .await
+                        {
+                            Ok(mid) => {
+                                machine_id.store(mid, Ordering::Relaxed);
+                                serial_resolved = true;
+                                tracing::info!(
+                                    "[bridge] machine identified: id={mid}, serial={serial}"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "[bridge] machine identify failed (will retry): {e}"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                let current_machine_id = machine_id.load(Ordering::Relaxed);
+
                 // ── Metadata change detection ──
                 if meta_tracker.has_changed(&state.metadata_cache) {
-                    let therapy_setup = build_therapy_setup(&state, machine_id);
+                    let therapy_setup = build_therapy_setup(&state, current_machine_id);
                     tracing::info!(
                         "[bridge] metadata changed, sending TherapySetup"
                     );
@@ -744,7 +833,7 @@ pub async fn run_bridge(
                 // ── Send readings (non-metadata signals only) ──
                 if !readings.is_empty() {
                     let readings_frame = BridgeFrame::Readings {
-                        machine_id,
+                        machine_id: current_machine_id,
                         cycle: state.cycle,
                         readings,
                     };
@@ -773,7 +862,7 @@ pub async fn run_bridge(
         }
     }
 
-    tracing::info!("[bridge] interactor loop ended");
+    tracing::info!("[bridge] interactor loop ended (bridge_id={bridge_id})");
 }
 
 /// Phase 1 (serial): Get version info from device.

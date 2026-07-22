@@ -15,6 +15,8 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use tower::ServiceExt;
 
+use server::infrastructure::postgres::bridge_repo::BridgeRepo;
+
 mod common;
 
 /// Read the full response body as bytes.
@@ -90,41 +92,81 @@ async fn get_auth_token(app: &axum::Router, username: &str) -> String {
     body["token"].as_str().unwrap().to_string()
 }
 
-/// Connect a bridge, register, and return (write_sink, read_stream).
+/// Pre-register a test bridge in the database so WS Register succeeds.
+async fn preregister_bridge(pool: &PgPool, ip: &str) -> i64 {
+    let repo = BridgeRepo::new(pool.clone());
+    let bridge = repo.create(ip, Some("gd-test-bridge")).await.unwrap();
+    bridge.id
+}
+
+/// Connect as a bridge via WS, register by IP, return (write, read, bridge_id).
 async fn bridge_connect_full(
     ws_url: &str,
-    serial_number: &str,
+    ip: &str,
 ) -> (
     impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+    i64,
 ) {
     let (ws_stream, _) = connect_async(ws_url).await.unwrap();
     let (mut write, mut read) = ws_stream.split();
 
     let register = serde_json::json!({
         "type": "Register",
-        "serial_number": serial_number,
+        "ip_address": ip,
     });
     write
         .send(Message::Text(register.to_string()))
         .await
         .unwrap();
 
-    // Consume Ack
     let msg = tokio::time::timeout(std::time::Duration::from_secs(5), read.by_ref().next())
         .await
-        .expect("Timeout waiting for Ack")
+        .expect("Timeout waiting for Register response")
         .expect("WS stream ended")
         .expect("WS error");
     let text = if let Message::Text(t) = msg {
         t
     } else {
-        panic!("Expected Text");
+        panic!("Expected Text, got {:?}", msg);
     };
-    let ack: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(ack["type"], "Ack");
+    let resp: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(resp["type"], "Registered", "Expected Registered, got: {}", text);
+    let bridge_id = resp["bridge_id"].as_i64().expect("bridge_id in Registered");
 
-    (write, read)
+    (write, read, bridge_id)
+}
+
+/// Send MachineIdentify and return the machine_id.
+async fn send_machine_identify(
+    write: &mut (impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin),
+    read: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin),
+    bridge_id: i64,
+    serial: &str,
+) -> i64 {
+    let identify = serde_json::json!({
+        "type": "MachineIdentify",
+        "bridge_id": bridge_id,
+        "serial_number": serial,
+    });
+    write
+        .send(Message::Text(identify.to_string()))
+        .await
+        .unwrap();
+
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(5), read.by_ref().next())
+        .await
+        .expect("Timeout waiting for MachineIdentified")
+        .expect("WS stream ended")
+        .expect("WS error");
+    let text = if let Message::Text(t) = msg {
+        t
+    } else {
+        panic!("Expected Text, got {:?}", msg);
+    };
+    let resp: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(resp["type"], "MachineIdentified", "Expected MachineIdentified, got: {}", text);
+    resp["machine_id"].as_i64().expect("machine_id in MachineIdentified")
 }
 
 /// Create a signal via REST and return its ID.
@@ -149,29 +191,6 @@ async fn create_signal(app: &axum::Router, token: &str, internal_name: &str) -> 
     body["id"].as_i64().unwrap()
 }
 
-/// Get machine_id by serial_number via REST.
-async fn get_machine_id(app: &axum::Router, token: &str, serial: &str) -> i64 {
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/machines")
-                .header("Authorization", format!("Bearer {}", token))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    let machines: Value = body_json(resp).await;
-    machines
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["serial_number"] == serial)
-        .map(|m| m["id"].as_i64().unwrap())
-        .expect("Machine not found")
-}
-
 // ════════════════════════════════════════════════════════════════════════
 //  Test 1: Reconnection — bridge reconnects, sends more readings
 // ════════════════════════════════════════════════════════════════════════
@@ -181,10 +200,10 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
     let (rest_app, _addr, ws_url) = start_test_env(pool.clone()).await;
     let token = get_auth_token(&rest_app, "gduser1").await;
 
-    // ── Session 1: Connect, send readings ──
-    let (mut write1, _read1) = bridge_connect_full(&ws_url, "GD-SN-001").await;
-
-    let machine_id = get_machine_id(&rest_app, &token, "GD-SN-001").await;
+    // ── Session 1: Connect, identify, send readings ──
+    preregister_bridge(&pool, "10.0.0.80").await;
+    let (mut write1, mut read1, bridge_id) = bridge_connect_full(&ws_url, "10.0.0.80").await;
+    let machine_id = send_machine_identify(&mut write1, &mut read1, bridge_id, "GD-SN-001").await;
 
     // Create the signal in the DB (needed for readings FK)
     let signal_id = create_signal(&rest_app, &token, "sig_a").await;
@@ -220,8 +239,10 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
     // Brief pause
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-    // ── Session 2: Reconnect, send more readings ──
-    let (mut write2, _read2) = bridge_connect_full(&ws_url, "GD-SN-001").await;
+    // ── Session 2: Reconnect, re-identify (same IP, bridge exists), send more readings ──
+    let (mut write2, mut read2, _) = bridge_connect_full(&ws_url, "10.0.0.80").await;
+    let machine_id2 = send_machine_identify(&mut write2, &mut read2, bridge_id, "GD-SN-001").await;
+    assert_eq!(machine_id2, machine_id, "Same serial should yield same machine_id");
 
     let batch2 = serde_json::json!({
         "type": "Readings",
@@ -299,9 +320,10 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
     let token = get_auth_token(&rest_app, "gduser2").await;
     let ws_url = format!("ws://{}/ws/bridge", addr);
 
-    // Session 1
-    let (mut write, _read) = bridge_connect_full(&ws_url, "RESTART-SN-001").await;
-    let machine_id = get_machine_id(&rest_app, &token, "RESTART-SN-001").await;
+    // Session 1 — register bridge + identify machine
+    preregister_bridge(&pool, "10.0.0.81").await;
+    let (mut write, mut read, bridge_id) = bridge_connect_full(&ws_url, "10.0.0.81").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "RESTART-SN-001").await;
 
     // Create the signal in the DB
     let signal_id = create_signal(&rest_app, &token, "restart_sig").await;
@@ -397,13 +419,17 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
     let a_sig_id = create_signal(&rest_app, &token, "a_sig").await;
     let b_sig_id = create_signal(&rest_app, &token, "b_sig").await;
 
-    // Bridge A
-    let (mut write_a, _read_a) = bridge_connect_full(&ws_url, "MULTI-SN-A").await;
-    let machine_a = get_machine_id(&rest_app, &token, "MULTI-SN-A").await;
+    // Pre-register both bridges
+    preregister_bridge(&pool, "10.0.0.90").await;
+    preregister_bridge(&pool, "10.0.0.91").await;
 
-    // Bridge B
-    let (mut write_b, _read_b) = bridge_connect_full(&ws_url, "MULTI-SN-B").await;
-    let machine_b = get_machine_id(&rest_app, &token, "MULTI-SN-B").await;
+    // Bridge A — connect, register, identify
+    let (mut write_a, mut read_a, bridge_a) = bridge_connect_full(&ws_url, "10.0.0.90").await;
+    let machine_a = send_machine_identify(&mut write_a, &mut read_a, bridge_a, "MULTI-SN-A").await;
+
+    // Bridge B — connect, register, identify
+    let (mut write_b, mut read_b, bridge_b) = bridge_connect_full(&ws_url, "10.0.0.91").await;
+    let machine_b = send_machine_identify(&mut write_b, &mut read_b, bridge_b, "MULTI-SN-B").await;
 
     assert_ne!(machine_a, machine_b, "Two machines must have different IDs");
 

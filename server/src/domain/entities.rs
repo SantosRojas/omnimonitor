@@ -7,6 +7,19 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+/// Bridge (RPi) registered by IP for WebSocket authentication.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Bridge {
+    pub id: i64,
+    pub ip_address: String,
+    pub label: Option<String>,
+    pub authorized: bool,
+    pub status: String,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
 /// Registered OMNI machine. Auto-created on bridge connect.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Machine {

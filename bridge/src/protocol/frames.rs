@@ -11,9 +11,11 @@ use super::{DataAttribute, DictionaryEntry, TelemetryReading, VersionInfo};
 #[serde(tag = "type")]
 pub enum BridgeFrame {
     Register {
+        ip_address: String,
+    },
+    MachineIdentify {
+        bridge_id: i64,
         serial_number: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        mac_addr: Option<String>,
     },
     InitQuery {
         fingerprint: String,
@@ -56,6 +58,12 @@ pub enum ServerFrame {
     },
     UnknownVersion,
     Ack,
+    Registered {
+        bridge_id: i64,
+    },
+    MachineIdentified {
+        machine_id: i64,
+    },
     Error {
         message: String,
     },
@@ -78,21 +86,42 @@ mod tests {
     #[test]
     fn bridge_frame_register() {
         let frame = BridgeFrame::Register {
-            serial_number: "OMNI-2026-001".into(),
-            mac_addr: Some("00:1A:2B:3C:4D:5E".into()),
+            ip_address: "10.0.0.50".into(),
         };
         round_trip(&frame, "BridgeFrame::Register");
+        let json = serde_json::to_string(&frame).unwrap();
+        assert!(json.contains("\"ip_address\":\"10.0.0.50\""), "Register should have ip_address: {json}");
     }
 
     #[test]
-    fn bridge_frame_register_no_mac() {
-        let frame = BridgeFrame::Register {
-            serial_number: "OMNI-2026-002".into(),
-            mac_addr: None,
+    fn bridge_frame_machine_identify() {
+        let frame = BridgeFrame::MachineIdentify {
+            bridge_id: 1,
+            serial_number: "OMNI-2026-001".into(),
         };
-        round_trip(&frame, "BridgeFrame::Register (no MAC)");
-        let json = serde_json::to_string(&frame).unwrap();
-        assert!(!json.contains("mac_addr"), "mac_addr should be skipped when None: {json}");
+        round_trip(&frame, "BridgeFrame::MachineIdentify");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "MachineIdentify");
+        assert_eq!(json["bridge_id"], 1);
+        assert_eq!(json["serial_number"], "OMNI-2026-001");
+    }
+
+    #[test]
+    fn server_frame_registered() {
+        let frame = ServerFrame::Registered { bridge_id: 42 };
+        round_trip(&frame, "ServerFrame::Registered");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "Registered");
+        assert_eq!(json["bridge_id"], 42);
+    }
+
+    #[test]
+    fn server_frame_machine_identified() {
+        let frame = ServerFrame::MachineIdentified { machine_id: 99 };
+        round_trip(&frame, "ServerFrame::MachineIdentified");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "MachineIdentified");
+        assert_eq!(json["machine_id"], 99);
     }
 
     #[test]
@@ -214,8 +243,7 @@ mod tests {
     fn bridge_frame_tag_dispatch() {
         // Verify the `type` field is correctly serialized for each variant
         let register = BridgeFrame::Register {
-            serial_number: "S/N".into(),
-            mac_addr: None,
+            ip_address: "10.0.0.50".into(),
         };
         let json = serde_json::to_value(&register).unwrap();
         assert_eq!(json["type"], "Register");

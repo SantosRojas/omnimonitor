@@ -3,7 +3,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run -p bridge -- --port COM1 --baud 115200 --ws ws://localhost:9000/ws
+//! cargo run -p bridge -- --port COM1 --baud 115200 --ws ws://localhost:9000/ws --bridge-ip 10.0.0.50
 //! ```
 //!
 //! # Architecture
@@ -15,6 +15,15 @@
 //!
 //! Readings flow: serial → `tx_readings` channel → WS → server
 //! Commands flow: server → WS → `tx_commands` channel → serial task
+//!
+//! # Configuration Precedence
+//!
+//! Config is loaded with the following precedence (later overrides earlier):
+//!
+//! 1. Hardcoded defaults
+//! 2. `.env` file (loaded via `dotenvy`)
+//! 3. Environment variables (`BRIDGE_*`)
+//! 4. CLI arguments (`--port`, `--ws`, `--bridge-ip`, etc.)
 
 use std::sync::Arc;
 
@@ -26,44 +35,199 @@ use bridge::serial::communicator::{SerialConfig, SerialDeviceCommunicator};
 use bridge::serial::manager::SerialReaderManager;
 use bridge::ws_client::connect_and_run;
 
-/// Default serial port parameters.
-const DEFAULT_BAUD: u32 = 115200;
-const DEFAULT_SRC_ADDR: u8 = 1;
-const DEFAULT_DST_ADDR: u8 = 16;
-const DEFAULT_TIMEOUT_SECS: u64 = 3;
-const DEFAULT_MAX_FAILURES: u32 = 10;
+// ───────────────────────────────────────────────
+//  Configuration
+// ───────────────────────────────────────────────
+
+/// Bridge configuration loaded with precedence:
+/// defaults → .env → env vars (`BRIDGE_*`) → CLI args.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BridgeConfig {
+    pub port: String,
+    pub baud: u32,
+    pub ws_url: String,
+    pub src_addr: u8,
+    pub dst_addr: u8,
+    pub bridge_ip: String,
+    pub max_failures: u32,
+    pub timeout_secs: u64,
+}
+
+impl Default for BridgeConfig {
+    fn default() -> Self {
+        Self {
+            port: String::new(),
+            baud: 115200,
+            ws_url: String::new(),
+            src_addr: 11,
+            dst_addr: 16,
+            bridge_ip: String::new(),
+            max_failures: 10,
+            timeout_secs: 3,
+        }
+    }
+}
+
+/// Loads configuration with the precedence pipeline:
+/// defaults → .env → env vars → CLI args.
+///
+/// Each later source overrides only if the value is explicitly provided.
+/// `dotenvy::dotenv()` MUST be called before this so that `.env` values
+/// are available as environment variables (without overriding real env vars).
+pub fn load_config(args: &[String]) -> BridgeConfig {
+    let mut config = BridgeConfig::default();
+
+    // ── Override from env vars (includes .env via dotenvy) ──
+    if let Ok(v) = std::env::var("BRIDGE_PORT") {
+        config.port = v;
+    }
+    if let Ok(v) = std::env::var("BRIDGE_BAUD") {
+        if let Ok(n) = v.parse() {
+            config.baud = n;
+        }
+    }
+    if let Ok(v) = std::env::var("BRIDGE_SRC_ADDR") {
+        if let Ok(n) = v.parse() {
+            config.src_addr = n;
+        }
+    }
+    if let Ok(v) = std::env::var("BRIDGE_WS_URL") {
+        config.ws_url = v;
+    }
+    if let Ok(v) = std::env::var("BRIDGE_DST_ADDR") {
+        if let Ok(n) = v.parse() {
+            config.dst_addr = n;
+        }
+    }
+    if let Ok(v) = std::env::var("BRIDGE_IP") {
+        config.bridge_ip = v;
+    }
+    if let Ok(v) = std::env::var("BRIDGE_MAX_FAILURES") {
+        if let Ok(n) = v.parse() {
+            config.max_failures = n;
+        }
+    }
+    if let Ok(v) = std::env::var("BRIDGE_TIMEOUT_SECS") {
+        if let Ok(n) = v.parse() {
+            config.timeout_secs = n;
+        }
+    }
+
+    // ── Override from CLI args ──
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" => {
+                if i + 1 < args.len() {
+                    config.port = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    eprintln!("Missing value for --port");
+                    i += 1;
+                }
+            }
+            "--baud" => {
+                if i + 1 < args.len() {
+                    config.baud = args[i + 1].parse().unwrap_or(config.baud);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--ws" => {
+                if i + 1 < args.len() {
+                    config.ws_url = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    eprintln!("Missing value for --ws");
+                    i += 1;
+                }
+            }
+            "--src-addr" => {
+                if i + 1 < args.len() {
+                    config.src_addr = args[i + 1].parse().unwrap_or(config.src_addr);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--dst-addr" => {
+                if i + 1 < args.len() {
+                    config.dst_addr = args[i + 1].parse().unwrap_or(config.dst_addr);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "--bridge-ip" => {
+                if i + 1 < args.len() {
+                    config.bridge_ip = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    eprintln!("Missing value for --bridge-ip");
+                    i += 1;
+                }
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    config
+}
+
+// ───────────────────────────────────────────────
+//  Main
+// ───────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
-    // ── Parse CLI args ──
+    // ── Load .env if present (does NOT overwrite existing env vars) ──
+    let _ = dotenvy::dotenv();
+
+    // ── Load config with full precedence pipeline ──
     let args: Vec<String> = std::env::args().collect();
+    let config = load_config(&args);
 
-    let (port, baud, ws_url, src_addr, dst_addr) = parse_args(&args);
-
-    if port.is_empty() || ws_url.is_empty() {
-        eprintln!("Usage: {} --port <PORT> --ws <WS_URL> [--baud 115200] [--src-addr 1] [--dst-addr 16]", args[0]);
+    if config.port.is_empty() || config.ws_url.is_empty() {
+        eprintln!(
+            "Usage: {} --port <PORT> --ws <WS_URL> \
+              [--baud 115200] [--src-addr 11] [--dst-addr 16] \
+             [--bridge-ip <IP>]",
+            args[0]
+        );
         std::process::exit(1);
     }
 
-    // Initialize tracing (simple env_logger style — use RUST_LOG for level)
+    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
     tracing::info!(
-        "bridge starting: port={port}, baud={baud}, ws={ws_url}, src={src_addr}, dst={dst_addr}"
+        "bridge starting: port={}, baud={}, ws={}, src={}, dst={}, \
+         bridge_ip={}, max_failures={}, timeout_secs={}",
+        config.port,
+        config.baud,
+        config.ws_url,
+        config.src_addr,
+        config.dst_addr,
+        config.bridge_ip,
+        config.max_failures,
+        config.timeout_secs,
     );
 
     // ── Open serial port ──
-    let config = SerialConfig {
-        port_name: port.clone(),
-        baudrate: baud,
-        timeout_secs: DEFAULT_TIMEOUT_SECS,
-        src_addr,
-        dst_addr,
+    let serial_config = SerialConfig {
+        port_name: config.port.clone(),
+        baudrate: config.baud,
+        timeout_secs: config.timeout_secs,
+        src_addr: config.src_addr,
+        dst_addr: config.dst_addr,
     };
 
-    let device = match SerialDeviceCommunicator::new(config) {
+    let device = match SerialDeviceCommunicator::new(serial_config) {
         Ok(d) => d,
         Err(e) => {
             tracing::error!("Failed to open serial port: {e}");
@@ -74,20 +238,17 @@ async fn main() {
     let device = Arc::new(Mutex::new(device));
 
     // ── Create channels ──
-    // readings channel: serial/interactor → WS → server
     let (tx_readings, rx_readings) = mpsc::channel::<BridgeFrame>(256);
-    // commands channel: server → WS → serial/interactor
     let (tx_commands, rx_commands) = mpsc::channel::<ServerFrame>(16);
 
     // ── Create serial manager ──
-    let (manager, _cmd_rx, _state) =
-        SerialReaderManager::new(DEFAULT_MAX_FAILURES, true);
+    let (manager, _cmd_rx, _state) = SerialReaderManager::new(config.max_failures, true);
 
     // ── Determine serial number ──
-    let serial_number = port.clone(); // fallback: use port name
+    let serial_number = config.port.clone();
 
     // ── Spawn WS client task ──
-    let ws_url_clone = ws_url.clone();
+    let ws_url_clone = config.ws_url.clone();
     let ws_handle = tokio::spawn(async move {
         connect_and_run(&ws_url_clone, rx_readings, tx_commands).await;
     });
@@ -96,6 +257,7 @@ async fn main() {
     let device_clone = device.clone();
     let manager_clone = manager;
     let serial_number_clone = serial_number.clone();
+    let bridge_ip_clone = config.bridge_ip.clone();
     let serial_handle = tokio::spawn(async move {
         let mut device = device_clone.lock().await;
         run_bridge(
@@ -104,6 +266,7 @@ async fn main() {
             &serial_number_clone,
             tx_readings.clone(),
             rx_commands,
+            &bridge_ip_clone,
         )
         .await;
     });
@@ -111,14 +274,12 @@ async fn main() {
     // ── Graceful shutdown ──
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
 
-    // Handle Ctrl+C
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
         tracing::info!("Ctrl+C received, shutting down...");
         let _ = shutdown_tx.send(()).await;
     });
 
-    // Wait for shutdown signal or task completion
     tokio::select! {
         _ = shutdown_rx.recv() => {
             tracing::info!("Shutdown signal received");
@@ -134,81 +295,18 @@ async fn main() {
     tracing::info!("Bridge shutdown complete");
 }
 
-/// Parses CLI arguments.
-///
-/// Supported flags:
-/// - `--port <port>` (required): Serial port name (e.g. COM1, /dev/ttyUSB0)
-/// - `--ws <url>` (required): WebSocket server URL (e.g. ws://localhost:9000/ws)
-/// - `--baud <rate>` (optional, default: 115200): Baud rate
-/// - `--src-addr <addr>` (optional, default: 1): Source application address
-/// - `--dst-addr <addr>` (optional, default: 16): Destination application address
-fn parse_args(args: &[String]) -> (String, u32, String, u8, u8) {
-    let mut port = String::new();
-    let mut baud = DEFAULT_BAUD;
-    let mut ws_url = String::new();
-    let mut src_addr = DEFAULT_SRC_ADDR;
-    let mut dst_addr = DEFAULT_DST_ADDR;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--port" => {
-                if i + 1 < args.len() {
-                    port = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    eprintln!("Missing value for --port");
-                    i += 1;
-                }
-            }
-            "--baud" => {
-                if i + 1 < args.len() {
-                    baud = args[i + 1].parse().unwrap_or(DEFAULT_BAUD);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--ws" => {
-                if i + 1 < args.len() {
-                    ws_url = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    eprintln!("Missing value for --ws");
-                    i += 1;
-                }
-            }
-            "--src-addr" => {
-                if i + 1 < args.len() {
-                    src_addr = args[i + 1].parse().unwrap_or(DEFAULT_SRC_ADDR);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--dst-addr" => {
-                if i + 1 < args.len() {
-                    dst_addr = args[i + 1].parse().unwrap_or(DEFAULT_DST_ADDR);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            _ => {
-                i += 1;
-            }
-        }
-    }
-
-    (port, baud, ws_url, src_addr, dst_addr)
-}
+// ───────────────────────────────────────────────
+//  Tests
+// ───────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // ── CLI-only tests (deterministic, no env interference) ──
+
     #[test]
-    fn parse_args_all_provided() {
+    fn load_config_all_cli_args() {
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -221,17 +319,26 @@ mod tests {
             "2".to_string(),
             "--dst-addr".to_string(),
             "32".to_string(),
+            "--bridge-ip".to_string(),
+            "10.0.0.50".to_string(),
         ];
-        let (port, baud, ws_url, src_addr, dst_addr) = parse_args(&args);
-        assert_eq!(port, "COM1");
-        assert_eq!(baud, 9600);
-        assert_eq!(ws_url, "ws://localhost:9000");
-        assert_eq!(src_addr, 2);
-        assert_eq!(dst_addr, 32);
+        let config = load_config(&args);
+        assert_eq!(config.port, "COM1");
+        assert_eq!(config.baud, 9600);
+        assert_eq!(config.ws_url, "ws://localhost:9000");
+        assert_eq!(config.src_addr, 2);
+        assert_eq!(config.dst_addr, 32);
+        assert_eq!(config.bridge_ip, "10.0.0.50");
     }
 
     #[test]
-    fn parse_args_defaults() {
+    fn load_config_defaults_with_minimal_cli() {
+        // Sanitize env vars that may leak from parallel env tests
+        for var in ["BRIDGE_BAUD", "BRIDGE_IP", "BRIDGE_PORT", "BRIDGE_MAX_FAILURES",
+                     "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR"]
+        {
+            unsafe { std::env::remove_var(var); }
+        }
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -239,16 +346,19 @@ mod tests {
             "--ws".to_string(),
             "ws://host:8080/ws".to_string(),
         ];
-        let (port, baud, ws_url, src_addr, dst_addr) = parse_args(&args);
-        assert_eq!(port, "COM2");
-        assert_eq!(baud, DEFAULT_BAUD);
-        assert_eq!(ws_url, "ws://host:8080/ws");
-        assert_eq!(src_addr, DEFAULT_SRC_ADDR);
-        assert_eq!(dst_addr, DEFAULT_DST_ADDR);
+        let config = load_config(&args);
+        assert_eq!(config.port, "COM2");
+        assert_eq!(config.baud, BridgeConfig::default().baud);
+        assert_eq!(config.ws_url, "ws://host:8080/ws");
+        assert_eq!(config.src_addr, BridgeConfig::default().src_addr);
+        assert_eq!(config.dst_addr, BridgeConfig::default().dst_addr);
+        assert_eq!(config.bridge_ip, BridgeConfig::default().bridge_ip);
+        assert_eq!(config.max_failures, BridgeConfig::default().max_failures);
+        assert_eq!(config.timeout_secs, BridgeConfig::default().timeout_secs);
     }
 
     #[test]
-    fn parse_args_partial() {
+    fn load_config_partial_cli() {
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -258,28 +368,26 @@ mod tests {
             "--baud".to_string(),
             "115200".to_string(),
         ];
-        let (port, baud, ws_url, _, _) = parse_args(&args);
-        assert_eq!(port, "/dev/ttyUSB0");
-        assert_eq!(baud, 115200);
-        assert_eq!(ws_url, "ws://10.0.0.1:9000");
+        let config = load_config(&args);
+        assert_eq!(config.port, "/dev/ttyUSB0");
+        assert_eq!(config.baud, 115200);
+        assert_eq!(config.ws_url, "ws://10.0.0.1:9000");
     }
 
     #[test]
-    fn parse_args_missing_port() {
-        // Missing --port should return empty string
+    fn load_config_missing_port_returns_empty() {
         let args = vec![
             "bridge".to_string(),
             "--ws".to_string(),
             "ws://localhost".to_string(),
         ];
-        let (port, _, ws_url, _, _) = parse_args(&args);
-        assert_eq!(port, ""); // port is required
-        assert_eq!(ws_url, "ws://localhost");
+        let config = load_config(&args);
+        assert_eq!(config.port, "");
+        assert_eq!(config.ws_url, "ws://localhost");
     }
 
     #[test]
-    fn parse_args_invalid_baud_defaults() {
-        // Invalid baud value should use default
+    fn load_config_invalid_baud_cli_keeps_current() {
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -289,7 +397,112 @@ mod tests {
             "--ws".to_string(),
             "ws://localhost".to_string(),
         ];
-        let (_, baud, _, _, _) = parse_args(&args);
-        assert_eq!(baud, DEFAULT_BAUD);
+        let config = load_config(&args);
+        assert_eq!(config.baud, BridgeConfig::default().baud);
+    }
+
+    #[test]
+    fn load_config_bridge_ip_cli_only() {
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM4".to_string(),
+            "--ws".to_string(),
+            "ws://example.com/ws".to_string(),
+            "--bridge-ip".to_string(),
+            "192.168.1.100".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.bridge_ip, "192.168.1.100");
+        assert_eq!(config.port, "COM4");
+    }
+
+    // ── Environment variable tests ──
+    //
+    // NOTE: these set process-global env vars and MAY interfere if tests
+    // run in parallel. Use `cargo test -p bridge -- --test-threads=1` for
+    // deterministic env var isolation.
+
+    #[test]
+    fn load_config_env_overrides_defaults() {
+        // SAFETY: single-threaded test — no concurrent env access
+        unsafe { std::env::set_var("BRIDGE_BAUD", "19200"); }
+        unsafe { std::env::set_var("BRIDGE_IP", "10.0.0.99"); }
+
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.baud, 19200);
+        assert_eq!(config.bridge_ip, "10.0.0.99");
+
+        unsafe { std::env::remove_var("BRIDGE_BAUD"); }
+        unsafe { std::env::remove_var("BRIDGE_IP"); }
+    }
+
+    #[test]
+    fn load_config_cli_overrides_env() {
+        unsafe { std::env::set_var("BRIDGE_BAUD", "9600"); }
+        unsafe { std::env::set_var("BRIDGE_PORT", "COM3"); }
+
+        let args = vec![
+            "bridge".to_string(),
+            "--baud".to_string(),
+            "115200".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.baud, 115200); // CLI overrides env
+        assert_eq!(config.port, "COM1");  // CLI overrides env
+
+        unsafe { std::env::remove_var("BRIDGE_BAUD"); }
+        unsafe { std::env::remove_var("BRIDGE_PORT"); }
+    }
+
+    #[test]
+    fn load_config_invalid_env_value_ignored() {
+        unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "not-a-number"); }
+
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.timeout_secs, BridgeConfig::default().timeout_secs);
+
+        unsafe { std::env::remove_var("BRIDGE_TIMEOUT_SECS"); }
+    }
+
+    #[test]
+    fn load_config_env_and_cli_combined() {
+        unsafe { std::env::set_var("BRIDGE_MAX_FAILURES", "3"); }
+        unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "5"); }
+
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+            "--bridge-ip".to_string(),
+            "10.0.0.1".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.max_failures, 3);   // from env
+        assert_eq!(config.timeout_secs, 5);   // from env
+        assert_eq!(config.bridge_ip, "10.0.0.1"); // from CLI
+
+        unsafe { std::env::remove_var("BRIDGE_MAX_FAILURES"); }
+        unsafe { std::env::remove_var("BRIDGE_TIMEOUT_SECS"); }
     }
 }

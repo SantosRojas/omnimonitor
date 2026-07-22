@@ -7,6 +7,7 @@
 use sqlx::PgPool;
 
 use server::domain::entities::Reading;
+use server::infrastructure::postgres::bridge_repo::BridgeRepo;
 use server::infrastructure::postgres::machine_repo::MachineRepo;
 use server::infrastructure::postgres::patient_repo::PatientRepo;
 use server::infrastructure::postgres::readings_repo::ReadingsRepo;
@@ -809,4 +810,104 @@ async fn version_save_reinitialization(pool: PgPool) {
     let attrs = repo.get_attributes(version.id).await.unwrap();
     assert_eq!(attrs.len(), 1);
     assert_eq!(attrs[0].handle, 2);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  BridgeRepo tests
+// ════════════════════════════════════════════════════════════════════════
+
+#[sqlx::test]
+async fn bridge_create_and_find_by_ip(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let b = repo.create("10.0.0.50", Some("ICU-RPi-3")).await.unwrap();
+    assert_eq!(b.ip_address, "10.0.0.50");
+    assert_eq!(b.label.as_deref(), Some("ICU-RPi-3"));
+    assert!(b.authorized);
+    assert_eq!(b.status, "offline");
+
+    let found = repo.find_by_ip("10.0.0.50").await.unwrap().unwrap();
+    assert_eq!(found.id, b.id);
+
+    let not_found = repo.find_by_ip("10.0.0.99").await.unwrap();
+    assert!(not_found.is_none());
+}
+
+#[sqlx::test]
+async fn bridge_create_duplicate_ip(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    repo.create("10.0.0.50", None).await.unwrap();
+    let err = repo.create("10.0.0.50", None).await.unwrap_err();
+    // BridgeRepo::create doesn't catch unique violations explicitly,
+    // so sqlx errors surface as RepoError::Database
+    assert!(matches!(err, RepoError::Database(_)));
+}
+
+#[sqlx::test]
+async fn bridge_set_online_offline(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let b = repo.create("10.0.0.51", None).await.unwrap();
+    assert_eq!(b.status, "offline");
+
+    repo.set_online(b.id).await.unwrap();
+    let online = repo.find_by_ip("10.0.0.51").await.unwrap().unwrap();
+    assert_eq!(online.status, "online");
+    assert!(online.last_seen_at.is_some());
+
+    repo.set_offline(b.id).await.unwrap();
+    let offline = repo.find_by_ip("10.0.0.51").await.unwrap().unwrap();
+    assert_eq!(offline.status, "offline");
+}
+
+#[sqlx::test]
+async fn bridge_list(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    assert!(repo.list().await.unwrap().is_empty());
+
+    repo.create("10.0.0.52", None).await.unwrap();
+    repo.create("10.0.0.53", None).await.unwrap();
+    let all = repo.list().await.unwrap();
+    assert_eq!(all.len(), 2);
+}
+
+#[sqlx::test]
+async fn bridge_update(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let b = repo.create("10.0.0.54", Some("Old Label")).await.unwrap();
+
+    let updated = repo.update(b.id, Some("New Label"), Some(false)).await.unwrap();
+    assert_eq!(updated.label.as_deref(), Some("New Label"));
+    assert!(!updated.authorized);
+    assert!(updated.updated_at.is_some());
+}
+
+#[sqlx::test]
+async fn bridge_update_not_found(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let err = repo.update(999_999, None, None).await.unwrap_err();
+    assert!(matches!(err, RepoError::NotFound(_)));
+}
+
+#[sqlx::test]
+async fn bridge_delete(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let b = repo.create("10.0.0.55", None).await.unwrap();
+
+    repo.delete(b.id).await.unwrap();
+    let found = repo.find_by_ip("10.0.0.55").await.unwrap();
+    assert!(found.is_none());
+}
+
+#[sqlx::test]
+async fn bridge_delete_not_found(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = BridgeRepo::new(pool);
+    let err = repo.delete(999_999).await.unwrap_err();
+    assert!(matches!(err, RepoError::NotFound(_)));
 }

@@ -20,9 +20,9 @@ use tracing::{error, info};
 
 use server::api::{self, AppState};
 use server::infrastructure::postgres::{
-    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
-    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
-    user_repo::UserRepo, version_repo::VersionRepo,
+    bridge_repo::BridgeRepo, equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo,
+    patient_repo::PatientRepo, readings_repo::ReadingsRepo, signal_repo::SignalRepo,
+    therapy_repo::TherapyRepo, user_repo::UserRepo, version_repo::VersionRepo,
 };
 use server::infrastructure::{seed, ws_hub::WsHubState};
 use server::schema::ALL_MIGRATIONS;
@@ -116,6 +116,7 @@ const MIGRATION_NAMES: &[&str] = &[
     "001_initial.sql",
     "002_unique_signal_name.sql",
     "003_drop_equiv_description.sql",
+    "004_bridges.sql",
 ];
 
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
@@ -172,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Database schema up to date");
 
     // ── Repositories ──────────────────────────────
+    let bridge_repo = BridgeRepo::new(pool.clone());
     let equivalence_repo = EquivalenceRepo::new(pool.clone());
     let machine_repo = MachineRepo::new(pool.clone());
     let patient_repo = PatientRepo::new(pool.clone());
@@ -230,12 +232,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         therapy_repo.clone(),
         readings_repo.clone(),
         version_repo.clone(),
+        bridge_repo.clone(),
     ));
 
     // ── Unified app state ─────────────────────────
     let app_state = Arc::new(AppState {
         jwt_secret: args.jwt_secret.clone(),
         db_pool: pool.clone(),
+        bridge_repo,
         equivalence_repo,
         machine_repo,
         patient_repo,

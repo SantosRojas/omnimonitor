@@ -25,9 +25,9 @@ use axum::{
 };
 
 use crate::infrastructure::postgres::{
-    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
-    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
-    user_repo::UserRepo, version_repo::VersionRepo,
+    bridge_repo::BridgeRepo, equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo,
+    patient_repo::PatientRepo, readings_repo::ReadingsRepo, signal_repo::SignalRepo,
+    therapy_repo::TherapyRepo, user_repo::UserRepo, version_repo::VersionRepo,
 };
 use crate::infrastructure::ws_hub::{self, WsHubState};
 
@@ -44,6 +44,7 @@ pub struct AppState {
     pub signal_repo: SignalRepo,
     pub version_repo: VersionRepo,
     pub user_repo: UserRepo,
+    pub bridge_repo: BridgeRepo,
     pub ws_hub: Arc<WsHubState>,
 }
 

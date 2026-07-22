@@ -14,6 +14,7 @@ use tracing::{error, info, warn};
 
 use crate::domain::entities::Reading;
 use crate::infrastructure::postgres::{
+    bridge_repo::BridgeRepo,
     machine_repo::MachineRepo,
     patient_repo::PatientRepo,
     readings_repo::ReadingsRepo,
@@ -31,9 +32,11 @@ use crate::infrastructure::postgres::{
 #[serde(tag = "type")]
 pub enum BridgeFrame {
     Register {
+        ip_address: String,
+    },
+    MachineIdentify {
+        bridge_id: i64,
         serial_number: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        mac_addr: Option<String>,
     },
     InitQuery {
         fingerprint: String,
@@ -73,6 +76,12 @@ pub enum ServerFrame {
     },
     UnknownVersion,
     Ack,
+    Registered {
+        bridge_id: i64,
+    },
+    MachineIdentified {
+        machine_id: i64,
+    },
     Error {
         message: String,
     },
@@ -188,6 +197,7 @@ pub struct WsHubState {
     pub therapy_repo: TherapyRepo,
     pub readings_repo: ReadingsRepo,
     pub version_repo: VersionRepo,
+    pub bridge_repo: BridgeRepo,
     browser_subs: BrowserSenders,
 }
 
@@ -198,6 +208,7 @@ impl WsHubState {
         therapy_repo: TherapyRepo,
         readings_repo: ReadingsRepo,
         version_repo: VersionRepo,
+        bridge_repo: BridgeRepo,
     ) -> Self {
         Self {
             machine_repo,
@@ -205,6 +216,7 @@ impl WsHubState {
             therapy_repo,
             readings_repo,
             version_repo,
+            bridge_repo,
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -262,6 +274,7 @@ impl WsHubState {
 /// Handle a single bridge WebSocket connection.
 pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>) {
     let mut current_machine_id: Option<i64> = None;
+    let mut current_bridge_id: Option<i64> = None;
 
     loop {
         let msg = match ws.recv().await {
@@ -294,7 +307,7 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
             }
         };
 
-        let response = handle_bridge_frame(&state, &frame, &mut current_machine_id).await;
+        let response = handle_bridge_frame(&state, &frame, &mut current_machine_id, &mut current_bridge_id).await;
 
         match response {
             Ok(Some(resp_frame)) => {
@@ -319,6 +332,12 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
         }
     }
 
+    if let Some(bridge_id) = current_bridge_id {
+        if let Err(e) = state.bridge_repo.set_offline(bridge_id).await {
+            error!("Failed to set bridge {} offline on disconnect: {}", bridge_id, e);
+        }
+    }
+
     info!("Bridge connection closed");
 }
 
@@ -326,19 +345,36 @@ async fn handle_bridge_frame(
     state: &WsHubState,
     frame: &BridgeFrame,
     current_machine_id: &mut Option<i64>,
+    current_bridge_id: &mut Option<i64>,
 ) -> Result<Option<ServerFrame>, RepoError> {
     match frame {
-        BridgeFrame::Register {
-            serial_number,
-            mac_addr,
-        } => {
+        BridgeFrame::Register { ip_address } => {
+            match state.bridge_repo.find_by_ip(ip_address).await? {
+                Some(bridge) if bridge.authorized => {
+                    state.bridge_repo.set_online(bridge.id).await?;
+                    *current_bridge_id = Some(bridge.id);
+                    info!("Bridge {} registered (IP={})", bridge.id, ip_address);
+                    Ok(Some(ServerFrame::Registered { bridge_id: bridge.id }))
+                }
+                Some(_) => {
+                    warn!("Bridge IP {} exists but is deauthorized", ip_address);
+                    Ok(Some(ServerFrame::Error { message: "IP not authorized".into() }))
+                }
+                None => {
+                    warn!("Bridge IP {} not registered in bridges table", ip_address);
+                    Ok(Some(ServerFrame::Error { message: "IP not registered".into() }))
+                }
+            }
+        }
+
+        BridgeFrame::MachineIdentify { bridge_id, serial_number } => {
+            info!("Bridge {} identifying machine by serial {}", bridge_id, serial_number);
             let machine = state
                 .machine_repo
-                .upsert_by_serial(serial_number, mac_addr.as_deref(), None, None)
+                .upsert_by_serial(serial_number, None, None, None)
                 .await?;
             *current_machine_id = Some(machine.id);
-            info!("Bridge registered machine {} (serial={})", machine.id, serial_number);
-            Ok(Some(ServerFrame::Ack))
+            Ok(Some(ServerFrame::MachineIdentified { machine_id: machine.id }))
         }
 
         BridgeFrame::InitQuery { fingerprint } => {
