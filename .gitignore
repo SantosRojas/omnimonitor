@@ -1,3 +1,9 @@
 target/
 *.log
 .env
+.env.local
+*.env.local
+.pgdata/
+.atl/
+frontend/dist/
+frontend/node_modules/
