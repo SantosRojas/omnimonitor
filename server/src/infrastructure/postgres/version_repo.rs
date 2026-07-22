@@ -137,8 +137,34 @@ impl VersionRepo {
             .execute(&mut *tx)
             .await?;
 
-        // Insert attributes
+        // Phase 1: ensure every internal_name exists in the signals catalog.
+        // If the seed already created it → ON CONFLICT DO NOTHING.
+        // If it's a brand-new signal the seed doesn't know about → INSERT.
         for attr in attributes {
+            if !attr.internal_name.is_empty() {
+                sqlx::query(
+                    "INSERT INTO signals (internal_name) VALUES ($1) ON CONFLICT (internal_name) DO NOTHING",
+                )
+                .bind(&attr.internal_name)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        // Phase 2: insert data_attributes with the *real* signal_id from our catalog,
+        // not the raw OMNI handle number that the bridge sends as attr.signal_id.
+        for attr in attributes {
+            let catalog_signal_id: Option<i32> = if attr.internal_name.is_empty() {
+                None
+            } else {
+                let raw_id: i64 =
+                    sqlx::query_scalar("SELECT id FROM signals WHERE internal_name = $1")
+                        .bind(&attr.internal_name)
+                        .fetch_one(&mut *tx)
+                        .await?;
+                Some(raw_id as i32)
+            };
+
             sqlx::query(
                 r#"
                 INSERT INTO data_attributes (software_version_id, handle, data_type, size, conversion_factor, label_did, unit_did, signal_id, internal_name)
@@ -152,7 +178,7 @@ impl VersionRepo {
             .bind(attr.conversion_factor)
             .bind(attr.label_did)
             .bind(attr.unit_did)
-            .bind(attr.signal_id)
+            .bind(catalog_signal_id)
             .bind(&attr.internal_name)
             .execute(&mut *tx)
             .await?;

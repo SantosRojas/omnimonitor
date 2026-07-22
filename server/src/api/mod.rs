@@ -1,6 +1,8 @@
 //! REST API route handlers.
 
+pub mod admin;
 pub mod auth;
+pub mod equivalences;
 pub mod dashboards;
 pub mod export;
 pub mod machines;
@@ -23,9 +25,9 @@ use axum::{
 };
 
 use crate::infrastructure::postgres::{
-    machine_repo::MachineRepo, patient_repo::PatientRepo, readings_repo::ReadingsRepo,
-    signal_repo::SignalRepo, therapy_repo::TherapyRepo, user_repo::UserRepo,
-    version_repo::VersionRepo,
+    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
+    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
+    user_repo::UserRepo, version_repo::VersionRepo,
 };
 use crate::infrastructure::ws_hub::{self, WsHubState};
 
@@ -33,6 +35,8 @@ use crate::infrastructure::ws_hub::{self, WsHubState};
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub jwt_secret: String,
+    pub db_pool: sqlx::PgPool,
+    pub equivalence_repo: EquivalenceRepo,
     pub machine_repo: MachineRepo,
     pub patient_repo: PatientRepo,
     pub therapy_repo: TherapyRepo,
@@ -55,6 +59,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     // Protected routes — JWT auth middleware applied to all
     let protected = Router::new()
+        .merge(admin::router(state.clone()))
+        .merge(equivalences::router(state.clone()))
         .merge(machines::router(state.clone()))
         .merge(patients::router(state.clone()))
         .merge(therapies::router(state.clone()))

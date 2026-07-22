@@ -188,4 +188,15 @@ CREATE INDEX IF NOT EXISTS idx_machines_serial_number
 CREATE INDEX IF NOT EXISTS idx_software_versions_fingerprint
     ON software_versions (fingerprint);
 
+-- ───────────────────────────────────────────────
+--  Equivalences (standalone input→output mapping)
+-- ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS equivalences (
+    id              BIGSERIAL PRIMARY KEY,
+    input_value     TEXT NOT NULL,
+    output_value    TEXT NOT NULL,
+    description     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 COMMIT;

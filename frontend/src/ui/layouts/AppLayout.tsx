@@ -196,7 +196,7 @@ export function AppLayout() {
   );
 
   return (
-    <>
+    <div className="flex h-screen">
       {/* Mobile hamburger */}
       <button
         className="fixed left-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900 md:hidden"
@@ -208,7 +208,7 @@ export function AppLayout() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "relative hidden h-screen shrink-0 border-r border-neutral-200 bg-white transition-all duration-200 dark:border-neutral-800 dark:bg-neutral-900 md:block",
+          "relative hidden shrink-0 border-r border-neutral-200 bg-white transition-all duration-200 dark:border-neutral-800 dark:bg-neutral-900 md:block",
           collapsed ? "w-16" : "w-64",
         )}
       >
@@ -238,9 +238,9 @@ export function AppLayout() {
       )}
 
       {/* Main content */}
-      <main className="flex h-screen flex-1 flex-col overflow-y-auto bg-neutral-50 p-6 dark:bg-neutral-950">
+      <main className="flex flex-1 flex-col overflow-y-auto bg-neutral-50 p-6 dark:bg-neutral-950">
         <Outlet />
       </main>
-    </>
+    </div>
   );
 }

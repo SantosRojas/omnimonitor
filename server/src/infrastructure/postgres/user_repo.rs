@@ -65,4 +65,35 @@ impl UserRepo {
 
         Ok(rows)
     }
+
+    /// Update a user's username and role.
+    pub async fn update(
+        &self,
+        id: i64,
+        username: &str,
+        role: &str,
+    ) -> Result<User, RepoError> {
+        let row = sqlx::query_as::<_, User>(
+            "UPDATE users SET username = $1, role = $2 WHERE id = $3 RETURNING *",
+        )
+        .bind(username)
+        .bind(role)
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| RepoError::NotFound(format!("User {} not found", id)))?;
+        Ok(row)
+    }
+
+    /// Delete a user by id.
+    pub async fn delete(&self, id: i64) -> Result<(), RepoError> {
+        let result = sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(RepoError::NotFound(format!("User {} not found", id)));
+        }
+        Ok(())
+    }
 }

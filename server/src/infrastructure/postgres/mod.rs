@@ -6,6 +6,7 @@ pub mod readings_repo;
 pub mod signal_repo;
 pub mod therapy_repo;
 pub mod user_repo;
+pub mod equivalence_repo;
 pub mod version_repo;
 
 use thiserror::Error;

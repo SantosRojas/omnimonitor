@@ -83,6 +83,16 @@ pub struct SoftwareVersion {
     pub created_at: DateTime<Utc>,
 }
 
+/// Standalone input-to-output value equivalence mapping.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Equivalence {
+    pub id: i64,
+    pub input_value: String,
+    pub output_value: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
 /// Maps a numeric value to a human-readable display name for a signal.
 /// `numeric_value` is stored as DECIMAL in PostgreSQL and mapped via String
 /// to avoid pulling in `rust_decimal` or `bigdecimal` dependencies.

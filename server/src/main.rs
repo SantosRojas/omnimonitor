@@ -15,16 +15,16 @@ use argon2::PasswordHasher;
 use axum::{routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::{error, info};
 
 use server::api::{self, AppState};
 use server::infrastructure::postgres::{
-    machine_repo::MachineRepo, patient_repo::PatientRepo, readings_repo::ReadingsRepo,
-    signal_repo::SignalRepo, therapy_repo::TherapyRepo, user_repo::UserRepo,
-    version_repo::VersionRepo,
+    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
+    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
+    user_repo::UserRepo, version_repo::VersionRepo,
 };
-use server::infrastructure::ws_hub::WsHubState;
+use server::infrastructure::{seed, ws_hub::WsHubState};
 use server::schema::ALL_MIGRATIONS;
 
 // ───────────────────────────────────────────────
@@ -111,10 +111,14 @@ fn parse_args() -> Args {
 //  Migration runner
 // ───────────────────────────────────────────────
 
+/// Migration file names — mirrors the order in `ALL_MIGRATIONS`.
+const MIGRATION_NAMES: &[&str] = &["001_initial.sql", "002_unique_signal_name.sql"];
+
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     for (i, migration) in ALL_MIGRATIONS.iter().enumerate() {
         sqlx::raw_sql(migration).execute(pool).await?;
-        info!("Applied migration {} from {}", i + 1, "001_initial.sql");
+        let name = MIGRATION_NAMES.get(i).unwrap_or(&"unknown");
+        info!("Applied migration {} ({})", i + 1, name);
     }
     Ok(())
 }
@@ -164,6 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Database schema up to date");
 
     // ── Repositories ──────────────────────────────
+    let equivalence_repo = EquivalenceRepo::new(pool.clone());
     let machine_repo = MachineRepo::new(pool.clone());
     let patient_repo = PatientRepo::new(pool.clone());
     let therapy_repo = TherapyRepo::new(pool.clone());
@@ -208,6 +213,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Seeded admin user (default password: '{}')", args.admin_password);
     }
 
+    // ── Seed signals and value mappings ───────────
+    match seed::run(&pool).await {
+        Ok(_) => info!("Seed completed successfully"),
+        Err(e) => error!("Seed failed: {}", e),
+    }
+
     // ── WS hub state ──────────────────────────────
     let ws_hub = Arc::new(WsHubState::new(
         machine_repo.clone(),
@@ -220,6 +231,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Unified app state ─────────────────────────
     let app_state = Arc::new(AppState {
         jwt_secret: args.jwt_secret.clone(),
+        db_pool: pool.clone(),
+        equivalence_repo,
         machine_repo,
         patient_repo,
         therapy_repo,
@@ -242,7 +255,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_check))
         .merge(rest_api)
         .merge(ws_routes)
-        .fallback_service(ServeDir::new(&args.frontend_dist))
+        .fallback_service(
+            ServeDir::new(&args.frontend_dist)
+                .fallback(ServeFile::new(format!("{}/index.html", &args.frontend_dist))),
+        )
         .layer(CorsLayer::permissive());
 
     // ── Start server ──────────────────────────────

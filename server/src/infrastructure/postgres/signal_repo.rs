@@ -129,7 +129,59 @@ impl SignalRepo {
         Ok(())
     }
 
+    /// Upsert a signal by internal name.
+    ///
+    /// Preserves the existing `display_name` if already set (COALESCE).
+    /// Use `seed.rs` refresh logic when an explicit overwrite is needed.
+    pub async fn upsert_by_name(
+        &self,
+        internal_name: &str,
+        display_name: &str,
+        unit: Option<&str>,
+    ) -> Result<Signal, RepoError> {
+        let row = sqlx::query_as::<_, Signal>(
+            r#"
+            INSERT INTO signals (internal_name, display_name, unit)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (internal_name) DO UPDATE SET
+                display_name = COALESCE(signals.display_name, EXCLUDED.display_name),
+                unit = COALESCE(signals.unit, EXCLUDED.unit)
+            RETURNING *
+            "#,
+        )
+        .bind(internal_name)
+        .bind(display_name)
+        .bind(unit)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row)
+    }
+
     // ── Value Mappings ────────────────────────────────
+
+    /// Add a value mapping (idempotent — skip if exists).
+    pub async fn try_add_mapping(
+        &self,
+        signal_id: i64,
+        numeric_value: f64,
+        display_name: &str,
+    ) -> Result<(), RepoError> {
+        sqlx::query(
+            r#"
+            INSERT INTO value_mappings (signal_id, numeric_value, display_name)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (signal_id, numeric_value) DO NOTHING
+            "#,
+        )
+        .bind(signal_id)
+        .bind(numeric_value.to_string())
+        .bind(display_name)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 
     /// Add a value mapping to a signal.
     pub async fn add_mapping(

@@ -6,7 +6,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use serde::Deserialize;
@@ -20,6 +20,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/signals", get(list_signals))
         .route("/signals", post(create_signal))
         .route("/signals/:id", put(update_signal))
+        .route("/signals/:id", patch(update_signal))
         .route("/signals/:id", delete(delete_signal))
         .route("/signals/:id/mappings", post(add_mapping))
         .route("/signals/:id/mappings/:mapping_id", delete(delete_mapping))
@@ -45,7 +46,7 @@ pub struct AddMappingRequest {
     pub display_name: Option<String>,
 }
 
-/// GET /signals — list with value_mappings.
+/// GET /signals — list signals.
 async fn list_signals(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
@@ -56,21 +57,7 @@ async fn list_signals(
         )
     })?;
 
-    let mut result = Vec::new();
-    for signal in &signals {
-        let mappings = state.signal_repo.list_mappings(signal.id).await.map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
-        })?;
-        result.push(json!({
-            "signal": signal,
-            "value_mappings": mappings,
-        }));
-    }
-
-    Ok(Json(json!(result)))
+    Ok(Json(json!(signals)))
 }
 
 /// POST /signals

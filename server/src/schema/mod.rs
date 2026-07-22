@@ -6,5 +6,8 @@
 /// Migration 001: initial schema — all base tables, constraints, and indexes.
 pub const MIGRATION_001: &str = include_str!("001_initial.sql");
 
+/// Migration 002: unique constraint on signals.internal_name.
+pub const MIGRATION_002: &str = include_str!("002_unique_signal_name.sql");
+
 /// Ordered list of all migrations.
-pub const ALL_MIGRATIONS: &[&str] = &[MIGRATION_001];
+pub const ALL_MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002];
