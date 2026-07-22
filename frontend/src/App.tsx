@@ -10,7 +10,6 @@ import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
 import ConnectionMonitor from "./features/connections/ConnectionMonitor";
 import MachineHistory from "./features/history/MachineHistory";
 import SignalConfig from "./features/signal-config/SignalConfig";
-import EquivalenceConfig from "./features/equivalence-config/EquivalenceConfig";
 import UserProfile from "./features/profile/UserProfile";
 import Settings from "./features/settings/Settings";
 import type { ReactNode } from "react";
@@ -64,7 +63,6 @@ const router = createBrowserRouter([
 
           // Global pages
           { path: "connections", element: <ConnectionMonitor /> },
-          { path: "settings/equivalences", element: <EquivalenceConfig /> },
           { path: "profile", element: <UserProfile /> },
           { path: "settings", element: <Settings /> },
 

@@ -15,6 +15,8 @@ import {
   Cable,
   ChevronsLeft,
   ChevronsRight,
+  Network,
+  Cpu,
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { useAuthStore } from "../../store/auth-store";
@@ -29,8 +31,10 @@ const navItems = [
 ];
 
 const adminNavItems = [
-  { to: "/admin", icon: Users, label: "Admin Panel" },
-  { to: "/settings/equivalences", icon: GitCompareArrows, label: "Equivalences" },
+  { to: "/admin/users", icon: Users, label: "Users" },
+  { to: "/admin/signals", icon: Cpu, label: "Signals" },
+  { to: "/admin/equivalences", icon: GitCompareArrows, label: "Equivalences" },
+  { to: "/admin/machine-ips", icon: Network, label: "Machine IPs" },
 ];
 
 export function AppLayout() {
@@ -149,7 +153,7 @@ export function AppLayout() {
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "light"
-                  ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
+                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
               title="Light mode"
@@ -161,7 +165,7 @@ export function AppLayout() {
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "dark"
-                  ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
+                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
               title="Dark mode"
