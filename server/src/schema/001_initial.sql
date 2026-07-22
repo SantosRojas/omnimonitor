@@ -7,7 +7,7 @@ BEGIN;
 --  Users
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-    id              SERIAL PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     username        VARCHAR(255) NOT NULL UNIQUE,
     password_hash   TEXT NOT NULL,
     role            VARCHAR(20) NOT NULL DEFAULT 'viewer'
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 --  Machines
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS machines (
-    id              SERIAL PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     serial_number   VARCHAR(255) NOT NULL UNIQUE,
     label           VARCHAR(255),
     software_version VARCHAR(255),
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS machines (
 --  Software versions
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS software_versions (
-    id              SERIAL PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     fingerprint     VARCHAR(64) NOT NULL UNIQUE,
     language_id     INTEGER,
     system_sw       VARCHAR(64),
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS software_versions (
 --  Data attributes (per software version)
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS data_attributes (
-    id                  SERIAL PRIMARY KEY,
-    software_version_id INTEGER NOT NULL
+    id                  BIGSERIAL PRIMARY KEY,
+    software_version_id BIGINT NOT NULL
                         REFERENCES software_versions(id) ON DELETE CASCADE,
     handle              INTEGER NOT NULL,
     data_type           VARCHAR(64),
@@ -71,8 +71,8 @@ CREATE TABLE IF NOT EXISTS data_attributes (
 --  Dictionary entries (per software version)
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS dictionary_entries (
-    id                  SERIAL PRIMARY KEY,
-    software_version_id INTEGER NOT NULL
+    id                  BIGSERIAL PRIMARY KEY,
+    software_version_id BIGINT NOT NULL
                         REFERENCES software_versions(id) ON DELETE CASCADE,
     dict_id             INTEGER NOT NULL,
     text                TEXT
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS dictionary_entries (
 --  Patients
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS patients (
-    id              SERIAL PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     external_id     VARCHAR(255) NOT NULL UNIQUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ
@@ -92,9 +92,9 @@ CREATE TABLE IF NOT EXISTS patients (
 --  Therapies
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS therapies (
-    id              SERIAL PRIMARY KEY,
-    patient_id      INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    machine_id      INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+    id              BIGSERIAL PRIMARY KEY,
+    patient_id      BIGINT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    machine_id      BIGINT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
     started_at      TIMESTAMPTZ,
     ended_at        TIMESTAMPTZ,
     status          VARCHAR(20)
@@ -109,9 +109,9 @@ CREATE TABLE IF NOT EXISTS therapies (
 --  Therapy notes
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS therapy_notes (
-    id              SERIAL PRIMARY KEY,
-    therapy_id      INTEGER NOT NULL REFERENCES therapies(id) ON DELETE CASCADE,
-    user_id         INTEGER NOT NULL REFERENCES users(id),
+    id              BIGSERIAL PRIMARY KEY,
+    therapy_id      BIGINT NOT NULL REFERENCES therapies(id) ON DELETE CASCADE,
+    user_id         BIGINT NOT NULL REFERENCES users(id),
     content         TEXT NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -120,13 +120,13 @@ CREATE TABLE IF NOT EXISTS therapy_notes (
 --  Signals catalog
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS signals (
-    id              SERIAL PRIMARY KEY,
+    id              BIGSERIAL PRIMARY KEY,
     internal_name   VARCHAR(255) NOT NULL,
     display_name    VARCHAR(255),
     unit            VARCHAR(64),
     value_mapping   JSONB,
     deleted_at      TIMESTAMPTZ,
-    deleted_by      INTEGER REFERENCES users(id),
+    deleted_by      BIGINT REFERENCES users(id),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -134,22 +134,22 @@ CREATE TABLE IF NOT EXISTS signals (
 --  Value mappings (numeric → display name)
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS value_mappings (
-    id              SERIAL PRIMARY KEY,
-    signal_id       INTEGER NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
-    numeric_value   NUMERIC,
+    id              BIGSERIAL PRIMARY KEY,
+    signal_id       BIGINT NOT NULL REFERENCES signals(id) ON DELETE CASCADE,
+    numeric_value   TEXT,
     display_name    VARCHAR(255),
     deleted_at      TIMESTAMPTZ,
-    deleted_by      INTEGER REFERENCES users(id)
+    deleted_by      BIGINT REFERENCES users(id)
 );
 
 -- ───────────────────────────────────────────────
 --  Value mapping audit log
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS value_mapping_audit (
-    id              SERIAL PRIMARY KEY,
-    value_mapping_id INTEGER NOT NULL,
+    id              BIGSERIAL PRIMARY KEY,
+    value_mapping_id BIGINT NOT NULL,
     action          VARCHAR(20) NOT NULL,
-    changed_by      INTEGER NOT NULL,
+    changed_by      BIGINT NOT NULL,
     changed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -157,10 +157,10 @@ CREATE TABLE IF NOT EXISTS value_mapping_audit (
 --  Readings (telemetry data)
 -- ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS readings (
-    id              SERIAL PRIMARY KEY,
-    machine_id      INTEGER NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
-    therapy_id      INTEGER REFERENCES therapies(id),
-    signal_id       INTEGER REFERENCES signals(id),
+    id              BIGSERIAL PRIMARY KEY,
+    machine_id      BIGINT NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
+    therapy_id      BIGINT REFERENCES therapies(id),
+    signal_id       BIGINT REFERENCES signals(id),
     recorded_at     TIMESTAMPTZ,
     raw_value       BIGINT,
     value           DOUBLE PRECISION,

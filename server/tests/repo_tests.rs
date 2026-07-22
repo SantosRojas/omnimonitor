@@ -422,9 +422,12 @@ async fn signal_update_not_found(pool: PgPool) {
 #[sqlx::test]
 async fn signal_soft_delete(pool: PgPool) {
     common::setup_db(&pool).await;
-    let repo = SignalRepo::new(pool);
+    let repo = SignalRepo::new(pool.clone());
     let s = repo.create("to-delete", None, None).await.unwrap();
-    repo.soft_delete(s.id, 1).await.unwrap();
+    // Create a user first so the FK constraint on deleted_by is satisfied
+    let user_repo = server::infrastructure::postgres::user_repo::UserRepo::new(pool);
+    let user = user_repo.create("signal-test-user", "hash", "admin").await.unwrap();
+    repo.soft_delete(s.id, user.id).await.unwrap();
     // Should no longer be found
     assert!(repo.find_by_id(s.id).await.unwrap().is_none());
     // Should not appear in list
@@ -442,8 +445,12 @@ async fn signal_soft_delete_not_found(pool: PgPool) {
 #[sqlx::test]
 async fn signal_value_mappings(pool: PgPool) {
     common::setup_db(&pool).await;
-    let repo = SignalRepo::new(pool);
+    let repo = SignalRepo::new(pool.clone());
     let s = repo.create("sig-map", None, None).await.unwrap();
+    // Create a user for FK constraint (deleted_by, changed_by)
+    let user_repo = server::infrastructure::postgres::user_repo::UserRepo::new(pool);
+    let user = user_repo.create("map-test-user", "hash", "admin").await.unwrap();
+
     // Add mappings
     let m1 = repo.add_mapping(s.id, Some("0"), Some("Off")).await.unwrap();
     let _m2 = repo.add_mapping(s.id, Some("1"), Some("On")).await.unwrap();
@@ -455,7 +462,7 @@ async fn signal_value_mappings(pool: PgPool) {
     let found = repo.find_mapping(m1.id).await.unwrap().unwrap();
     assert_eq!(found.id, m1.id);
     // Delete mapping
-    repo.delete_mapping(m1.id, 1).await.unwrap();
+    repo.delete_mapping(m1.id, user.id).await.unwrap();
     let remaining = repo.list_mappings(s.id).await.unwrap();
     assert_eq!(remaining.len(), 1);
 }

@@ -9,15 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use argon2::PasswordHasher;
-use axum::{
-    extract::{
-        ws::WebSocketUpgrade,
-        ConnectInfo, State,
-    },
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
@@ -28,7 +20,7 @@ use server::infrastructure::postgres::{
     signal_repo::SignalRepo, therapy_repo::TherapyRepo, user_repo::UserRepo,
     version_repo::VersionRepo,
 };
-use server::infrastructure::ws_hub::{self, WsHubState};
+use server::infrastructure::ws_hub::WsHubState;
 use server::schema::ALL_MIGRATIONS;
 
 // ───────────────────────────────────────────────
@@ -96,32 +88,6 @@ async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-// ───────────────────────────────────────────────
-//  WS handlers
-// ───────────────────────────────────────────────
-
-/// Bridge WebSocket handler.
-async fn bridge_ws_handler(
-    ws: WebSocketUpgrade,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    info!("Bridge WS connection from {}", addr);
-    ws.on_upgrade(move |socket| ws_hub::handle_bridge_connection(socket, state.ws_hub.clone()))
-}
-
-/// Browser WebSocket handler.
-async fn browser_ws_handler(
-    ws: WebSocketUpgrade,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    info!("Browser WS connection from {}", addr);
-    ws.on_upgrade(move |socket| {
-        ws_hub::handle_browser_connection(socket, state.ws_hub.clone())
-    })
-}
-
 /// Health check handler (no state needed).
 async fn health_check() -> &'static str {
     "OK"
@@ -172,6 +138,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let version_repo = VersionRepo::new(pool.clone());
     let user_repo = UserRepo::new(pool.clone());
 
+    // ── Stale machine checker (every 30s, 60s timeout) ──
+    let stale_checker_repo = machine_repo.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            match stale_checker_repo.set_stale_machines_offline(60).await {
+                Ok(count) => {
+                    if count > 0 {
+                        info!("Marked {} stale machine(s) offline", count);
+                    }
+                }
+                Err(e) => error!("Stale machine check failed: {}", e),
+            }
+        }
+    });
+
     // ── Seed admin user ────────────────────────────
     let existing = user_repo.find_by_username("admin").await.ok().flatten();
     if existing.is_none() {
@@ -217,11 +200,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build REST API (each sub-router calls .with_state() internally → Router<()>)
     let rest_api = api::build_router(app_state.clone());
 
-    // Build WS routes — start with Arc<AppState>-typed router, then provide state
-    let ws_routes = Router::<Arc<AppState>>::new()
-        .route("/ws/bridge", get(bridge_ws_handler))
-        .route("/ws/browser", get(browser_ws_handler))
-        .with_state(app_state); // returns Router<()>
+    // Build WS routes (no JWT auth — bridge WS register is the auth mechanism)
+    let ws_routes = api::ws_routes(app_state);
 
     // Combine everything into the main router (all Router<()> now)
     let app = Router::new()
