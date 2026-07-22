@@ -112,7 +112,11 @@ fn parse_args() -> Args {
 // ───────────────────────────────────────────────
 
 /// Migration file names — mirrors the order in `ALL_MIGRATIONS`.
-const MIGRATION_NAMES: &[&str] = &["001_initial.sql", "002_unique_signal_name.sql"];
+const MIGRATION_NAMES: &[&str] = &[
+    "001_initial.sql",
+    "002_unique_signal_name.sql",
+    "003_drop_equiv_description.sql",
+];
 
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     for (i, migration) in ALL_MIGRATIONS.iter().enumerate() {

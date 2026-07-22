@@ -12,12 +12,11 @@ interface Equivalence {
   id: number;
   input_value: string;
   output_value: string;
-  description?: string;
 }
 
-type FormData = { input_value: string; output_value: string; description: string };
+type FormData = { input_value: string; output_value: string };
 
-const emptyForm: FormData = { input_value: "", output_value: "", description: "" };
+const emptyForm: FormData = { input_value: "", output_value: "" };
 
 export default function EquivalenceConfig() {
   const queryClient = useQueryClient();
@@ -49,7 +48,7 @@ export default function EquivalenceConfig() {
 
   const handleEdit = (r: Equivalence) => {
     setEditing(r);
-    setForm({ input_value: r.input_value, output_value: r.output_value, description: r.description ?? "" });
+    setForm({ input_value: r.input_value, output_value: r.output_value });
     setShowForm(true);
   };
 
@@ -86,10 +85,6 @@ export default function EquivalenceConfig() {
                 <label className="mb-1 block text-xs text-neutral-500">Output Value</label>
                 <Input value={form.output_value} onChange={(e) => setForm({ ...form, output_value: e.target.value })} placeholder="e.g. critical_high" required />
               </div>
-              <div className="flex-1 min-w-[180px]">
-                <label className="mb-1 block text-xs text-neutral-500">Description</label>
-                <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional description" />
-              </div>
               <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
                 {editing ? "Update" : "Create"}
               </Button>
@@ -112,7 +107,6 @@ export default function EquivalenceConfig() {
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Input Value</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Output Value</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Description</th>
                 <th className="px-4 py-3 text-right font-medium text-neutral-500">Actions</th>
               </tr>
             </thead>
@@ -121,7 +115,6 @@ export default function EquivalenceConfig() {
                 <tr key={r.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
                   <td className="px-4 py-3 font-mono text-sm">{r.input_value}</td>
                   <td className="px-4 py-3 font-mono text-sm">{r.output_value}</td>
-                  <td className="px-4 py-3 text-neutral-500">{r.description ?? "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => handleEdit(r)}>Edit</Button>

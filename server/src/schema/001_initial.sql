@@ -195,7 +195,6 @@ CREATE TABLE IF NOT EXISTS equivalences (
     id              BIGSERIAL PRIMARY KEY,
     input_value     TEXT NOT NULL,
     output_value    TEXT NOT NULL,
-    description     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

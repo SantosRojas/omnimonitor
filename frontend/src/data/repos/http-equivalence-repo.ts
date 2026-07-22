@@ -4,7 +4,6 @@ interface Equivalence {
   id: number;
   input_value: string;
   output_value: string;
-  description?: string;
 }
 
 export class HttpEquivalenceRepo {
@@ -13,12 +12,12 @@ export class HttpEquivalenceRepo {
     return data;
   }
 
-  async create(input: { input_value: string; output_value: string; description?: string }): Promise<Equivalence> {
+  async create(input: { input_value: string; output_value: string }): Promise<Equivalence> {
     const { data } = await apiClient.post<Equivalence>("/equivalences", input);
     return data;
   }
 
-  async update(id: number, input: { input_value?: string; output_value?: string; description?: string }): Promise<Equivalence> {
+  async update(id: number, input: { input_value?: string; output_value?: string }): Promise<Equivalence> {
     const { data } = await apiClient.patch<Equivalence>(`/equivalences/${id}`, input);
     return data;
   }

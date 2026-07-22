@@ -156,23 +156,16 @@ async fn seed_insert_only(pool: &PgPool) -> Result<(), Box<dyn std::error::Error
     // ── Standalone Equivalences ─────────────────────
     let mut inserted_equivs = 0u64;
 
-    let mut name_map: HashMap<&str, &str> = HashMap::new();
-    for sig in SIGNALS {
-        name_map.insert(sig.internal_name, display_name(sig));
-    }
-
     for vm in VALUE_MAPPINGS {
-        let signal_display_name = name_map.get(vm.internal_name).copied().unwrap_or("");
         let input_value = format!("{}:{}", vm.internal_name, vm.numeric_value);
 
         let n = sqlx::query(
-            "INSERT INTO equivalences (input_value, output_value, description) \
-             SELECT $1, $2, $3 \
+            "INSERT INTO equivalences (input_value, output_value) \
+             SELECT $1, $2 \
              WHERE NOT EXISTS (SELECT 1 FROM equivalences WHERE input_value = $1)",
         )
         .bind(&input_value)
         .bind(mapping_display_name(vm))
-        .bind(signal_display_name)
         .execute(pool)
         .await?
         .rows_affected();
@@ -236,22 +229,13 @@ async fn refresh_display_names(pool: &PgPool) -> Result<(), Box<dyn std::error::
     );
 
     // ── Refresh equivalences ────────────────────────
-    let mut name_map: HashMap<&str, &str> = HashMap::new();
-    for sig in SIGNALS {
-        name_map.insert(sig.internal_name, display_name(sig));
-    }
-
     for vm in VALUE_MAPPINGS {
         let input_value = format!("{}:{}", vm.internal_name, vm.numeric_value);
-        let signal_display_name = name_map.get(vm.internal_name).copied().unwrap_or("");
-        sqlx::query(
-            "UPDATE equivalences SET output_value = $1, description = $2 WHERE input_value = $3",
-        )
-        .bind(mapping_display_name(vm))
-        .bind(signal_display_name)
-        .bind(&input_value)
-        .execute(pool)
-        .await?;
+        sqlx::query("UPDATE equivalences SET output_value = $1 WHERE input_value = $2")
+            .bind(mapping_display_name(vm))
+            .bind(&input_value)
+            .execute(pool)
+            .await?;
     }
 
     info!(

@@ -241,7 +241,7 @@ async fn create_admin_equivalence(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let eq = state
         .equivalence_repo
-        .create(&req.from, &req.to, None)
+        .create(&req.from, &req.to)
         .await
         .map_err(|e| {
             (
@@ -264,7 +264,7 @@ async fn update_admin_equivalence(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let eq = state
         .equivalence_repo
-        .update(id, req.from.as_deref(), req.to.as_deref(), None)
+        .update(id, req.from.as_deref(), req.to.as_deref())
         .await
         .map_err(|e| match e {
             RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),

@@ -28,14 +28,12 @@ pub fn router(state: Arc<AppState>) -> Router {
 pub struct CreateEquivalenceRequest {
     pub input_value: String,
     pub output_value: String,
-    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateEquivalenceRequest {
     pub input_value: Option<String>,
     pub output_value: Option<String>,
-    pub description: Option<String>,
 }
 
 async fn list_equivalences(
@@ -56,7 +54,7 @@ async fn create_equivalence(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let eq = state
         .equivalence_repo
-        .create(&req.input_value, &req.output_value, req.description.as_deref())
+        .create(&req.input_value, &req.output_value)
         .await
         .map_err(|e| {
             (
@@ -74,12 +72,7 @@ async fn update_equivalence(
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let eq = state
         .equivalence_repo
-        .update(
-            id,
-            req.input_value.as_deref(),
-            req.output_value.as_deref(),
-            req.description.as_deref(),
-        )
+        .update(id, req.input_value.as_deref(), req.output_value.as_deref())
         .await
         .map_err(|e| match e {
             RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),

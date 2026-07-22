@@ -28,14 +28,12 @@ impl EquivalenceRepo {
         &self,
         input_value: &str,
         output_value: &str,
-        description: Option<&str>,
     ) -> Result<Equivalence, RepoError> {
         let row = sqlx::query_as::<_, Equivalence>(
-            "INSERT INTO equivalences (input_value, output_value, description) VALUES ($1, $2, $3) RETURNING *",
+            "INSERT INTO equivalences (input_value, output_value) VALUES ($1, $2) RETURNING *",
         )
         .bind(input_value)
         .bind(output_value)
-        .bind(description)
         .fetch_one(&self.pool)
         .await?;
         Ok(row)
@@ -46,14 +44,12 @@ impl EquivalenceRepo {
         id: i64,
         input_value: Option<&str>,
         output_value: Option<&str>,
-        description: Option<&str>,
     ) -> Result<Equivalence, RepoError> {
         let row = sqlx::query_as::<_, Equivalence>(
-            "UPDATE equivalences SET input_value = COALESCE($1, input_value), output_value = COALESCE($2, output_value), description = COALESCE($3, description) WHERE id = $4 RETURNING *",
+            "UPDATE equivalences SET input_value = COALESCE($1, input_value), output_value = COALESCE($2, output_value) WHERE id = $3 RETURNING *",
         )
         .bind(input_value)
         .bind(output_value)
-        .bind(description)
         .bind(id)
         .fetch_optional(&self.pool)
         .await?
@@ -66,18 +62,16 @@ impl EquivalenceRepo {
         &self,
         input_value: &str,
         output_value: &str,
-        description: Option<&str>,
     ) -> Result<(), RepoError> {
         sqlx::query(
             r#"
-            INSERT INTO equivalences (input_value, output_value, description)
-            SELECT $1, $2, $3
+            INSERT INTO equivalences (input_value, output_value)
+            SELECT $1, $2
             WHERE NOT EXISTS (SELECT 1 FROM equivalences WHERE input_value = $1)
             "#,
         )
         .bind(input_value)
         .bind(output_value)
-        .bind(description)
         .execute(&self.pool)
         .await?;
         Ok(())

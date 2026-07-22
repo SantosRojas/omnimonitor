@@ -89,7 +89,6 @@ pub struct Equivalence {
     pub id: i64,
     pub input_value: String,
     pub output_value: String,
-    pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
