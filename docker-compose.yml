@@ -1,0 +1,68 @@
+# =============================================================================
+#  omni-pdms-v2 — Docker Compose (production)
+# =============================================================================
+#
+#  Services:
+#    postgres — PostgreSQL 16 database
+#    server   — Rust axum backend (REST + WebSocket)
+#
+#  Quick start:
+#    1. Copy .env.example → .env and fill in secrets
+#    2. docker compose up -d
+#    3. Visit http://localhost:9001/health
+#
+#  Frontend:
+#    The SPA is NOT built inside Docker. Build it separately:
+#      cd frontend && npm run build
+#    Then mount the dist directory:
+#      volumes:
+#        - ./frontend/dist:/app/frontend/dist
+#
+# =============================================================================
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-omni_pdms}
+      POSTGRES_USER: ${DB_USERNAME:-omni_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-<change-this>}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-omni_user} -d ${DB_DATABASE:-omni_pdms}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Server (Axum backend) ──────────────────────────────────────────────────
+  server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-9001}:${PORT:-9001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: ${PORT:-9001}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-omni_pdms}
+      DB_USERNAME: ${DB_USERNAME:-omni_user}
+      DB_PASSWORD: ${DB_PASSWORD:-<change-this>}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:9001}
+      FRONTEND_DIST: ${FRONTEND_DIST:-/app/frontend/dist}
+      SEED_LANG: ${SEED_LANG:-es}
+      SEED_REFRESH: ${SEED_REFRESH:-false}
+    volumes:
+      # Mount pre-built frontend SPA — build it with: cd frontend && npm run build
+      - ./frontend/dist:/app/frontend/dist
+
+volumes:
+  pgdata:

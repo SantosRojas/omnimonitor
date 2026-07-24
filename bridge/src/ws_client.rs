@@ -6,20 +6,38 @@
 //!
 //! Incoming frames are deserialized and forwarded to the interactor
 //! via the `tx_commands` channel.
+//!
+//! # TLS (WSS)
+//!
+//! The client accepts self-signed TLS certificates via a custom
+//! `native_tls::TlsConnector` with `danger_accept_invalid_certs(true)`.
+//! For plain WS URLs, no TLS is used.
 
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use native_tls::TlsConnector as NativeTlsConnector;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tokio_tungstenite::connect_async;
+use tokio_native_tls::TlsConnector as TokioTlsConnector;
+use tokio_tungstenite::client_async;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::MaybeTlsStream;
+use url::Url;
 
 use crate::protocol::frames::{BridgeFrame, ServerFrame};
 
 const MAX_BUFFER: usize = 100;
 const INITIAL_BACKOFF_SECS: u64 = 1;
 const MAX_BACKOFF_SECS: u64 = 30;
+
+/// Builds a TLS connector that accepts self-signed certificates.
+fn build_tls_connector() -> Result<NativeTlsConnector, native_tls::Error> {
+    NativeTlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+}
 
 /// Runs the WebSocket client loop indefinitely.
 ///
@@ -38,47 +56,75 @@ pub async fn connect_and_run(
     let mut backoff_secs: u64 = INITIAL_BACKOFF_SECS;
 
     'outer: loop {
-        // ── Try to connect ──
-        let ws_stream = match connect_async(&url).await {
+        // ── Parse URL to determine TLS requirements ──
+        let parsed = match Url::parse(&url) {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::error!("[ws] invalid URL '{url}': {e}");
+                return;
+            }
+        };
+
+        let is_wss = parsed.scheme() == "wss";
+        let host = match parsed.host_str() {
+            Some(h) => h.to_owned(),
+            None => {
+                tracing::error!("[ws] URL '{url}' has no host");
+                return;
+            }
+        };
+        let port = parsed.port_or_known_default().unwrap_or(443);
+
+        // ── TCP connect ──
+        let tcp = match TcpStream::connect((host.as_str(), port)).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("[ws] TCP connect to {host}:{port} failed: {e}, retrying in {backoff_secs}s...");
+                buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
+                backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+                continue;
+            }
+        };
+
+        // ── Wrap in TLS if WSS ──
+        let maybe_tls: MaybeTlsStream<TcpStream> = if is_wss {
+            let native_tls = match build_tls_connector() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("[ws] TLS connector build error: {e}");
+                    return;
+                }
+            };
+            let tokio_tls = TokioTlsConnector::from(native_tls);
+            match tokio_tls.connect(&host, tcp).await {
+                Ok(tls_stream) => {
+                    tracing::info!("[ws] TLS established to {host}:{port} (self-signed cert accepted)");
+                    MaybeTlsStream::NativeTls(tls_stream)
+                }
+                Err(e) => {
+                    tracing::warn!("[ws] TLS handshake failed: {e}, retrying in {backoff_secs}s...");
+                    buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
+                    backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+                    continue 'outer;
+                }
+            }
+        } else {
+            tracing::info!("[ws] TCP connected to {host}:{port}");
+            MaybeTlsStream::Plain(tcp)
+        };
+
+        // ── WebSocket handshake ──
+        let ws_stream = match client_async(&url, maybe_tls).await {
             Ok((stream, _)) => {
                 tracing::info!("[ws] connected to {url}");
                 backoff_secs = INITIAL_BACKOFF_SECS;
                 stream
             }
             Err(e) => {
-                tracing::warn!("[ws] connect error: {e}, retrying in {backoff_secs}s...");
-
-                // Buffer frames while waiting for reconnection
-                let deadline =
-                    tokio::time::Instant::now() + Duration::from_secs(backoff_secs);
-
-                loop {
-                    let remaining =
-                        deadline.saturating_duration_since(tokio::time::Instant::now());
-                    if remaining.is_zero() {
-                        break;
-                    }
-
-                    tokio::select! {
-                        Some(frame) = rx_readings.recv() => {
-                            if buffer.len() >= MAX_BUFFER {
-                                tracing::warn!("[ws] buffer overflow ({}), dropping oldest frame", MAX_BUFFER);
-                                buffer.remove(0);
-                            }
-                            buffer.push(frame);
-                        }
-                        _ = sleep(remaining) => break,
-                        else => {
-                            // rx_readings closed — interactor is gone, stop everything
-                            tracing::info!("[ws] rx_readings closed, shutting down");
-                            return;
-                        }
-                    }
-                }
-
-                // Exponential backoff with cap
+                tracing::warn!("[ws] WebSocket handshake failed: {e}, retrying in {backoff_secs}s...");
+                buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
                 backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
-                continue; // retry connection
+                continue 'outer;
             }
         };
 
@@ -164,6 +210,37 @@ pub async fn connect_and_run(
         }
 
         tracing::warn!("[ws] connection lost, reconnecting...");
+    }
+}
+
+/// Buffers incoming frames from the interactor while waiting to reconnect.
+async fn buffer_during_backoff(
+    buffer: &mut Vec<BridgeFrame>,
+    rx_readings: &mut mpsc::Receiver<BridgeFrame>,
+    backoff_secs: u64,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(backoff_secs);
+
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+
+        tokio::select! {
+            Some(frame) = rx_readings.recv() => {
+                if buffer.len() >= MAX_BUFFER {
+                    tracing::warn!("[ws] buffer overflow ({}), dropping oldest frame", MAX_BUFFER);
+                    buffer.remove(0);
+                }
+                buffer.push(frame);
+            }
+            _ = sleep(remaining) => break,
+            else => {
+                tracing::info!("[ws] rx_readings closed, shutting down");
+                return;
+            }
+        }
     }
 }
 

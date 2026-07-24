@@ -1,0 +1,17 @@
+# ── Build artifacts ──────────────────────────────────────────────────────────
+target/
+
+# ── Git / Version control ───────────────────────────────────────────────────
+.git
+
+# ── Node / Frontend ─────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+
+# ── Environment (never ship secrets into an image) ─────────────────────────
+.env
+.env.local
+*.env.local
+
+# ── Data files (not needed at runtime inside the image) ─────────────────────
+data.xlsx
