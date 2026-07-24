@@ -7,8 +7,9 @@ import type { Field } from "../components/AdminCrudForm";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { HttpAdminRepo } from "../../data/repos/http-admin-repo";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
+import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User, Bridge } from "../../core/types";
+import type { User, Bridge, Machine } from "../../core/types";
 import { PageHeader } from "../layouts/PageHeader";
 import { Card, CardContent } from "../primitives/card";
 import { Button } from "../primitives/button";
@@ -16,14 +17,14 @@ import { Button } from "../primitives/button";
 const adminRepo = new HttpAdminRepo();
 const signalRepo = new HttpSignalRepo();
 
-type SectionId = "users" | "signals" | "equivalences" | "bridges" | "machine-ips";
+type SectionId = "users" | "signals" | "equivalences" | "bridges" | "machines";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "signals", label: "Signals" },
   { id: "equivalences", label: "Equivalences" },
   { id: "bridges", label: "Bridges" },
-  { id: "machine-ips", label: "Machine IPs" },
+  { id: "machines", label: "Machines" },
 ];
 
 interface CrudState<T> {
@@ -306,58 +307,42 @@ function BridgesSection() {
   );
 }
 
-/* ── Machine IPs Section ────────────────────────────────────────── */
+/* ── Machines Section (read-only — auto-registered by bridge) ──── */
 
-function MachineIpsSection() {
-  const queryClient = useQueryClient();
-  const [state, setState] = useState<CrudState<Record<string, unknown>>>(initialCrudState);
-  const { data: ips = [], isLoading } = useQuery({ queryKey: ["admin", "machine-ips"], queryFn: () => adminRepo.listMachineIps() });
-
-  const createMutation = useMutation({
-    mutationFn: (vals: Record<string, string | number>) => adminRepo.createMachineIp({ machine_id: Number(vals.machine_id), ip_address: String(vals.ip_address) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "machine-ips"] }); setState(initialCrudState); },
+function MachinesSection() {
+  const machineRepo = new HttpMachineRepo();
+  const { data: machines = [], isLoading } = useQuery<Machine[]>({
+    queryKey: ["machines"],
+    queryFn: () => machineRepo.list(),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (vals: Record<string, string | number>) => adminRepo.updateMachineIp(Number(vals.id), { ip_address: String(vals.ip_address) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "machine-ips"] }); setState(initialCrudState); },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => adminRepo.deleteMachineIp(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "machine-ips"] }); setState(initialCrudState); },
-  });
-
-  const columns: Column<Record<string, unknown>>[] = [
-    { key: "id", label: "ID" }, { key: "machine_id", label: "Machine ID" }, { key: "ip_address", label: "IP Address" },
-  ];
-  const formFields: Field[] = [
-    { name: "machine_id", label: "Machine ID", type: "number" }, { name: "ip_address", label: "IP Address", type: "text" },
+  const columns: Column<Machine>[] = [
+    { key: "id", label: "ID" },
+    { key: "serial_number", label: "Serial" },
+    { key: "ip_address", label: "IP Address", render: (item) => item.ip_address ?? "—" },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${item.status === "online" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${item.status === "online" ? "bg-green-500" : "bg-neutral-400"}`} />
+          {item.status ?? "unknown"}
+        </span>
+      ),
+    },
+    { key: "last_seen_at", label: "Last Seen", render: (item) => item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "—" },
   ];
 
   return (
-    <SectionShell title="Machine IPs" onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
-      {state.formOpen ? (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? "Edit Machine IP" : "Add Machine IP"}</h3>
-            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id as number, machine_id: state.editing.machine_id as number, ip_address: state.editing.ip_address as string } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Table<Record<string, unknown>>
-          columns={columns}
-          data={ips as Record<string, unknown>[]}
-          keyExtractor={(row) => row.id as number}
-          isLoading={isLoading}
-          emptyMessage="No machine IPs found."
-          filterableColumns={["ip_address", "machine_id"]}
-          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
-          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
-        />
-      )}
-      <ConfirmDialog open={state.deleting !== null} title="Delete Machine IP" message="Are you sure you want to delete this machine IP?" onConfirm={() => state.deleting && deleteMutation.mutate(Number(state.deleting.id))} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
+    <SectionShell title="Machines">
+      <Table<Machine>
+        columns={columns}
+        data={machines}
+        keyExtractor={(m) => m.id}
+        isLoading={isLoading}
+        emptyMessage="No machines registered. Machines are auto-registered when a bridge connects and identifies a serial number."
+        filterableColumns={["serial_number", "ip_address"]}
+      />
     </SectionShell>
   );
 }
@@ -394,7 +379,7 @@ export default function AdminPanelContainer() {
       case "signals": return <SignalsSection />;
       case "equivalences": return <EquivalencesSection />;
       case "bridges": return <BridgesSection />;
-      case "machine-ips": return <MachineIpsSection />;
+      case "machines": return <MachinesSection />;
     }
   }
 
@@ -405,11 +390,11 @@ export default function AdminPanelContainer() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Admin Panel" description="Manage users, signals, equivalences, bridges, and machine IPs." />
+      <PageHeader title="Admin Panel" description="Manage users, signals, equivalences, bridges, and machines." />
 
       <div>{renderSection()}</div>
     </div>
   );
 }
 
-export { UsersSection, BridgesSection, EquivalencesSection, MachineIpsSection };
+export { UsersSection, BridgesSection, EquivalencesSection, MachinesSection };

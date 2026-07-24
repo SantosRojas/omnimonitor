@@ -16,6 +16,7 @@ pub enum BridgeFrame {
     MachineIdentify {
         bridge_id: i64,
         serial_number: String,
+        ip_address: String,
     },
     InitQuery {
         fingerprint: String,
@@ -98,12 +99,14 @@ mod tests {
         let frame = BridgeFrame::MachineIdentify {
             bridge_id: 1,
             serial_number: "OMNI-2026-001".into(),
+            ip_address: "192.168.1.50".into(),
         };
         round_trip(&frame, "BridgeFrame::MachineIdentify");
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["type"], "MachineIdentify");
         assert_eq!(json["bridge_id"], 1);
         assert_eq!(json["serial_number"], "OMNI-2026-001");
+        assert_eq!(json["ip_address"], "192.168.1.50");
     }
 
     #[test]

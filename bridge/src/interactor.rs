@@ -194,12 +194,14 @@ async fn send_store_init(
 async fn send_machine_identify(
     bridge_id: i64,
     serial_number: &str,
+    ip_address: &str,
     tx_readings: &mpsc::Sender<BridgeFrame>,
     rx_commands: &mut mpsc::Receiver<ServerFrame>,
 ) -> Result<i64, String> {
     let frame = BridgeFrame::MachineIdentify {
         bridge_id,
         serial_number: serial_number.to_owned(),
+        ip_address: ip_address.to_owned(),
     };
     tx_readings.send(frame).await.map_err(|e| format!("Failed to send machine_identify: {e}"))?;
 
@@ -794,6 +796,7 @@ pub async fn run_bridge(
                         match send_machine_identify(
                             bridge_id,
                             &serial,
+                            bridge_ip,
                             &tx_readings,
                             &mut rx_commands,
                         )

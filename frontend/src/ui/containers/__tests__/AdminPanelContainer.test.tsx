@@ -48,6 +48,11 @@ const mockMachineIps = [
   { id: 2, machine_id: 2, ip_address: "192.168.1.101" },
 ];
 
+const mockMachines = [
+  { id: 1, serial_number: "OMNI-001", ip_address: "192.168.1.100", status: "online", last_seen_at: "2026-07-24T10:00:00Z", created_at: "2026-07-01T00:00:00Z", software_version: null, port: null, label: null },
+  { id: 2, serial_number: "OMNI-002", ip_address: "192.168.1.101", status: "offline", last_seen_at: "2026-07-23T08:00:00Z", created_at: "2026-07-02T00:00:00Z", software_version: null, port: null, label: null },
+];
+
 const mockComments = [
   { id: 1, content: "Checked vitals", created_at: "2026-07-20T14:30:00Z" },
   { id: 2, content: "Changed filter", created_at: "2026-07-20T15:00:00Z" },
@@ -101,22 +106,8 @@ const server = setupServer(
     HttpResponse.json(null, { status: 204 }),
   ),
 
-  // Machine IPs
-  http.get("/api/admin/machine-ips", () => HttpResponse.json(mockMachineIps)),
-  http.post("/api/admin/machine-ips", async ({ request }) => {
-    const body = (await request.json()) as Record<string, unknown>;
-    return HttpResponse.json(
-      { id: 3, machine_id: body.machine_id, ip_address: body.ip_address },
-      { status: 201 },
-    );
-  }),
-  http.patch("/api/admin/machine-ips/:id", async ({ request }) => {
-    const body = (await request.json()) as Record<string, unknown>;
-    return HttpResponse.json({ id: 1, machine_id: 1, ip_address: body.ip_address });
-  }),
-  http.delete("/api/admin/machine-ips/:id", () =>
-    HttpResponse.json(null, { status: 204 }),
-  ),
+  // Machines (read-only, from /api/machines)
+  http.get("/api/machines", () => HttpResponse.json(mockMachines)),
 
   // Comments
   http.get("/api/admin/therapies/:therapyId/comments", () =>
@@ -187,7 +178,7 @@ describe("AdminPanelContainer", () => {
     expect(screen.getByRole("button", { name: /^users$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^signals$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^equivalences$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /machine ips/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^machines$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^comments$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^config$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^tokens$/i })).toBeInTheDocument();
@@ -326,16 +317,20 @@ describe("AdminPanelContainer", () => {
     });
   });
 
-  describe("Machine IPs section", () => {
-    it("renders machine IP list", async () => {
+  describe("Machines section", () => {
+    it("renders machine list (read-only)", async () => {
       render(<AdminPanelContainer />, { wrapper: createWrapper() });
 
-      await user.click(screen.getByRole("button", { name: /machine ips/i }));
+      await user.click(screen.getByRole("button", { name: /^machines$/i }));
 
       await waitFor(() => {
-        expect(screen.getByText("192.168.1.100")).toBeInTheDocument();
+        expect(screen.getByText("OMNI-001")).toBeInTheDocument();
       });
+      expect(screen.getByText("OMNI-002")).toBeInTheDocument();
+      expect(screen.getByText("192.168.1.100")).toBeInTheDocument();
       expect(screen.getByText("192.168.1.101")).toBeInTheDocument();
+      // Should NOT have a +New button (read-only)
+      expect(screen.queryByRole("button", { name: /\+ new/i })).not.toBeInTheDocument();
     });
   });
 

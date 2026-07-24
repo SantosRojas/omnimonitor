@@ -37,6 +37,7 @@ pub enum BridgeFrame {
     MachineIdentify {
         bridge_id: i64,
         serial_number: String,
+        ip_address: String,
     },
     InitQuery {
         fingerprint: String,
@@ -367,11 +368,11 @@ async fn handle_bridge_frame(
             }
         }
 
-        BridgeFrame::MachineIdentify { bridge_id, serial_number } => {
-            info!("Bridge {} identifying machine by serial {}", bridge_id, serial_number);
+        BridgeFrame::MachineIdentify { bridge_id, serial_number, ip_address } => {
+            info!("Bridge {} identifying machine by serial {} (IP {})", bridge_id, serial_number, ip_address);
             let machine = state
                 .machine_repo
-                .upsert_by_serial(serial_number, None, None, None)
+                .upsert_by_serial(serial_number, Some(ip_address), None, None)
                 .await?;
             *current_machine_id = Some(machine.id);
             Ok(Some(ServerFrame::MachineIdentified { machine_id: machine.id }))
