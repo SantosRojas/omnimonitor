@@ -17,6 +17,7 @@ import {
   ChevronsRight,
   Network,
   Cpu,
+  Radio,
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { useAuthStore } from "../../store/auth-store";
@@ -34,6 +35,7 @@ const adminNavItems = [
   { to: "/admin/users", icon: Users, label: "Users" },
   { to: "/admin/signals", icon: Cpu, label: "Signals" },
   { to: "/admin/equivalences", icon: GitCompareArrows, label: "Equivalences" },
+  { to: "/admin/bridges", icon: Radio, label: "Bridges" },
   { to: "/admin/machine-ips", icon: Network, label: "Machine IPs" },
 ];
 

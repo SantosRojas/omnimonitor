@@ -1,6 +1,6 @@
 import apiClient from "../api-client";
 import type { AdminRepo } from "../../core/repos";
-import type { User } from "../../core/types";
+import type { Bridge, User } from "../../core/types";
 
 export class HttpAdminRepo implements AdminRepo {
   // ── Users ───────────────────────────────────────────────────────
@@ -65,6 +65,39 @@ export class HttpAdminRepo implements AdminRepo {
 
   async deleteEquivalence(id: number): Promise<void> {
     await apiClient.delete(`/admin/equivalences/${id}`);
+  }
+
+  // ── Bridges (RPi serial gateways) ──────────────────────────────
+
+  async listBridges(): Promise<Bridge[]> {
+    const { data } = await apiClient.get<Bridge[]>("/admin/bridges");
+    return data;
+  }
+
+  async createBridge(input: {
+    ip_address: string;
+    label?: string;
+  }): Promise<Bridge> {
+    const { data } = await apiClient.post<Bridge>(
+      "/admin/bridges",
+      input,
+    );
+    return data;
+  }
+
+  async updateBridge(
+    id: number,
+    input: { label?: string; authorized?: boolean },
+  ): Promise<Bridge> {
+    const { data } = await apiClient.patch<Bridge>(
+      `/admin/bridges/${id}`,
+      input,
+    );
+    return data;
+  }
+
+  async deleteBridge(id: number): Promise<void> {
+    await apiClient.delete(`/admin/bridges/${id}`);
   }
 
   // ── Machine IPs ─────────────────────────────────────────────────

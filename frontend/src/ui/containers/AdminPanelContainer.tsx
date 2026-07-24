@@ -8,7 +8,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { HttpAdminRepo } from "../../data/repos/http-admin-repo";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "../../core/types";
+import type { User, Bridge } from "../../core/types";
 import { PageHeader } from "../layouts/PageHeader";
 import { Card, CardContent } from "../primitives/card";
 import { Button } from "../primitives/button";
@@ -16,12 +16,13 @@ import { Button } from "../primitives/button";
 const adminRepo = new HttpAdminRepo();
 const signalRepo = new HttpSignalRepo();
 
-type SectionId = "users" | "signals" | "equivalences" | "machine-ips";
+type SectionId = "users" | "signals" | "equivalences" | "bridges" | "machine-ips";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "signals", label: "Signals" },
   { id: "equivalences", label: "Equivalences" },
+  { id: "bridges", label: "Bridges" },
   { id: "machine-ips", label: "Machine IPs" },
 ];
 
@@ -187,6 +188,124 @@ function EquivalencesSection() {
   );
 }
 
+/* ── Bridges Section (RPi serial gateways) ───────────────────── */
+
+function BridgesSection() {
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<CrudState<Bridge>>(initialCrudState);
+
+  const { data: bridges = [], isLoading } = useQuery<Bridge[]>({
+    queryKey: ["admin", "bridges"],
+    queryFn: () => adminRepo.listBridges(),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (vals: Record<string, string | number>) =>
+      adminRepo.createBridge({
+        ip_address: String(vals.ip_address),
+        label: vals.label ? String(vals.label) : undefined,
+      }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "bridges"] }); setState(initialCrudState); },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (vals: Record<string, string | number>) =>
+      adminRepo.updateBridge(Number(vals.id), {
+        label: vals.label ? String(vals.label) : undefined,
+        authorized: vals.authorized !== undefined ? String(vals.authorized) === "true" : undefined,
+      }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "bridges"] }); setState(initialCrudState); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => adminRepo.deleteBridge(id),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "bridges"] }); setState(initialCrudState); },
+  });
+
+  const columns: Column<Bridge>[] = [
+    { key: "ip_address", label: "IP Address" },
+    { key: "label", label: "Label", render: (item) => item.label ?? "—" },
+    {
+      key: "authorized",
+      label: "Authorized",
+      render: (item) => (
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.authorized ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+          {item.authorized ? "Yes" : "No"}
+        </span>
+      ),
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (item) => (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${item.status === "online" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${item.status === "online" ? "bg-green-500" : "bg-neutral-400"}`} />
+          {item.status}
+        </span>
+      ),
+    },
+    { key: "last_seen_at", label: "Last Seen", render: (item) => item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "—" },
+  ];
+
+  const formFields: Field[] = [
+    { name: "ip_address", label: "IP Address", type: "text" },
+    { name: "label", label: "Label", type: "text" },
+  ];
+
+  const editFields: Field[] = [
+    { name: "label", label: "Label", type: "text" },
+    {
+      name: "authorized",
+      label: "Authorized",
+      type: "select",
+      options: [
+        { value: "true", label: "Yes" },
+        { value: "false", label: "No" },
+      ],
+    },
+  ];
+
+  return (
+    <SectionShell title="Bridges" onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
+      {!state.formOpen ? (
+        <Table<Bridge>
+          columns={columns}
+          data={bridges}
+          keyExtractor={(b) => b.id}
+          isLoading={isLoading}
+          emptyMessage="No bridges registered. Add the bridge IP so it can authenticate."
+          filterableColumns={["ip_address", "label", "status"]}
+          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+        />
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+              {state.editing ? `Edit Bridge: ${state.editing.ip_address}` : "Register Bridge"}
+            </h3>
+            <AdminCrudForm
+              fields={state.editing ? editFields : formFields}
+              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", authorized: state.editing.authorized ? "true" : "false" } : undefined}
+              onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
+              isLoading={createMutation.isPending || updateMutation.isPending}
+            />
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+          </CardContent>
+        </Card>
+      )}
+      <ConfirmDialog
+        open={state.deleting !== null}
+        title="Delete Bridge"
+        message={`Are you sure you want to remove bridge "${state.deleting?.ip_address}"? The bridge will not be able to connect.`}
+        onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)}
+        onCancel={() => setState(initialCrudState)}
+        isLoading={deleteMutation.isPending}
+      />
+    </SectionShell>
+  );
+}
+
 /* ── Machine IPs Section ────────────────────────────────────────── */
 
 function MachineIpsSection() {
@@ -274,6 +393,7 @@ export default function AdminPanelContainer() {
       case "users": return <UsersSection />;
       case "signals": return <SignalsSection />;
       case "equivalences": return <EquivalencesSection />;
+      case "bridges": return <BridgesSection />;
       case "machine-ips": return <MachineIpsSection />;
     }
   }
@@ -285,11 +405,11 @@ export default function AdminPanelContainer() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Admin Panel" description="Manage users, signals, equivalences, and machine IPs." />
+      <PageHeader title="Admin Panel" description="Manage users, signals, equivalences, bridges, and machine IPs." />
 
       <div>{renderSection()}</div>
     </div>
   );
 }
 
-export { UsersSection, EquivalencesSection, MachineIpsSection };
+export { UsersSection, BridgesSection, EquivalencesSection, MachineIpsSection };

@@ -1,4 +1,4 @@
-import type { User } from "../types";
+import type { Bridge, User } from "../types";
 
 export interface AdminRepo {
   // Users
@@ -12,6 +12,12 @@ export interface AdminRepo {
   createEquivalence(data: { from: string; to: string }): Promise<unknown>;
   updateEquivalence(id: number, data: { from?: string; to?: string }): Promise<unknown>;
   deleteEquivalence(id: number): Promise<void>;
+
+  // Bridges (RPi serial gateways)
+  listBridges(): Promise<Bridge[]>;
+  createBridge(data: { ip_address: string; label?: string }): Promise<Bridge>;
+  updateBridge(id: number, data: { label?: string; authorized?: boolean }): Promise<Bridge>;
+  deleteBridge(id: number): Promise<void>;
 
   // Machine IPs
   listMachineIps(): Promise<unknown[]>;
