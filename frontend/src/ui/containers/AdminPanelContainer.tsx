@@ -324,7 +324,6 @@ function MachinesSection() {
       machineRepo.update(Number(vals.id), {
         label: vals.label ? String(vals.label) : undefined,
         ip_address: vals.ip_address ? String(vals.ip_address) : undefined,
-        port: vals.port ? Number(vals.port) : undefined,
       }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["machines"] }); setState(initialCrudState); },
   });
@@ -338,7 +337,6 @@ function MachinesSection() {
     { key: "serial_number", label: "Serial" },
     { key: "label", label: "Label", render: (item) => item.label ?? "—" },
     { key: "ip_address", label: "IP Address", render: (item) => item.ip_address ?? "—" },
-    { key: "port", label: "Port", render: (item) => item.port?.toString() ?? "—" },
     {
       key: "status",
       label: "Status",
@@ -355,7 +353,6 @@ function MachinesSection() {
   const editFields: Field[] = [
     { name: "label", label: "Label", type: "text" },
     { name: "ip_address", label: "IP Address", type: "text" },
-    { name: "port", label: "Port", type: "number" },
   ];
 
   return (
@@ -379,7 +376,7 @@ function MachinesSection() {
             </h3>
             <AdminCrudForm
               fields={editFields}
-              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", ip_address: state.editing.ip_address ?? "", port: state.editing.port ?? "" } : undefined}
+              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", ip_address: state.editing.ip_address ?? "" } : undefined}
               onSubmit={(vals) => { updateMutation.mutate(vals); }}
               isLoading={updateMutation.isPending}
             />
