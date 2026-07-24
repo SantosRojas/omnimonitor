@@ -36,7 +36,7 @@ const adminNavItems = [
   { to: "/admin/signals", icon: Cpu, label: "Signals" },
   { to: "/admin/equivalences", icon: GitCompareArrows, label: "Equivalences" },
   { to: "/admin/bridges", icon: Radio, label: "Bridges" },
-  { to: "/admin/machine-ips", icon: Network, label: "Machine IPs" },
+  { to: "/admin/machines", icon: Network, label: "Machines" },
 ];
 
 export function AppLayout() {

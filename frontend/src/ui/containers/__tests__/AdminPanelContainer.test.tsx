@@ -43,11 +43,6 @@ const mockEquivalences = [
   { id: 2, from: "C", to: "D" },
 ];
 
-const mockMachineIps = [
-  { id: 1, machine_id: 1, ip_address: "192.168.1.100" },
-  { id: 2, machine_id: 2, ip_address: "192.168.1.101" },
-];
-
 const mockMachines = [
   { id: 1, serial_number: "OMNI-001", ip_address: "192.168.1.100", status: "online", last_seen_at: "2026-07-24T10:00:00Z", created_at: "2026-07-01T00:00:00Z", software_version: null, port: null, label: null },
   { id: 2, serial_number: "OMNI-002", ip_address: "192.168.1.101", status: "offline", last_seen_at: "2026-07-23T08:00:00Z", created_at: "2026-07-02T00:00:00Z", software_version: null, port: null, label: null },
