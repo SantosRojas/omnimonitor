@@ -307,19 +307,38 @@ function BridgesSection() {
   );
 }
 
-/* ── Machines Section (read-only — auto-registered by bridge) ──── */
+/* ── Machines Section (auto-registered by bridge, editable IP/label) */
 
 function MachinesSection() {
+  const queryClient = useQueryClient();
   const machineRepo = new HttpMachineRepo();
+  const [state, setState] = useState<CrudState<Machine>>(initialCrudState);
+
   const { data: machines = [], isLoading } = useQuery<Machine[]>({
     queryKey: ["machines"],
     queryFn: () => machineRepo.list(),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (vals: Record<string, string | number>) =>
+      machineRepo.update(Number(vals.id), {
+        label: vals.label ? String(vals.label) : undefined,
+        ip_address: vals.ip_address ? String(vals.ip_address) : undefined,
+        port: vals.port ? Number(vals.port) : undefined,
+      }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["machines"] }); setState(initialCrudState); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => machineRepo.delete(id),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["machines"] }); setState(initialCrudState); },
+  });
+
   const columns: Column<Machine>[] = [
-    { key: "id", label: "ID" },
     { key: "serial_number", label: "Serial" },
+    { key: "label", label: "Label", render: (item) => item.label ?? "—" },
     { key: "ip_address", label: "IP Address", render: (item) => item.ip_address ?? "—" },
+    { key: "port", label: "Port", render: (item) => item.port?.toString() ?? "—" },
     {
       key: "status",
       label: "Status",
@@ -333,15 +352,48 @@ function MachinesSection() {
     { key: "last_seen_at", label: "Last Seen", render: (item) => item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "—" },
   ];
 
+  const editFields: Field[] = [
+    { name: "label", label: "Label", type: "text" },
+    { name: "ip_address", label: "IP Address", type: "text" },
+    { name: "port", label: "Port", type: "number" },
+  ];
+
   return (
     <SectionShell title="Machines">
-      <Table<Machine>
-        columns={columns}
-        data={machines}
-        keyExtractor={(m) => m.id}
-        isLoading={isLoading}
-        emptyMessage="No machines registered. Machines are auto-registered when a bridge connects and identifies a serial number."
-        filterableColumns={["serial_number", "ip_address"]}
+      {!state.formOpen ? (
+        <Table<Machine>
+          columns={columns}
+          data={machines}
+          keyExtractor={(m) => m.id}
+          isLoading={isLoading}
+          emptyMessage="No machines registered."
+          filterableColumns={["serial_number", "ip_address", "label", "status"]}
+          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+        />
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
+              {state.editing ? `Edit Machine: ${state.editing.serial_number}` : ""}
+            </h3>
+            <AdminCrudForm
+              fields={editFields}
+              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", ip_address: state.editing.ip_address ?? "", port: state.editing.port ?? "" } : undefined}
+              onSubmit={(vals) => { updateMutation.mutate(vals); }}
+              isLoading={updateMutation.isPending}
+            />
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+          </CardContent>
+        </Card>
+      )}
+      <ConfirmDialog
+        open={state.deleting !== null}
+        title="Delete Machine"
+        message={`Are you sure you want to delete machine "${state.deleting?.serial_number}"? This will soft-delete it.`}
+        onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)}
+        onCancel={() => setState(initialCrudState)}
+        isLoading={deleteMutation.isPending}
       />
     </SectionShell>
   );

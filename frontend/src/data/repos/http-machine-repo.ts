@@ -32,7 +32,7 @@ export class HttpMachineRepo implements MachineRepo {
       software_version?: string;
     },
   ): Promise<Machine> {
-    const { data } = await apiClient.patch<Machine>(
+    const { data } = await apiClient.put<Machine>(
       `/machines/${id}`,
       input,
     );
