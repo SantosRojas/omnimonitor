@@ -278,7 +278,12 @@ async fn main() {
 
     // ── Load config upfront for validation ──
     let args: Vec<String> = std::env::args().collect();
-    let _ = dotenvy::dotenv();
+
+    // Try .env in CWD first, then bridge/.env (for cargo run from workspace root).
+    // Silently ignore if neither exists — env vars and CLI still work.
+    dotenvy::dotenv().ok();
+    dotenvy::from_path("bridge/.env").ok();
+
     let config = load_config(&args);
 
     if config.port.is_empty() || config.ws_url.is_empty() {
