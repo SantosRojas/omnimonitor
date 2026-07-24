@@ -7,7 +7,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
-    Json, Router,
+    Extension, Json, Router,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -102,10 +102,11 @@ async fn update_signal(
 
 /// DELETE /signals/:id — soft-delete with audit.
 async fn delete_signal(
+    Extension(claims): Extension<crate::api::auth::Claims>,
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let user_id = 0i64; // placeholder — will use auth context when middleware is wired
+    let user_id = claims.sub;
 
     state
         .signal_repo
@@ -144,10 +145,11 @@ async fn add_mapping(
 
 /// DELETE /signals/:id/mappings/:mapping_id — soft-delete mapping.
 async fn delete_mapping(
+    Extension(claims): Extension<crate::api::auth::Claims>,
     State(state): State<Arc<AppState>>,
     Path((_signal_id, mapping_id)): Path<(i64, i64)>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let user_id = 0i64; // placeholder
+    let user_id = claims.sub;
 
     state
         .signal_repo

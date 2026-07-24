@@ -12,11 +12,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use argon2::PasswordHasher;
-use axum::{routing::get, Router};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use sqlx::postgres::PgPoolOptions;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use server::api::{self, AppState};
 use server::infrastructure::postgres::{
@@ -56,10 +56,10 @@ fn parse_args() -> Args {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(9000);
-    let mut jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "change-me-in-production".to_string());
-    let mut admin_password = std::env::var("ADMIN_PASSWORD")
-        .unwrap_or_else(|_| "admin".to_string());
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .expect("JWT_SECRET must be set in environment");
+    let admin_password = std::env::var("ADMIN_PASSWORD")
+        .expect("ADMIN_PASSWORD must be set in environment");
     let mut frontend_dist = std::env::var("FRONTEND_DIST")
         .unwrap_or_else(|_| "frontend/dist".to_string());
 
@@ -77,16 +77,6 @@ fn parse_args() -> Args {
                     if let Ok(p) = v.parse() {
                         port = p;
                     }
-                }
-            }
-            "--jwt-secret" => {
-                if let Some(v) = args.next() {
-                    jwt_secret = v;
-                }
-            }
-            "--admin-password" => {
-                if let Some(v) = args.next() {
-                    admin_password = v;
                 }
             }
             "--frontend-dist" => {
@@ -128,9 +118,52 @@ async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-/// Health check handler (no state needed).
-async fn health_check() -> &'static str {
-    "OK"
+/// Health check handler with DB ping.
+async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        state.db_pool.acquire(),
+    )
+    .await
+    {
+        Ok(Ok(_)) => Ok(Json(serde_json::json!({"status": "ok"}))),
+        _ => Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"status": "degraded", "db": "unreachable"})),
+        )),
+    }
+}
+
+/// Build a CORS layer from the `CORS_ORIGINS` environment variable.
+///
+/// Parses comma-separated origins. Defaults to `http://localhost:5173`.
+/// Set to `*` for permissive mode (dev only).
+fn cors_layer() -> CorsLayer {
+    let origins = std::env::var("CORS_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+
+    if origins == "*" {
+        return CorsLayer::permissive();
+    }
+
+    let origins: Vec<_> = origins
+        .split(',')
+        .map(|o| o.trim().parse().expect("Invalid origin in CORS_ORIGINS"))
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers(Any)
 }
 
 // ───────────────────────────────────────────────
@@ -158,15 +191,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Port: {}", args.port);
     info!("DB: {}", args.db_url);
 
-    // ── Database pool ──────────────────────────────
-    let pool = PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&args.db_url)
-        .await
-        .map_err(|e| {
-            error!("Failed to connect to database: {}", e);
-            e
-        })?;
+    // ── Database pool (with retry loop) ────────────
+    let pool = {
+        let max_attempts = 10;
+        let base_delay = std::time::Duration::from_secs(2);
+        let max_delay = std::time::Duration::from_secs(30);
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+            match PgPoolOptions::new()
+                .max_connections(10)
+                .connect(&args.db_url)
+                .await
+            {
+                Ok(pool) => break pool,
+                Err(e) => {
+                    if attempt >= max_attempts {
+                        error!(
+                            "Failed to connect to database after {max_attempts} attempts: {e}"
+                        );
+                        return Err(e.into());
+                    }
+                    let delay = (base_delay * 2u32.saturating_pow(attempt - 1)).min(max_delay);
+                    warn!(
+                        "DB connection attempt {attempt}/{max_attempts} failed, \
+                         retrying in {delay}s... ({e})",
+                        delay = delay.as_secs(),
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    };
 
     // Run migrations
     run_migrations(&pool).await?;
@@ -256,18 +313,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rest_api = api::build_router(app_state.clone());
 
     // Build WS routes (no JWT auth — bridge WS register is the auth mechanism)
-    let ws_routes = api::ws_routes(app_state);
+    let ws_routes = api::ws_routes(app_state.clone());
 
     // Combine everything into the main router (all Router<()> now)
     let app = Router::new()
-        .route("/health", get(health_check))
+        .merge(Router::new()
+            .route("/health", get(health_check))
+            .with_state(app_state.clone())
+        )
         .merge(rest_api)
         .merge(ws_routes)
         .fallback_service(
             ServeDir::new(&args.frontend_dist)
                 .fallback(ServeFile::new(format!("{}/index.html", &args.frontend_dist))),
         )
-        .layer(CorsLayer::permissive());
+        .layer(cors_layer());
 
     // ── Start server ──────────────────────────────
     let addr: SocketAddr = ([0, 0, 0, 0], args.port).into();
@@ -289,10 +349,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Wait for Ctrl+C signal.
+/// Wait for shutdown signal (SIGINT via Ctrl+C, or SIGTERM on Unix).
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to install Ctrl+C handler");
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{self, SignalKind};
+
+        let mut term_signal = unix::signal(SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler");
+
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = term_signal.recv() => {},
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await.expect("Failed to install Ctrl+C handler");
+    }
+
     info!("Shutdown signal received, starting graceful shutdown...");
 }

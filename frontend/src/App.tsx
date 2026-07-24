@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ErrorBoundary } from "./ui/components/ErrorBoundary";
 import { PrivateRoute } from "./ui/components/PrivateRoute";
 import { AppLayout } from "./ui/layouts/AppLayout";
 import { LoginContainer } from "./ui/containers/LoginContainer";
@@ -86,7 +87,9 @@ const router = createBrowserRouter([
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ErrorBoundary>
+        <RouterProvider router={router} />
+      </ErrorBoundary>
     </QueryClientProvider>
   );
 }

@@ -205,7 +205,7 @@ mod tests {
             baudrate: 115200,
             timeout_secs: 1,
             src_addr: 1,
-            dst_addr: 16,
+            dst_addr: 1,
         };
 
         // We can't open a real port, but we can test CRC directly
@@ -221,7 +221,7 @@ mod tests {
             let mut f = Vec::with_capacity(msg_length as usize);
             f.extend_from_slice(&msg_length.to_le_bytes());
             f.push(1);  // src_addr
-            f.push(16); // dst_addr
+            f.push(1); // dst_addr
             f.extend_from_slice(&data_part);
             f.extend_from_slice(&0x0000u16.to_le_bytes());
             let crc = SerialDeviceCommunicator::calculate_crc(&f);

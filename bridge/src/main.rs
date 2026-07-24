@@ -60,7 +60,7 @@ impl Default for BridgeConfig {
             baud: 115200,
             ws_url: String::new(),
             src_addr: 11,
-            dst_addr: 16,
+            dst_addr: 1,
             bridge_ip: String::new(),
             max_failures: 10,
             timeout_secs: 3,
@@ -181,30 +181,8 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
 //  Main
 // ───────────────────────────────────────────────
 
-#[tokio::main]
-async fn main() {
-    // ── Load .env if present (does NOT overwrite existing env vars) ──
-    let _ = dotenvy::dotenv();
-
-    // ── Load config with full precedence pipeline ──
-    let args: Vec<String> = std::env::args().collect();
-    let config = load_config(&args);
-
-    if config.port.is_empty() || config.ws_url.is_empty() {
-        eprintln!(
-            "Usage: {} --port <PORT> --ws <WS_URL> \
-              [--baud 115200] [--src-addr 11] [--dst-addr 16] \
-             [--bridge-ip <IP>]",
-            args[0]
-        );
-        std::process::exit(1);
-    }
-
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
+/// Core bridge logic — returns Ok on clean shutdown, Err on failure.
+async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
     tracing::info!(
         "bridge starting: port={}, baud={}, ws={}, src={}, dst={}, \
          bridge_ip={}, max_failures={}, timeout_secs={}",
@@ -227,13 +205,8 @@ async fn main() {
         dst_addr: config.dst_addr,
     };
 
-    let device = match SerialDeviceCommunicator::new(serial_config) {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::error!("Failed to open serial port: {e}");
-            std::process::exit(1);
-        }
-    };
+    let device = SerialDeviceCommunicator::new(serial_config)
+        .map_err(|e| format!("Failed to open serial port: {e}"))?;
 
     let device = Arc::new(Mutex::new(device));
 
@@ -283,16 +256,63 @@ async fn main() {
     tokio::select! {
         _ = shutdown_rx.recv() => {
             tracing::info!("Shutdown signal received");
+            Ok(())
         }
         _ = ws_handle => {
-            tracing::info!("WS task ended");
+            tracing::warn!("WS task ended unexpectedly");
+            Err("WS client task terminated".into())
         }
         _ = serial_handle => {
-            tracing::info!("Serial task ended");
+            tracing::warn!("Serial task ended unexpectedly");
+            Err("Serial interactor task terminated".into())
         }
     }
+}
 
-    tracing::info!("Bridge shutdown complete");
+#[tokio::main]
+async fn main() {
+    // ── Initialize tracing (once) ──
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
+    // ── Load config upfront for validation ──
+    let args: Vec<String> = std::env::args().collect();
+    let _ = dotenvy::dotenv();
+    let config = load_config(&args);
+
+    if config.port.is_empty() || config.ws_url.is_empty() {
+        eprintln!(
+            "Usage: {} --port <PORT> --ws <WS_URL> \
+              [--baud 115200] [--src-addr 11] [--dst-addr 16] \
+             [--bridge-ip <IP>]",
+            args[0]
+        );
+        std::process::exit(1);
+    }
+
+    // ── Main loop with restart on failure ──
+    let mut backoff: u64 = 1;
+    const MAX_BACKOFF: u64 = 30;
+
+    loop {
+        let result = run_bridge_instance(&config).await;
+
+        match result {
+            Ok(()) => {
+                tracing::info!("Bridge shutdown complete");
+                break;
+            }
+            Err(e) => {
+                tracing::error!("Bridge failed: {e}");
+                tracing::info!("Restarting bridge in {backoff}s...");
+                tokio::time::sleep(std::time::Duration::from_secs(backoff)).await;
+
+                // Exponential backoff capped at MAX_BACKOFF
+                backoff = (backoff * 2).min(MAX_BACKOFF);
+            }
+        }
+    }
 }
 
 // ───────────────────────────────────────────────

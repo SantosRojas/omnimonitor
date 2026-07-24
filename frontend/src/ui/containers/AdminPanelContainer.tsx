@@ -121,7 +121,7 @@ function SignalsSection() {
     <SectionShell title="Signals">
       <Table<Record<string, unknown>>
         columns={columns}
-        data={signals as Record<string, unknown>[]}
+        data={signals as unknown as Record<string, unknown>[]}
         keyExtractor={(row) => row.id as number}
         isLoading={isLoading}
         emptyMessage="No signals found."

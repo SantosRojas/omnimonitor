@@ -1,6 +1,9 @@
 //! Authentication API: register, login, JWT middleware.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
@@ -54,6 +57,74 @@ pub struct LoginResponse {
     pub token: String,
     pub user_id: i64,
     pub role: String,
+}
+
+// ───────────────────────────────────────────────
+//  Rate limiter
+// ───────────────────────────────────────────────
+
+/// Simple in-memory sliding-window rate limiter per IP.
+/// Allows up to `max_requests` per `window_secs` per client IP.
+struct RateLimiter {
+    inner: Mutex<RateLimiterInner>,
+    max_requests: usize,
+    window_secs: u64,
+}
+
+struct RateLimiterInner {
+    requests: HashMap<String, Vec<Instant>>,
+}
+
+impl RateLimiter {
+    fn new(max_requests: usize, window_secs: u64) -> Self {
+        Self {
+            inner: Mutex::new(RateLimiterInner {
+                requests: HashMap::new(),
+            }),
+            max_requests,
+            window_secs,
+        }
+    }
+
+    fn check(&self, client_ip: &str) -> bool {
+        let now = Instant::now();
+        let window = std::time::Duration::from_secs(self.window_secs);
+        let mut inner = self.inner.lock().expect("rate limiter lock");
+        let timestamps = inner.requests.entry(client_ip.to_string()).or_default();
+
+        // Remove entries outside the window
+        timestamps.retain(|t| now.duration_since(*t) < window);
+
+        if timestamps.len() >= self.max_requests {
+            false // rate limited
+        } else {
+            timestamps.push(now);
+            true // allowed
+        }
+    }
+}
+
+/// Global rate limiter for auth endpoints: 10 requests/min per IP.
+static AUTH_RATE_LIMITER: std::sync::LazyLock<RateLimiter> =
+    std::sync::LazyLock::new(|| RateLimiter::new(10, 60));
+
+/// Extract client IP from request, falling back to "unknown".
+fn client_ip(headers: &axum::http::HeaderMap, _state: &Arc<AppState>) -> String {
+    if let Some(v) = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next().map(|s| s.trim().to_string()))
+    {
+        return v;
+    }
+    if let Some(v) = headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+    {
+        return v;
+    }
+    "unknown".to_string()
 }
 
 // ───────────────────────────────────────────────
@@ -128,9 +199,18 @@ async fn register(
 
 /// POST /auth/login — authenticate and return a JWT.
 async fn login(
+    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // Rate limiting check
+    let ip = client_ip(&headers, &state);
+    if !AUTH_RATE_LIMITER.check(&ip) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error": "Too many requests. Please try again later."})),
+        ));
+    }
     let user = state
         .user_repo
         .find_by_username(&req.username)

@@ -4,11 +4,11 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, patch, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use argon2::PasswordHasher;
 use serde::Deserialize;
@@ -518,6 +518,7 @@ async fn list_comments(
 
 /// POST /admin/therapies/:id/comments
 async fn create_comment(
+    Extension(claims): Extension<crate::api::auth::Claims>,
     State(state): State<Arc<AppState>>,
     Path(therapy_id): Path<i64>,
     Json(req): Json<CreateCommentRequest>,
@@ -526,7 +527,7 @@ async fn create_comment(
         "INSERT INTO therapy_notes (therapy_id, user_id, content) VALUES ($1, $2, $3) RETURNING *",
     )
     .bind(therapy_id)
-    .bind(0i64) // placeholder — auth context not yet wired
+    .bind(claims.sub)
     .bind(&req.content)
     .fetch_one(&state.db_pool)
     .await
