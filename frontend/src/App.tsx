@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "./ui/components/ErrorBoundary";
@@ -8,6 +9,7 @@ import ScadaDetailContainer from "./ui/containers/ScadaDetailContainer";
 import { useAuthStore } from "./store/auth-store";
 import AdminPanelContainer from "./ui/containers/AdminPanelContainer";
 import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
+import { startWsAdapter } from "./data/ws-adapter";
 import ConnectionMonitor from "./features/connections/ConnectionMonitor";
 import MachineHistory from "./features/history/MachineHistory";
 import SignalConfig from "./features/signal-config/SignalConfig";
@@ -85,6 +87,13 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
+  // Single WebSocket connection + store router at the app root.
+  // Every component reads from Zustand stores; the adapter keeps them in sync.
+  useEffect(() => {
+    const stop = startWsAdapter();
+    return () => stop();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>

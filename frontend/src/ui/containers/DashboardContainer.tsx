@@ -2,10 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
-import { wsManager } from "../../data/ws-manager";
-import { useLiveDataStore } from "../../store/live-data-store";
 import { TherapyTable } from "../components/TherapyTable";
-import type { ActiveTherapyRow, WsMessage } from "../../core/types";
+import type { ActiveTherapyRow } from "../../core/types";
 
 const therapyRepo = new HttpTherapyRepo();
 
@@ -39,7 +37,6 @@ function computeElapsedSeconds(startedAt: string, now: number): number {
  */
 export default function DashboardContainer() {
   const navigate = useNavigate();
-  const updateReadings = useLiveDataStore((s) => s.updateReadings);
 
   /* ── Clock tick for auto‑updating elapsed time ────────────────── */
   const [now, setNow] = useState(Date.now);
@@ -58,28 +55,6 @@ export default function DashboardContainer() {
     queryKey: ["therapies", "active"],
     queryFn: () => therapyRepo.list({ status: "active" }) as unknown as Promise<ActiveTherapyRow[]>,
   });
-
-  /* ── WebSocket subscriptions for all active machines ─────────── */
-  useEffect(() => {
-    if (!therapies || therapies.length === 0) return;
-
-    wsManager.connect("/ws/browser");
-
-    const unsubs = therapies.map((t) =>
-      wsManager.subscribe(String(t.machine_id), (msg: WsMessage) => {
-        if (
-          msg.type === "ReadingsBroadcast" ||
-          msg.type === "ReadingsReplay"
-        ) {
-          updateReadings(msg.machine_id, msg);
-        }
-      }),
-    );
-
-    return () => {
-      unsubs.forEach((fn) => fn());
-    };
-  }, [therapies, updateReadings]);
 
   /* ── Augment therapy rows with computed elapsed time ──────────── */
   const rows = useMemo<ActiveTherapyRow[]>(() => {

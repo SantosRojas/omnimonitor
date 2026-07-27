@@ -489,6 +489,9 @@ pub async fn handle_bridge_frame(
                 *current_machine_id = Some(*machine_id);
             }
 
+            // ── Map readings to domain model ──
+            // El broadcast en tiempo real y la persistencia usan los mismos readings.
+            // El bridge ya filtra por CAPTURE_NAMES antes de enviar.
             let domain_readings: Vec<Reading> = readings
                 .iter()
                 .map(|r| Reading {
@@ -513,10 +516,12 @@ pub async fn handle_bridge_frame(
             // el batch actual cuando el intervalo ha pasado. El broadcast
             // a browsers es siempre inmediato (abajo).
             if state.check_persist_interval() {
-                if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
-                    error!("Failed to insert readings for machine {}: {}", machine_id, e);
-                } else if state.persistence_interval_secs > 0 {
-                    debug!("[persist] snapshot {} readings (machine {})", domain_readings.len(), machine_id);
+                if !domain_readings.is_empty() {
+                    if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
+                        error!("Failed to insert readings for machine {}: {}", machine_id, e);
+                    } else if state.persistence_interval_secs > 0 {
+                        debug!("[persist] snapshot {} readings (machine {})", domain_readings.len(), machine_id);
+                    }
                 }
             }
 

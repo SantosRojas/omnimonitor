@@ -9,15 +9,15 @@ import type { WsMessage } from "../../core/types";
  * Call once at app root to enable automatic store updates.
  */
 export function startWsAdapter(wsUrl = "/ws/browser"): () => void {
-  // Subscribe to ALL machines via wildcard — the ws-manager dispatches
-  // by machine_id internally. We use a single subscriber to all.
-  const unsubscribeMachine = wsManager.subscribe("*", handleMachineMessage);
-  // Subscribe to all messages (including non-machine messages like SerialStatus)
+  // Subscribe to ALL messages — global subscribers receive every message
+  // regardless of machine_id. This ensures readings, machine status, and
+  // bridge status are routed to their respective stores.
+  const unsubscribeReadings = wsManager.subscribeGlobal(handleMachineMessage);
   const unsubscribeGlobal = wsManager.subscribeGlobal(handleGlobalMessage);
   wsManager.connect(wsUrl);
 
   return () => {
-    unsubscribeMachine();
+    unsubscribeReadings();
     unsubscribeGlobal();
   };
 }

@@ -14,7 +14,6 @@ import { AlarmPanel } from "../../features/scada/components/alarm-panel";
 import { TherapyStateMachine } from "../../features/scada/components/therapy-state-machine";
 import { MachineStatusDot } from "../../features/scada/components/machine-status-dot";
 import { TrendChart } from "../../features/scada/components/trend-chart";
-import { startWsAdapter } from "../../data/ws-adapter";
 import type { Machine, MachineStatus, Reading, WsMessage } from "../../core/types";
 import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
 import type { Vital } from "../../features/scada/components/vitals-display";
@@ -37,11 +36,6 @@ export default function ScadaDetailContainer() {
 
   /* ── WebSocket ───────────────────────────────────────────────── */
   const wsMessage = useWsMachine(machineId);
-
-  useEffect(() => {
-    const stop = startWsAdapter();
-    return () => stop();
-  }, []);
 
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
 

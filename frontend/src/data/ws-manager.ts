@@ -137,10 +137,6 @@ export class WsManager {
   }
 
   private dispatch(msg: WsMessage): void {
-    // Route non-machine messages to global subscribers
-    const machineId =
-      (msg as Extract<WsMessage, { machine_id: string }>).machine_id;
-
     // Always route to global subscribers (SerialStatus, RESTFallback, etc.)
     for (const cb of this.globalSubscribers) {
       try {
@@ -150,8 +146,13 @@ export class WsManager {
       }
     }
 
-    // Also route machine-specific messages to per-machine subscribers
-    if (!machineId) return;
+    // Route machine-specific messages to per-machine subscribers.
+    // Server sends machine_id as a JSON number; normalise to string
+    // so Map lookups match subscription keys.
+    const rawMachineId =
+      (msg as Extract<WsMessage, { machine_id: string }>).machine_id;
+    if (rawMachineId == null) return;
+    const machineId = String(rawMachineId);
 
     const cbs = this.subscribers.get(machineId);
     if (!cbs) return;

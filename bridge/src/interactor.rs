@@ -13,7 +13,7 @@
 //!
 //! 3. **Failure tracking**: records successes and failures via `SerialReaderManager`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
@@ -30,12 +30,13 @@ use crate::protocol::{
 };
 use crate::serial::manager::SerialReaderManager;
 
-/// Metadata signal internal names that the bridge extracts from cyclical
-/// data and sends as `TherapySetup` frames (never as readings).
-const META_THERAPY_MODE: &str = "g_therapy_mode_set";
-const META_KIT_TYPE: &str = "d_kit_type_str";
-const META_PATIENT_WEIGHT: &str = "g_patient_data_weight_set";
-const META_PATIENT_ID: &str = "g_patient_id_str";
+/// Default capture names when env var is empty: all signals from pdms-omni
+/// that represent telemetry (not metadata).
+const DEFAULT_CAPTURE_NAMES: &str = "c_press_ep_act,c_pump_bs_bl_flow_act,c_pump_fs_mid_flow_act,d_renal_dose_act,c_acc_therapy_time_act,c_net_rem_flow_act,c_acc_net_rem_vol_act,c_press_ap_act,c_press_vp_act,c_press_fp_act,c_press_tmp_act";
+
+/// Default metadata names when env var is empty: signals used for therapy
+/// and patient identification (never sent as readings).
+const DEFAULT_METADATA_NAMES: &str = "d_serial_number_to_odi,g_patient_id_str,g_therapy_mode_set,g_anticoag_mode_set,d_kit_type_str,g_patient_data_weight_set";
 
 /// Cycle interval when no readings are available (device not responding).
 const IDLE_CYCLE_MS: u64 = 1000;
@@ -51,6 +52,8 @@ struct CyclicalState {
     /// Last known metadata values for change detection.
     metadata_cache: HashMap<String, Option<Value>>,
     patient_id_str: String,
+    /// Serial number extracted from the `d_serial_number_to_odi` signal.
+    serial_number_str: Option<String>,
     cycle: u64,
 }
 
@@ -62,6 +65,7 @@ impl CyclicalState {
             dict_cache: HashMap::new(),
             metadata_cache: HashMap::new(),
             patient_id_str: String::new(),
+            serial_number_str: None,
             cycle: 0,
         }
     }
@@ -448,9 +452,15 @@ fn extract_serial_from_readings(readings: &[TelemetryReading]) -> Option<String>
 
 /// Read cyclical values from the device and produce telemetry readings,
 /// while extracting metadata signals for the `TherapySetup` frame.
+///
+/// * `capture_names` — internal_names to include as readings (persisted).
+/// * `metadata_names` — internal_names to extract for TherapySetup (never persist).
+///   Signals in NEITHER set are skipped entirely.
 fn read_cyclical_values(
     device: &mut impl DeviceCommunicator,
     state: &mut CyclicalState,
+    capture_names: &HashSet<String>,
+    metadata_names: &HashSet<String>,
 ) -> Result<Vec<TelemetryReading>, DeviceError> {
     let data = device.request(CMD_CODE_GET_CYCLICAL_VALUES, &[])?;
 
@@ -520,9 +530,22 @@ fn read_cyclical_values(
 
         offset += size;
 
-        // ── Metadata detection ──
-        match attr.internal_name.as_str() {
-            META_PATIENT_ID => {
+        let name_lower = attr.internal_name.to_lowercase();
+
+        // ── Metadata: extract for TherapySetup, skip from readings ──
+        if metadata_names.contains(&name_lower) {
+            let value = match &physical_value {
+                TelemetryValue::Number(n) => Some(Value::Number(
+                    serde_json::Number::from_f64(*n).unwrap_or(serde_json::Number::from(0)),
+                )),
+                TelemetryValue::String(s) => Some(Value::String(s.clone())),
+            };
+            state
+                .metadata_cache
+                .insert(attr.internal_name.clone(), value);
+
+            // Special: patient_id_str for therapy setup convenience
+            if attr.internal_name == "g_patient_id_str" {
                 if let TelemetryValue::String(ref s) = physical_value {
                     let trimmed = s.trim().to_string();
                     if !trimmed.is_empty() {
@@ -530,25 +553,26 @@ fn read_cyclical_values(
                     }
                 }
             }
-            META_THERAPY_MODE
-            | META_KIT_TYPE
-            | META_PATIENT_WEIGHT => {
-                let value = match &physical_value {
-                    TelemetryValue::Number(n) => Some(Value::Number(
-                        serde_json::Number::from_f64(*n).unwrap_or(serde_json::Number::from(0)),
-                    )),
-                    TelemetryValue::String(s) => Some(Value::String(s.clone())),
-                };
-                state
-                    .metadata_cache
-                    .insert(attr.internal_name.clone(), value);
-                // Skip — metadata signals are NOT included in readings
-                continue;
+
+            // Special: serial number for machine discovery
+            if attr.internal_name == "d_serial_number_to_odi" {
+                if let TelemetryValue::String(ref s) = physical_value {
+                    let trimmed = s.trim().to_string();
+                    if !trimmed.is_empty() {
+                        state.serial_number_str = Some(trimmed);
+                    }
+                }
             }
-            _ => {}
+
+            // Never persist metadata as readings
+            continue;
         }
 
-        // ── Build reading (non-metadata signals only) ──
+        // ── Telemetry: include in readings only if in capture_names ──
+        if !capture_names.is_empty() && !capture_names.contains(&name_lower) {
+            continue;
+        }
+
         readings.push(TelemetryReading {
             id: None,
             timestamp: chrono::Utc::now()
@@ -573,19 +597,19 @@ fn read_cyclical_values(
 fn build_therapy_setup(state: &CyclicalState, machine_id: i64) -> BridgeFrame {
     let therapy_type = state
         .metadata_cache
-        .get(META_THERAPY_MODE)
+        .get("g_therapy_mode_set")
         .and_then(|v| v.as_ref())
         .and_then(|v| v.as_str().map(|s| s.to_owned()));
 
     let kit = state
         .metadata_cache
-        .get(META_KIT_TYPE)
+        .get("d_kit_type_str")
         .and_then(|v| v.as_ref())
         .and_then(|v| v.as_str().map(|s| s.to_owned()));
 
     let weight = state
         .metadata_cache
-        .get(META_PATIENT_WEIGHT)
+        .get("g_patient_data_weight_set")
         .and_then(|v| v.as_ref())
         .and_then(|v| v.as_f64());
 
@@ -673,6 +697,31 @@ pub async fn run_bridge(
     // ════════════════════════════════════════════════════════════
 
     // Step 1: Register with server by IP → get bridge_id
+    // ── Capture filters ──
+    let capture_names: HashSet<String> = std::env::var("CAPTURE_NAMES")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
+        .unwrap_or_else(|| {
+            DEFAULT_CAPTURE_NAMES
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .collect()
+        });
+
+    let metadata_names: HashSet<String> = std::env::var("CAPTURE_METADATA_NAMES")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect())
+        .unwrap_or_else(|| {
+            DEFAULT_METADATA_NAMES
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .collect()
+        });
+
+    tracing::info!("[bridge] capture_names={} signals, metadata_names={} signals", capture_names.len(), metadata_names.len());
+
     tracing::info!("[bridge] sending register (IP={bridge_ip})...");
     let bridge_id = match send_register(bridge_ip, &tx_readings, &mut rx_commands).await {
         Ok(id) => {
@@ -854,13 +903,15 @@ pub async fn run_bridge(
         }
 
         // Read cyclical values
-        match read_cyclical_values(device, &mut state) {
+        match read_cyclical_values(device, &mut state, &capture_names, &metadata_names) {
             Ok(readings) => {
                 manager.record_success().await;
 
                 // ── Serial discovery (first successful cycle only) ──
                 if !serial_resolved {
-                    if let Some(serial) = extract_serial_from_readings(&readings) {
+                    let serial = extract_serial_from_readings(&readings)
+                        .or_else(|| state.serial_number_str.clone());
+                    if let Some(serial) = serial {
                         tracing::info!(
                             "[bridge] discovered serial '{serial}' from cyclical data, sending MachineIdentify..."
                         );
@@ -1050,15 +1101,6 @@ mod tests {
     use super::*;
 
 
-    /// Check that metadata signal constants match expected values.
-    #[test]
-    fn metadata_signal_names_correct() {
-        assert_eq!(META_THERAPY_MODE, "g_therapy_mode_set");
-        assert_eq!(META_KIT_TYPE, "d_kit_type_str");
-        assert_eq!(META_PATIENT_WEIGHT, "g_patient_data_weight_set");
-        assert_eq!(META_PATIENT_ID, "g_patient_id_str");
-    }
-
     /// MetadataTracker starts as changed (first cycle always sends TherapySetup).
     #[test]
     fn metadata_tracker_starts_changed() {
@@ -1097,15 +1139,15 @@ mod tests {
         let mut state = CyclicalState::new();
         state.patient_id_str = "PAT-001".to_owned();
         state.metadata_cache.insert(
-            META_THERAPY_MODE.to_owned(),
+            "g_therapy_mode_set".to_owned(),
             Some(Value::String("HD".to_owned())),
         );
         state.metadata_cache.insert(
-            META_KIT_TYPE.to_owned(),
+            "d_kit_type_str".to_owned(),
             Some(Value::String("FX100".to_owned())),
         );
         state.metadata_cache.insert(
-            META_PATIENT_WEIGHT.to_owned(),
+            "g_patient_data_weight_set".to_owned(),
             Some(Value::Number(serde_json::Number::from_f64(70.5).unwrap())),
         );
 
@@ -1206,12 +1248,4 @@ mod tests {
         assert_eq!(read_raw_value(&bytes, 4, DataType::InputNumberSigned), -2147483648);
     }
 
-    /// Verify metadata signal constants are correctly defined.
-    #[test]
-    fn meta_signal_name_values() {
-        assert_eq!(META_THERAPY_MODE, "g_therapy_mode_set");
-        assert_eq!(META_KIT_TYPE, "d_kit_type_str");
-        assert_eq!(META_PATIENT_WEIGHT, "g_patient_data_weight_set");
-        assert_eq!(META_PATIENT_ID, "g_patient_id_str");
-    }
 }
