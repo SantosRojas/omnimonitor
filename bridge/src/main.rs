@@ -27,10 +27,10 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, mpsc, watch};
 
 use bridge::interactor::run_bridge;
-use bridge::protocol::frames::{BridgeFrame, ServerFrame};
+use bridge::protocol::frames::{BridgeFrame, ServerFrame, WsState};
 use bridge::serial::communicator::{SerialConfig, SerialDeviceCommunicator};
 use bridge::serial::manager::SerialReaderManager;
 use bridge::ws_client::connect_and_run;
@@ -220,10 +220,13 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
     // ── Determine serial number ──
     let serial_number = config.port.clone();
 
+    // ── WS state watch channel (shared between WS client and interactor) ──
+    let (ws_state_tx, ws_state_rx) = watch::channel(WsState::Disconnected);
+
     // ── Spawn WS client task ──
     let ws_url_clone = config.ws_url.clone();
     let ws_handle = tokio::spawn(async move {
-        connect_and_run(&ws_url_clone, rx_readings, tx_commands).await;
+        connect_and_run(&ws_url_clone, rx_readings, tx_commands, ws_state_tx).await;
     });
 
     // ── Spawn serial (interactor) task ──
@@ -240,6 +243,7 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
             tx_readings.clone(),
             rx_commands,
             &bridge_ip_clone,
+            ws_state_rx,
         )
         .await;
     });

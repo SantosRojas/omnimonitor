@@ -12,6 +12,7 @@ type MessageCallback = (msg: WsMessage) => void;
 export class WsManager {
   private ws: WebSocket | null = null;
   private subscribers = new Map<string, Set<MessageCallback>>();
+  private globalSubscribers = new Set<MessageCallback>();
   private retryDelay = 1_000;
   private readonly maxRetryDelay = 30_000;
   private url = "";
@@ -88,6 +89,17 @@ export class WsManager {
     }
   }
 
+  /**
+   * Subscribes a callback to ALL messages (including non-machine messages
+   * like SerialStatus). Returns an unsubscribe function.
+   */
+  subscribeGlobal(callback: MessageCallback): () => void {
+    this.globalSubscribers.add(callback);
+    return () => {
+      this.globalSubscribers.delete(callback);
+    };
+  }
+
   // ── Internal helpers ────────────────────────────────────────────
 
   private createConnection(): void {
@@ -125,14 +137,21 @@ export class WsManager {
   }
 
   private dispatch(msg: WsMessage): void {
-    // Only route messages that carry a machine_id
+    // Route non-machine messages to global subscribers
     const machineId =
       (msg as Extract<WsMessage, { machine_id: string }>).machine_id;
 
-    if (!machineId) {
-      // RESTFallback or other non-routed message — silently ignored
-      return;
+    // Always route to global subscribers (SerialStatus, RESTFallback, etc.)
+    for (const cb of this.globalSubscribers) {
+      try {
+        cb(msg);
+      } catch {
+        // Never let a misbehaving callback break the dispatch loop
+      }
     }
+
+    // Also route machine-specific messages to per-machine subscribers
+    if (!machineId) return;
 
     const cbs = this.subscribers.get(machineId);
     if (!cbs) return;

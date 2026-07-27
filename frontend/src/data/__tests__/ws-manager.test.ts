@@ -261,4 +261,87 @@ describe("WsManager", () => {
       expect(goodCb).toHaveBeenCalled();
     });
   });
+
+  /* ── Global subscribers ──────────────────────────────────── */
+
+  describe("global subscribers", () => {
+    it("subscribeGlobal returns an unsubscribe function", () => {
+      const unsub = manager.subscribeGlobal(vi.fn());
+      expect(typeof unsub).toBe("function");
+    });
+
+    it("calls global callback for non-machine messages (SerialStatus)", () => {
+      const globalCb = vi.fn();
+      manager.subscribeGlobal(globalCb);
+      manager.connect("ws://test");
+
+      const msg = {
+        type: "SerialStatus",
+        bridge_id: 1,
+        state: "Running",
+        failure_count: 0,
+        ws_state: "connected",
+        updated_at: "2026-07-27T10:00:00Z",
+      };
+      mockWebSockets[0]!.onmessage!({ data: JSON.stringify(msg) });
+
+      expect(globalCb).toHaveBeenCalledWith(msg);
+    });
+
+    it("calls global callback for machine messages too", () => {
+      const globalCb = vi.fn();
+      manager.subscribeGlobal(globalCb);
+      manager.connect("ws://test");
+
+      const msg = {
+        type: "ReadingsBroadcast",
+        machine_id: "m1",
+        readings: [],
+      };
+      mockWebSockets[0]!.onmessage!({ data: JSON.stringify(msg) });
+
+      expect(globalCb).toHaveBeenCalledWith(msg);
+    });
+
+    it("unsubscribeGlobal removes the callback permanently", () => {
+      const callback = vi.fn();
+      const unsub = manager.subscribeGlobal(callback);
+      unsub();
+      manager.connect("ws://test");
+
+      mockWebSockets[0]!.onmessage!({
+        data: JSON.stringify({
+          type: "SerialStatus",
+          bridge_id: 1,
+          state: "Running",
+          failure_count: 0,
+          ws_state: "connected",
+          updated_at: "2026-07-27T10:00:00Z",
+        }),
+      });
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("supports multiple global callbacks", () => {
+      const cb1 = vi.fn();
+      const cb2 = vi.fn();
+      manager.subscribeGlobal(cb1);
+      manager.subscribeGlobal(cb2);
+      manager.connect("ws://test");
+
+      const msg = {
+        type: "SerialStatus",
+        bridge_id: 1,
+        state: "Running",
+        failure_count: 0,
+        ws_state: "connected",
+        updated_at: "2026-07-27T10:00:00Z",
+      };
+      mockWebSockets[0]!.onmessage!({ data: JSON.stringify(msg) });
+
+      expect(cb1).toHaveBeenCalledTimes(1);
+      expect(cb2).toHaveBeenCalledTimes(1);
+    });
+  });
 });

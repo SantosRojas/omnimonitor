@@ -65,6 +65,11 @@ pub enum BridgeFrame {
         #[serde(skip_serializing_if = "Option::is_none")]
         weight: Option<f64>,
     },
+    SerialStatus {
+        state: String,
+        failure_count: u32,
+        ws_state: String,
+    },
 }
 
 /// Server → Bridge frames.
@@ -133,6 +138,15 @@ pub struct BridgeDictionaryEntry {
     pub text: String,
 }
 
+/// Serial status payload for a bridge, stored in-memory and broadcast to browsers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BridgeSerialStatusPayload {
+    pub state: String,
+    pub failure_count: u32,
+    pub ws_state: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ServerDataAttribute {
     pub handle: i32,
@@ -174,6 +188,13 @@ pub enum BrowserEvent {
         machine_id: i64,
         message: String,
     },
+    SerialStatus {
+        bridge_id: i64,
+        state: String,
+        failure_count: u32,
+        ws_state: String,
+        updated_at: String,
+    },
 }
 
 /// Browser → Server subscription command.
@@ -200,6 +221,8 @@ pub struct WsHubState {
     pub version_repo: VersionRepo,
     pub bridge_repo: BridgeRepo,
     browser_subs: BrowserSenders,
+    /// Latest serial status per bridge_id, stored in-memory.
+    pub bridge_statuses: Arc<RwLock<HashMap<i64, BridgeSerialStatusPayload>>>,
 }
 
 impl WsHubState {
@@ -219,6 +242,7 @@ impl WsHubState {
             version_repo,
             bridge_repo,
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
+            bridge_statuses: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -236,6 +260,16 @@ impl WsHubState {
             senders.retain(|s| !s.same_channel(tx));
         }
         subs.retain(|_, senders| !senders.is_empty());
+    }
+
+    /// Broadcast a JSON payload to ALL browser clients (regardless of machine subscription).
+    pub async fn broadcast_to_all_browsers(&self, payload: &str) {
+        let subs = self.browser_subs.read().await;
+        for (_, senders) in subs.iter() {
+            for tx in senders {
+                let _ = tx.send(payload.to_string());
+            }
+        }
     }
 
     /// Broadcast a JSON payload to all browsers subscribed to a machine.
@@ -342,7 +376,7 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
     info!("Bridge connection closed");
 }
 
-async fn handle_bridge_frame(
+pub async fn handle_bridge_frame(
     state: &WsHubState,
     frame: &BridgeFrame,
     current_machine_id: &mut Option<i64>,
@@ -475,6 +509,43 @@ async fn handle_bridge_frame(
             };
             if let Ok(json) = serde_json::to_string(&event) {
                 state.broadcast_to_machine(*machine_id, &json).await;
+            }
+
+            Ok(None)
+        }
+
+        BridgeFrame::SerialStatus { state: s, failure_count, ws_state } => {
+            if let Some(bridge_id) = *current_bridge_id {
+                // Store in-memory
+                let payload = BridgeSerialStatusPayload {
+                    state: s.clone(),
+                    failure_count: *failure_count,
+                    ws_state: ws_state.clone(),
+                    updated_at: Utc::now().to_rfc3339(),
+                };
+                {
+                    let mut statuses = state.bridge_statuses.write().await;
+                    statuses.insert(bridge_id, payload.clone());
+                }
+
+                // Tap heartbeat
+                if let Err(e) = state.bridge_repo.touch_last_seen(bridge_id).await {
+                    warn!("Failed to touch bridge {} last_seen: {}", bridge_id, e);
+                }
+
+                // Broadcast to ALL browser clients (not per-machine)
+                let event = BrowserEvent::SerialStatus {
+                    bridge_id,
+                    state: payload.state,
+                    failure_count: payload.failure_count,
+                    ws_state: payload.ws_state,
+                    updated_at: payload.updated_at,
+                };
+                if let Ok(json) = serde_json::to_string(&event) {
+                    state.broadcast_to_all_browsers(&json).await;
+                }
+            } else {
+                warn!("SerialStatus received before bridge registration");
             }
 
             Ok(None)

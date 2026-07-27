@@ -6,6 +6,22 @@ use serde::{Deserialize, Serialize};
 
 use super::{DataAttribute, DictionaryEntry, TelemetryReading, VersionInfo};
 
+/// WebSocket connection state for the bridge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum WsState {
+    Connected,
+    Disconnected,
+    Reconnecting,
+}
+
+/// Payload for the `SerialStatus` frame variant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SerialStatusPayload {
+    pub state: String,
+    pub failure_count: u32,
+    pub ws_state: String,
+}
+
 /// Frame sent from the Bridge to the Server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -29,6 +45,7 @@ pub enum BridgeFrame {
     Heartbeat {
         machine_id: i64,
     },
+    SerialStatus(SerialStatusPayload),
     StoreInit {
         version: VersionInfo,
         attributes: Vec<DataAttribute>,
@@ -288,6 +305,38 @@ mod tests {
         round_trip(&frame, "BridgeFrame::TherapySetup (minimal)");
         let json = serde_json::to_string(&frame).unwrap();
         assert!(!json.contains("therapy_type"), "None fields should be skipped");
+    }
+
+    #[test]
+    fn bridge_frame_serial_status() {
+        let payload = SerialStatusPayload {
+            state: "Running".into(),
+            failure_count: 0,
+            ws_state: "connected".into(),
+        };
+        let frame = BridgeFrame::SerialStatus(payload);
+        round_trip(&frame, "BridgeFrame::SerialStatus");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "SerialStatus");
+        assert_eq!(json["state"], "Running");
+        assert_eq!(json["failure_count"], 0);
+        assert_eq!(json["ws_state"], "connected");
+    }
+
+    #[test]
+    fn bridge_frame_serial_status_failed() {
+        let payload = SerialStatusPayload {
+            state: "FailedLimit".into(),
+            failure_count: 5,
+            ws_state: "disconnected".into(),
+        };
+        let frame = BridgeFrame::SerialStatus(payload);
+        round_trip(&frame, "BridgeFrame::SerialStatus (failed)");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "SerialStatus");
+        assert_eq!(json["state"], "FailedLimit");
+        assert_eq!(json["failure_count"], 5);
+        assert_eq!(json["ws_state"], "disconnected");
     }
 
     #[test]

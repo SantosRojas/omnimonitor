@@ -9,3 +9,12 @@ export interface Bridge {
   created_at: string;
   updated_at: string | null;
 }
+
+/// Live serial status for a bridge, received via WebSocket.
+export interface BridgeSerialStatus {
+  bridge_id: number;
+  state: string;
+  failure_count: number;
+  ws_state: string;
+  updated_at: string;
+}

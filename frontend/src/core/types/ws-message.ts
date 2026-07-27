@@ -17,4 +17,12 @@ export type WsMessage =
       machine_id: string;
       status: MachineStatusPayload;
     }
-  | { type: "RESTFallback"; reason: string };
+  | { type: "RESTFallback"; reason: string }
+  | {
+      type: "SerialStatus";
+      bridge_id: number;
+      state: string;
+      failure_count: number;
+      ws_state: string;
+      updated_at: string;
+    };
