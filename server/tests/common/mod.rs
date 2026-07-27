@@ -80,6 +80,7 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         repos.readings.clone(),
         repos.version.clone(),
         repos.bridge.clone(),
+        0, // persistence_interval_secs: 0 = inmediato (comportamiento original)
     ));
     let state = Arc::new(AppState {
         jwt_secret: "test-jwt-secret".into(),

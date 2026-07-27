@@ -5,12 +5,15 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+
 use tokio::sync::{mpsc, RwLock};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::domain::entities::Reading;
 use crate::infrastructure::postgres::{
@@ -225,6 +228,10 @@ pub struct WsHubState {
     browser_subs: BrowserSenders,
     /// Latest serial status per bridge_id, stored in-memory.
     pub bridge_statuses: Arc<RwLock<HashMap<i64, BridgeSerialStatusPayload>>>,
+    /// Timestamp del último snapshot persistido a BD.
+    last_persist: Arc<Mutex<Instant>>,
+    /// Intervalo mínimo entre persists de snapshot (segundos). 0 = cada ciclo.
+    persistence_interval_secs: u64,
 }
 
 impl WsHubState {
@@ -235,6 +242,7 @@ impl WsHubState {
         readings_repo: ReadingsRepo,
         version_repo: VersionRepo,
         bridge_repo: BridgeRepo,
+        persistence_interval_secs: u64,
     ) -> Self {
         Self {
             machine_repo,
@@ -245,6 +253,8 @@ impl WsHubState {
             bridge_repo,
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
             bridge_statuses: Arc::new(RwLock::new(HashMap::new())),
+            last_persist: Arc::new(Mutex::new(Instant::now())),
+            persistence_interval_secs,
         }
     }
 
@@ -271,6 +281,23 @@ impl WsHubState {
             for tx in senders {
                 let _ = tx.send(payload.to_string());
             }
+        }
+    }
+
+    /// Verifica si puede persistir un snapshot según el intervalo configurado.
+    /// Si `persistence_interval_secs == 0` o pasó el tiempo, persiste y retorna true.
+    /// Si aún no toca (interval > 0 y no pasó), no hace nada y retorna false.
+    fn check_persist_interval(&self) -> bool {
+        let interval = self.persistence_interval_secs;
+        if interval == 0 {
+            return true; // modo inmediato: siempre persistir
+        }
+        let mut last = self.last_persist.lock().unwrap();
+        if last.elapsed().as_secs() >= interval {
+            *last = Instant::now();
+            true
+        } else {
+            false
         }
     }
 
@@ -481,10 +508,19 @@ pub async fn handle_bridge_frame(
                 })
                 .collect();
 
-            if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
-                error!("Failed to insert readings for machine {}: {}", machine_id, e);
+            // ── Persistence: snapshot cada N segundos ──
+            // Igual que pdms-omni con DB_SAVE_INTERVAL: solo se persiste
+            // el batch actual cuando el intervalo ha pasado. El broadcast
+            // a browsers es siempre inmediato (abajo).
+            if state.check_persist_interval() {
+                if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
+                    error!("Failed to insert readings for machine {}: {}", machine_id, e);
+                } else if state.persistence_interval_secs > 0 {
+                    debug!("[persist] snapshot {} readings (machine {})", domain_readings.len(), machine_id);
+                }
             }
 
+            // ── Broadcast en tiempo real (siempre inmediato) ──
             let event = BrowserEvent::ReadingsBroadcast {
                 machine_id: *machine_id,
                 cycle: *cycle,

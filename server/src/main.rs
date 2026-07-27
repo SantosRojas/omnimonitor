@@ -282,6 +282,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => error!("Seed failed: {}", e),
     }
 
+    // ── Persistence interval ──────────────────────
+    let persistence_interval_secs: u64 = std::env::var("PERSISTENCE_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    info!(
+        "Persistence interval: {}s (0 = immediate)",
+        persistence_interval_secs
+    );
+
     // ── WS hub state ──────────────────────────────
     let ws_hub = Arc::new(WsHubState::new(
         machine_repo.clone(),
@@ -290,6 +300,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         readings_repo.clone(),
         version_repo.clone(),
         bridge_repo.clone(),
+        persistence_interval_secs,
     ));
 
     // ── Unified app state ─────────────────────────
