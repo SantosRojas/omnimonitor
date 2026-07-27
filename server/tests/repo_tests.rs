@@ -729,6 +729,8 @@ async fn version_save_and_retrieve(pool: PgPool) {
             Some("FW6.0"),
             Some("HW7.0"),
             Some("Lang1"),
+            None,
+            None,
             &attrs,
             &dict,
         )
@@ -776,7 +778,7 @@ async fn version_save_reinitialization(pool: PgPool) {
     repo.save_initialization(
         "fp_reinit",
         Some(1),
-        None, None, None, None, None, None, None, None,
+        None, None, None, None, None, None, None, None, None, None,
         &attrs_v1,
         &[],
     )
@@ -798,7 +800,7 @@ async fn version_save_reinitialization(pool: PgPool) {
     repo.save_initialization(
         "fp_reinit",
         Some(1),
-        None, None, None, None, None, None, None, None,
+        None, None, None, None, None, None, None, None, None, None,
         &attrs_v2,
         &[],
     )

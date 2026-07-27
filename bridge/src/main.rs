@@ -25,9 +25,14 @@
 //! 3. Environment variables (`BRIDGE_*`)
 //! 4. CLI arguments (`--port`, `--ws`, `--bridge-ip`, etc.)
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, mpsc, watch};
+use tracing_subscriber::fmt::time::ChronoLocal;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
 
 use bridge::interactor::run_bridge;
 use bridge::protocol::frames::{BridgeFrame, ServerFrame, WsState};
@@ -51,6 +56,7 @@ pub struct BridgeConfig {
     pub bridge_ip: String,
     pub max_failures: u32,
     pub timeout_secs: u64,
+    pub developer_mode: bool,
 }
 
 impl Default for BridgeConfig {
@@ -64,6 +70,7 @@ impl Default for BridgeConfig {
             bridge_ip: String::new(),
             max_failures: 10,
             timeout_secs: 3,
+            developer_mode: false,
         }
     }
 }
@@ -111,6 +118,10 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
         if let Ok(n) = v.parse() {
             config.timeout_secs = n;
         }
+    }
+    if let Ok(v) = std::env::var("BRIDGE_DEVELOPER_MODE") {
+        config.developer_mode =
+            v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("1") || v == "yes";
     }
 
     // ── Override from CLI args ──
@@ -168,6 +179,10 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
                     i += 1;
                 }
             }
+            "--developer-mode" => {
+                config.developer_mode = true;
+                i += 1;
+            }
             _ => {
                 i += 1;
             }
@@ -175,6 +190,81 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
     }
 
     config
+}
+
+// ───────────────────────────────────────────────
+//  Tracing
+// ───────────────────────────────────────────────
+
+/// Initializes the tracing/logging subsystem.
+///
+/// In **developer mode**: writes to both console (with ANSI) and daily rolling file at
+/// `logs/bridge.log`, with `debug`-level verbosity for the bridge crate.
+///
+/// In **production mode** (default): lightweight console-only output at `info` level.
+///
+/// The `RUST_LOG` env var always overrides the default filter when set.
+fn init_tracing(developer_mode: bool) -> Vec<tracing_appender::non_blocking::WorkerGuard> {
+    let default_filter = if developer_mode {
+        "debug,hyper=warn,tungstenite=warn,rustls=warn"
+    } else {
+        "info"
+    };
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter));
+
+    if developer_mode {
+        // ── Developer mode: console + daily rolling file ──
+        let log_dir = PathBuf::from("logs");
+        if let Err(e) = std::fs::create_dir_all(&log_dir) {
+            eprintln!("[Tracing] WARNING: cannot create logs dir: {e}. Console only.");
+            tracing_subscriber::fmt()
+                .with_env_filter(filter)
+                .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
+                .with_target(false)
+                .init();
+            return vec![];
+        }
+
+        let file_appender = tracing_appender::rolling::daily(&log_dir, "bridge.log");
+        let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
+        let (console_writer, console_guard) = tracing_appender::non_blocking(std::io::stdout());
+
+        let timer = ChronoLocal::new("%Y-%m-%d %H:%M:%S%.3f".to_string());
+
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(file_writer)
+            .with_ansi(false)
+            .with_target(false)
+            .with_timer(timer.clone())
+            .with_level(true)
+            .boxed();
+
+        let console_layer = tracing_subscriber::fmt::layer()
+            .with_writer(console_writer)
+            .with_ansi(true)
+            .with_target(false)
+            .with_timer(timer)
+            .with_level(true)
+            .boxed();
+
+        tracing_subscriber::Registry::default()
+            .with(filter)
+            .with(console_layer)
+            .with(file_layer)
+            .init();
+
+        vec![file_guard, console_guard]
+    } else {
+        // ── Production mode: console only, simpler output ──
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .init();
+
+        vec![]
+    }
 }
 
 // ───────────────────────────────────────────────
@@ -275,11 +365,6 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
 
 #[tokio::main]
 async fn main() {
-    // ── Initialize tracing (once) ──
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-
     // ── Load config upfront for validation ──
     let args: Vec<String> = std::env::args().collect();
 
@@ -289,6 +374,10 @@ async fn main() {
     dotenvy::from_path("bridge/.env").ok();
 
     let config = load_config(&args);
+
+    // ── Initialize tracing after config is loaded ──
+    // Keep guards alive for the entire process lifetime (non-blocking writers)
+    let _tracing_guards = init_tracing(config.developer_mode);
 
     if config.port.is_empty() || config.ws_url.is_empty() {
         eprintln!(

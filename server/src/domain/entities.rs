@@ -93,6 +93,8 @@ pub struct SoftwareVersion {
     pub pss_fw: Option<String>,
     pub pss_hw: Option<String>,
     pub language1: Option<String>,
+    pub language2: Option<String>,
+    pub language3: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

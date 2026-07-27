@@ -118,6 +118,8 @@ pub struct BridgeVersionInfo {
     pub pss_fw: String,
     pub pss_hw: String,
     pub language1: String,
+    pub language2: String,
+    pub language3: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -593,6 +595,8 @@ pub async fn handle_bridge_frame(
                     Some(&version.pss_fw),
                     Some(&version.pss_hw),
                     Some(&version.language1),
+                    Some(&version.language2),
+                    Some(&version.language3),
                     &attrs,
                     &dict,
                 )
@@ -663,7 +667,7 @@ async fn handle_therapy_setup(
 /// Compute deterministic fingerprint (mirrors bridge).
 fn compute_fingerprint(version: &BridgeVersionInfo) -> String {
     let s = format!(
-        "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:",
+        "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
         version.language_id,
         version.system_sw,
         version.dss_fw,
@@ -673,7 +677,8 @@ fn compute_fingerprint(version: &BridgeVersionInfo) -> String {
         version.pss_fw,
         version.pss_hw,
         version.language1,
-        "",
+        version.language2,
+        version.language3,
     );
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in s.bytes() {

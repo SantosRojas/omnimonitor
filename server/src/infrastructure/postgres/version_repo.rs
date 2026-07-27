@@ -90,6 +90,8 @@ impl VersionRepo {
         pss_fw: Option<&str>,
         pss_hw: Option<&str>,
         language1: Option<&str>,
+        language2: Option<&str>,
+        language3: Option<&str>,
         attributes: &[InitAttribute],
         dictionary: &[InitDictionary],
     ) -> Result<i64, RepoError> {
@@ -98,8 +100,8 @@ impl VersionRepo {
         // Insert or update software version
         let version_id: (i64,) = sqlx::query_as(
             r#"
-            INSERT INTO software_versions (fingerprint, language_id, system_sw, dss_fw, dss_hw, css_fw, css_hw, pss_fw, pss_hw, language1)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO software_versions (fingerprint, language_id, system_sw, dss_fw, dss_hw, css_fw, css_hw, pss_fw, pss_hw, language1, language2, language3)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             ON CONFLICT (fingerprint) DO UPDATE SET
                 language_id = COALESCE($2, software_versions.language_id),
                 system_sw = COALESCE($3, software_versions.system_sw),
@@ -109,7 +111,9 @@ impl VersionRepo {
                 css_hw = COALESCE($7, software_versions.css_hw),
                 pss_fw = COALESCE($8, software_versions.pss_fw),
                 pss_hw = COALESCE($9, software_versions.pss_hw),
-                language1 = COALESCE($10, software_versions.language1)
+                language1 = COALESCE($10, software_versions.language1),
+                language2 = COALESCE($11, software_versions.language2),
+                language3 = COALESCE($12, software_versions.language3)
             RETURNING id
             "#,
         )
@@ -123,6 +127,8 @@ impl VersionRepo {
         .bind(pss_fw)
         .bind(pss_hw)
         .bind(language1)
+        .bind(language2)
+        .bind(language3)
         .fetch_one(&mut *tx)
         .await?;
 
