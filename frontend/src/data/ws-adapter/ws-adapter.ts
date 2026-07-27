@@ -1,6 +1,7 @@
 import { wsManager } from "../ws-manager";
 import { useLiveDataStore } from "../../store/live-data-store";
 import { useMachineStatusStore } from "../../store/machine-status-store";
+import { useBridgeStatusStore } from "../../store/bridge-status-store";
 import type { WsMessage } from "../../core/types";
 
 /**
@@ -10,13 +11,18 @@ import type { WsMessage } from "../../core/types";
 export function startWsAdapter(wsUrl = "/ws/browser"): () => void {
   // Subscribe to ALL machines via wildcard — the ws-manager dispatches
   // by machine_id internally. We use a single subscriber to all.
-  const unsubscribe = wsManager.subscribe("*", handleMessage);
+  const unsubscribeMachine = wsManager.subscribe("*", handleMachineMessage);
+  // Subscribe to all messages (including non-machine messages like SerialStatus)
+  const unsubscribeGlobal = wsManager.subscribeGlobal(handleGlobalMessage);
   wsManager.connect(wsUrl);
 
-  return unsubscribe;
+  return () => {
+    unsubscribeMachine();
+    unsubscribeGlobal();
+  };
 }
 
-function handleMessage(msg: WsMessage): void {
+function handleMachineMessage(msg: WsMessage): void {
   switch (msg.type) {
     case "ReadingsBroadcast":
     case "ReadingsReplay":
@@ -35,3 +41,21 @@ function handleMessage(msg: WsMessage): void {
       break;
   }
 }
+
+function handleGlobalMessage(msg: WsMessage): void {
+  switch (msg.type) {
+    case "SerialStatus":
+      useBridgeStatusStore
+        .getState()
+        .updateBridgeStatus(
+          msg.bridge_id,
+          msg.state,
+          msg.failure_count,
+          msg.ws_state,
+          msg.updated_at,
+        );
+      break;
+  }
+}
+
+

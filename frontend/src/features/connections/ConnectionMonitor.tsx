@@ -2,30 +2,53 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { useMachineStatusStore } from "../../store/machine-status-store";
+import { useBridgeStatusStore } from "../../store/bridge-status-store";
 import { startWsAdapter } from "../../data/ws-adapter";
 import { PageHeader } from "../../ui/layouts/PageHeader";
-import { Card, CardContent } from "../../ui/primitives/card";
+import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Badge } from "../../ui/primitives/badge";
+import { cn } from "../../ui/primitives";
 import { MachineStatusDot } from "../scada/components/machine-status-dot";
 import type { Machine } from "../../core/types/machine";
 
 const machineRepo = new HttpMachineRepo();
 
-const statusBadgeVariant: Record<string, "success" | "danger" | "secondary"> = {
+const statusBadgeVariant: Record<string, "success" | "danger" | "secondary" | "warning"> = {
   online: "success",
   offline: "secondary",
   error: "danger",
 };
 
+const bridgeStateColor: Record<string, string> = {
+  Running: "bg-green-500",
+  Initializing: "bg-amber-500",
+  FailedLimit: "bg-red-500",
+  Stopped: "bg-neutral-400",
+};
+
+const bridgeStateBadge: Record<string, "success" | "warning" | "danger" | "secondary"> = {
+  Running: "success",
+  Initializing: "warning",
+  FailedLimit: "danger",
+  Stopped: "secondary",
+};
+
+const wsStateBadge: Record<string, "success" | "secondary" | "warning"> = {
+  connected: "success",
+  disconnected: "secondary",
+  reconnecting: "warning",
+};
+
 export default function ConnectionMonitor() {
   const machineStatuses = useMachineStatusStore((s) => s.machines);
+  const bridgeStatuses = useBridgeStatusStore((s) => s.bridges);
 
   useEffect(() => {
     const stop = startWsAdapter();
     return () => stop();
   }, []);
 
-  const { data: machines, isLoading } = useQuery({
+  const { data: machines, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["machines"],
     queryFn: () => machineRepo.list(),
   });
@@ -37,11 +60,77 @@ export default function ConnectionMonitor() {
     return { ...m, liveStatus: status, lastSeen };
   });
 
+  const bridgeEntries = Object.entries(bridgeStatuses);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader title="Connection Monitor" description="Bridge connection status for all machines" />
 
-      {isLoading ? (
+      {/* ── Bridge Status Cards ── */}
+      {bridgeEntries.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-lg font-semibold text-neutral-900 dark:text-white">Bridge Status</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {bridgeEntries.map(([id, status]) => (
+              <Card key={id}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <CardTitle className="text-sm font-medium">Bridge #{id}</CardTitle>
+                  <span
+                    className={cn(
+                      "inline-block h-3 w-3 rounded-full",
+                      bridgeStateColor[status.state] ?? "bg-neutral-400",
+                    )}
+                    title={status.state}
+                  />
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">State</span>
+                    <Badge variant={bridgeStateBadge[status.state] ?? "secondary"}>{status.state}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">Failures</span>
+                    <span className={cn(
+                      "font-mono",
+                      status.failure_count > 0 ? "text-red-500 font-semibold" : "text-neutral-600",
+                    )}>
+                      {status.failure_count}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">WS</span>
+                    <Badge variant={wsStateBadge[status.ws_state] ?? "secondary"}>{status.ws_state}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">Last Updated</span>
+                    <span className="text-neutral-600">
+                      {new Date(status.updated_at).toLocaleString()}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Machine Status Table ── */}
+      {isError ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <div className="mb-3 text-red-500">
+              <p className="font-medium">Failed to load machines</p>
+              <p className="mt-1 text-sm text-neutral-500">{(error as Error)?.message ?? "Unknown error"}</p>
+            </div>
+            <button
+              onClick={() => refetch()}
+              className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+            >
+              Retry
+            </button>
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <Card><CardContent className="py-8 text-center text-neutral-400">Loading machines...</CardContent></Card>
       ) : rows.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-neutral-400">No machines registered</CardContent></Card>
@@ -64,7 +153,7 @@ export default function ConnectionMonitor() {
                   <td className="px-4 py-3 text-neutral-500">{m.serial_number ?? "—"}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <MachineStatusDot status={m.liveStatus} />
+                      <MachineStatusDot status={m.liveStatus as any} />
                       <Badge variant={statusBadgeVariant[m.liveStatus] ?? "secondary"}>{m.liveStatus}</Badge>
                     </div>
                   </td>
@@ -77,6 +166,15 @@ export default function ConnectionMonitor() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Empty Bridge Status ── */}
+      {bridgeEntries.length === 0 && !isLoading && (
+        <Card>
+          <CardContent className="py-6 text-center text-sm text-neutral-400">
+            No bridge status available. Bridge status appears here once a bridge connects and sends serial status.
+          </CardContent>
+        </Card>
       )}
     </div>
   );

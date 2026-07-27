@@ -26,7 +26,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::MaybeTlsStream;
 use url::Url;
 
-use crate::protocol::frames::{BridgeFrame, ServerFrame};
+use crate::protocol::frames::{BridgeFrame, ServerFrame, WsState};
+use tokio::sync::watch;
 
 const MAX_BUFFER: usize = 100;
 const INITIAL_BACKOFF_SECS: u64 = 1;
@@ -44,12 +45,15 @@ fn build_tls_connector() -> Result<NativeTlsConnector, native_tls::Error> {
 /// - `url`: The WebSocket server URL (e.g. `ws://localhost:9000/ws`).
 /// - `rx_readings`: Channel receiving outgoing `BridgeFrame`s from the interactor.
 /// - `tx_commands`: Channel forwarding incoming `ServerFrame`s to the interactor.
+/// - `ws_state_tx`: Watch sender that reports the WS connection state
+///   (Connected / Disconnected / Reconnecting).
 ///
 /// This function never returns under normal operation — it keeps reconnecting.
 pub async fn connect_and_run(
     url: &str,
     mut rx_readings: mpsc::Receiver<BridgeFrame>,
     tx_commands: mpsc::Sender<ServerFrame>,
+    ws_state_tx: watch::Sender<WsState>,
 ) {
     let url = url.to_owned();
     let mut buffer: Vec<BridgeFrame> = Vec::with_capacity(MAX_BUFFER);
@@ -80,6 +84,7 @@ pub async fn connect_and_run(
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!("[ws] TCP connect to {host}:{port} failed: {e}, retrying in {backoff_secs}s...");
+                let _ = ws_state_tx.send(WsState::Reconnecting);
                 buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
                 backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
                 continue;
@@ -103,6 +108,7 @@ pub async fn connect_and_run(
                 }
                 Err(e) => {
                     tracing::warn!("[ws] TLS handshake failed: {e}, retrying in {backoff_secs}s...");
+                    let _ = ws_state_tx.send(WsState::Reconnecting);
                     buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
                     backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
                     continue 'outer;
@@ -117,11 +123,13 @@ pub async fn connect_and_run(
         let ws_stream = match client_async(&url, maybe_tls).await {
             Ok((stream, _)) => {
                 tracing::info!("[ws] connected to {url}");
+                let _ = ws_state_tx.send(WsState::Connected);
                 backoff_secs = INITIAL_BACKOFF_SECS;
                 stream
             }
             Err(e) => {
                 tracing::warn!("[ws] WebSocket handshake failed: {e}, retrying in {backoff_secs}s...");
+                let _ = ws_state_tx.send(WsState::Reconnecting);
                 buffer_during_backoff(&mut buffer, &mut rx_readings, backoff_secs).await;
                 backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
                 continue 'outer;
@@ -209,6 +217,7 @@ pub async fn connect_and_run(
             }
         }
 
+        let _ = ws_state_tx.send(WsState::Reconnecting);
         tracing::warn!("[ws] connection lost, reconnecting...");
     }
 }
@@ -254,13 +263,14 @@ mod tests {
     async fn buffer_overflow_drops_oldest() {
         let (tx_readings, rx_readings) = mpsc::channel::<BridgeFrame>(200);
         let (tx_commands, _rx_commands) = mpsc::channel::<ServerFrame>(16);
+        let (ws_state_tx, _ws_state_rx) = watch::channel(WsState::Disconnected);
 
         // URL that won't connect (to test buffering during reconnection)
         let url = "ws://127.0.0.1:19199/nonexistent";
 
         // Spawn the ws_client — it will try to connect and fail, buffering frames
         let handle = tokio::spawn(async move {
-            connect_and_run(url, rx_readings, tx_commands).await;
+            connect_and_run(url, rx_readings, tx_commands, ws_state_tx).await;
         });
 
         // Send more than MAX_BUFFER frames while disconnected

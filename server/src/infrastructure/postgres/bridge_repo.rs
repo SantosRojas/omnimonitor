@@ -117,6 +117,18 @@ impl BridgeRepo {
         Ok(row)
     }
 
+    /// Update the last_seen_at timestamp for a bridge (heartbeat).
+    pub async fn touch_last_seen(&self, id: i64) -> Result<(), RepoError> {
+        sqlx::query(
+            "UPDATE bridges SET last_seen_at = NOW(), updated_at = NOW() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     /// Delete a bridge by id.
     pub async fn delete(&self, id: i64) -> Result<(), RepoError> {
         let result = sqlx::query("DELETE FROM bridges WHERE id = $1")

@@ -18,10 +18,10 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
 
-use crate::protocol::frames::{BridgeFrame, ServerFrame};
+use crate::protocol::frames::{BridgeFrame, SerialStatusPayload, ServerFrame, WsState};
 use crate::protocol::{
     CMD_CODE_GET_CYCLICAL_VALUES, CMD_CODE_GET_DATA_ATTRS, CMD_CODE_GET_HANDLES,
     CMD_CODE_GET_NEXT_DICT_STR, CMD_CODE_GET_VERSIONS, CMD_CODE_NAK, DataAttribute, DataType,
@@ -644,6 +644,7 @@ pub async fn run_bridge(
     tx_readings: mpsc::Sender<BridgeFrame>,
     mut rx_commands: mpsc::Receiver<ServerFrame>,
     bridge_ip: &str,
+    ws_state_rx: watch::Receiver<WsState>,
 ) {
     tracing::info!("[bridge] starting interactor for bridge_ip={bridge_ip}");
 
@@ -729,6 +730,27 @@ pub async fn run_bridge(
                 return;
             }
             tracing::info!("[bridge] store_init acknowledged");
+
+            // ── Signal ID fix: re-query signal IDs after StoreInit ──
+            // After store_init, the server has real catalog signal IDs.
+            // Re-send InitQuery to fetch them back, then update attr_cache.
+            tracing::info!("[bridge] re-querying signal IDs after StoreInit...");
+            match send_init_query(&fingerprint, &tx_readings, &mut rx_commands).await {
+                Ok(InitQueryResult::Known { attributes, dictionary }) => {
+                    state.load_from_version_config(attributes, dictionary);
+                    tracing::info!("[bridge] signal IDs updated from server after StoreInit");
+                }
+                Ok(InitQueryResult::Unknown) => {
+                    tracing::error!("[bridge] server returned UnknownVersion after StoreInit — this should not happen");
+                    manager.record_failure().await;
+                    return;
+                }
+                Err(e) => {
+                    tracing::error!("[bridge] re-query after StoreInit failed: {e}");
+                    manager.record_failure().await;
+                    return;
+                }
+            }
         }
         Err(e) => {
             tracing::error!("[bridge] init_query failed: {e}");
@@ -772,6 +794,8 @@ pub async fn run_bridge(
     });
 
     let mut meta_tracker = MetadataTracker::new();
+    let mut last_status_send = tokio::time::Instant::now();
+    const STATUS_INTERVAL_SECS: u64 = 5;
 
     loop {
         // Check for pending therapy close
@@ -780,6 +804,27 @@ pub async fn run_bridge(
             // The server closes therapy on its side. We reset state.
             state.metadata_cache.clear();
             meta_tracker = MetadataTracker::new();
+        }
+
+        // ── Status broadcast (every 5s) ──
+        if last_status_send.elapsed() >= Duration::from_secs(STATUS_INTERVAL_SECS) {
+            let s = manager.get_status().await;
+            let ws = ws_state_rx.borrow().clone();
+            let ws_label = match ws {
+                WsState::Connected => "connected",
+                WsState::Disconnected => "disconnected",
+                WsState::Reconnecting => "reconnecting",
+            };
+            let payload = SerialStatusPayload {
+                state: s.status,
+                failure_count: s.consecutive_failures,
+                ws_state: ws_label.to_owned(),
+            };
+            if tx_readings.send(BridgeFrame::SerialStatus(payload)).await.is_err() {
+                tracing::error!("[bridge] tx_readings closed, stopping");
+                break;
+            }
+            last_status_send = tokio::time::Instant::now();
         }
 
         // Read cyclical values

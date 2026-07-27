@@ -911,3 +911,100 @@ async fn bridge_delete_not_found(pool: PgPool) {
     let err = repo.delete(999_999).await.unwrap_err();
     assert!(matches!(err, RepoError::NotFound(_)));
 }
+
+// ════════════════════════════════════════════════════════════════════════
+//  WsHub handle_bridge_frame tests
+// ════════════════════════════════════════════════════════════════════════
+
+#[sqlx::test]
+async fn handle_bridge_serial_status_stores_in_memory(pool: PgPool) {
+    use server::infrastructure::ws_hub::{
+        BridgeFrame, BridgeSerialStatusPayload, WsHubState, handle_bridge_frame,
+    };
+
+    common::setup_db(&pool).await;
+    let repos = common::create_repos(&pool);
+
+    // Register a bridge in DB BEFORE moving repos into WsHubState
+    let bridge = repos.bridge.create("10.0.0.99", None).await.unwrap();
+
+    let ws_hub = WsHubState::new(
+        repos.machine,
+        repos.patient,
+        repos.therapy,
+        repos.readings,
+        repos.version,
+        repos.bridge,
+    );
+
+    let frame = BridgeFrame::SerialStatus {
+        state: "running".into(),
+        failure_count: 0,
+        ws_state: "connected".into(),
+    };
+
+    let mut current_machine_id: Option<i64> = None;
+    let mut current_bridge_id: Option<i64> = Some(bridge.id);
+
+    let result = handle_bridge_frame(
+        &ws_hub,
+        &frame,
+        &mut current_machine_id,
+        &mut current_bridge_id,
+    )
+    .await;
+
+    assert!(result.is_ok(), "handle_bridge_frame should succeed: {:?}", result);
+
+    // Verify in-memory storage
+    let statuses = ws_hub.bridge_statuses.read().await;
+    let payload: &BridgeSerialStatusPayload = statuses
+        .get(&bridge.id)
+        .expect("bridge should have a stored serial status");
+
+    assert_eq!(payload.state, "running");
+    assert_eq!(payload.failure_count, 0);
+    assert_eq!(payload.ws_state, "connected");
+    assert!(!payload.updated_at.is_empty(), "updated_at should be set");
+}
+
+#[sqlx::test]
+async fn handle_bridge_serial_status_before_registration_logs_warning(pool: PgPool) {
+    use server::infrastructure::ws_hub::{
+        BridgeFrame, WsHubState, handle_bridge_frame,
+    };
+
+    common::setup_db(&pool).await;
+    let repos = common::create_repos(&pool);
+    let ws_hub = WsHubState::new(
+        repos.machine,
+        repos.patient,
+        repos.therapy,
+        repos.readings,
+        repos.version,
+        repos.bridge,
+    );
+
+    let frame = BridgeFrame::SerialStatus {
+        state: "running".into(),
+        failure_count: 0,
+        ws_state: "connected".into(),
+    };
+
+    let mut current_machine_id: Option<i64> = None;
+    let mut current_bridge_id: Option<i64> = None; // No bridge registered
+
+    let result = handle_bridge_frame(
+        &ws_hub,
+        &frame,
+        &mut current_machine_id,
+        &mut current_bridge_id,
+    )
+    .await;
+
+    assert!(result.is_ok(), "handle_bridge_frame should still return Ok when unregistered");
+
+    // No bridge status should be stored
+    let statuses = ws_hub.bridge_statuses.read().await;
+    assert!(statuses.is_empty(), "no statuses should be stored without registration");
+}
