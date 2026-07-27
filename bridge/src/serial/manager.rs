@@ -29,6 +29,7 @@ pub struct SerialReaderStatus {
     pub consecutive_failures: u32,
     pub max_failures: u32,
     pub data_warnings: u32,
+    pub cyclical_failures: u64, // Solo informativo, nunca causa FailedLimit
     pub close_therapy_on_stop: bool,
     pub pending_therapy_close: Option<i64>,
 }
@@ -65,6 +66,7 @@ impl SerialReaderManager {
             consecutive_failures: 0,
             max_failures,
             data_warnings: 0,
+            cyclical_failures: 0,
             close_therapy_on_stop: true,
             pending_therapy_close: None,
         }));
@@ -127,6 +129,7 @@ impl SerialReaderManager {
     pub async fn record_success(&self) {
         let mut s = self.state.lock().await;
         s.consecutive_failures = 0;
+        s.cyclical_failures = 0;
         if s.status == "Initializing" {
             s.status = "Running".to_string();
         }
@@ -163,6 +166,18 @@ impl SerialReaderManager {
         s.pending_therapy_close.take()
     }
 
+    /// Incrementa el contador informativo de fallos cíclicos.
+    /// NUNCA transiciona a FailedLimit — solo informativo.
+    pub async fn record_cyclical_failure(&self) {
+        let mut s = self.state.lock().await;
+        s.cyclical_failures += 1;
+    }
+
+    /// Returns the current cyclical failures count (informational only).
+    pub async fn get_cyclical_failures(&self) -> u64 {
+        self.state.lock().await.cyclical_failures
+    }
+
     /// Record one connection failure (I/O error, timeout).
     /// Returns `true` if the failure limit has been reached and the reader
     /// should stop.
@@ -190,6 +205,7 @@ mod tests {
         assert_eq!(status.status, "Stopped");
         assert_eq!(status.consecutive_failures, 0);
         assert_eq!(status.max_failures, 5);
+        assert_eq!(status.cyclical_failures, 0);
     }
 
     #[tokio::test]
@@ -197,6 +213,7 @@ mod tests {
         let (mgr, _rx, _state) = SerialReaderManager::new(3, true);
         let status = mgr.get_status().await;
         assert_eq!(status.status, "Initializing");
+        assert_eq!(status.cyclical_failures, 0);
     }
 
     #[tokio::test]
@@ -209,6 +226,7 @@ mod tests {
         let status = mgr.get_status().await;
         assert_eq!(status.status, "Running");
         assert_eq!(status.consecutive_failures, 0);
+        assert_eq!(status.cyclical_failures, 0);
     }
 
     #[tokio::test]
@@ -248,6 +266,23 @@ mod tests {
 
         mgr.record_success().await;
         assert_eq!(mgr.get_status().await.consecutive_failures, 0);
+        assert_eq!(mgr.get_status().await.cyclical_failures, 0);
+    }
+
+    #[tokio::test]
+    async fn cyclical_failures_accumulate_and_are_informational() {
+        let (mgr, _rx, _state) = SerialReaderManager::new(5, false);
+
+        assert_eq!(mgr.get_cyclical_failures().await, 0);
+
+        for _ in 0..10 {
+            mgr.record_cyclical_failure().await;
+        }
+        assert_eq!(mgr.get_cyclical_failures().await, 10);
+
+        // record_success resets cyclical_failures
+        mgr.record_success().await;
+        assert_eq!(mgr.get_cyclical_failures().await, 0);
     }
 
     #[tokio::test]

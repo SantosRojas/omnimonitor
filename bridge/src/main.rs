@@ -109,7 +109,8 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
     if let Ok(v) = std::env::var("BRIDGE_IP") {
         config.bridge_ip = v;
     }
-    if let Ok(v) = std::env::var("BRIDGE_MAX_FAILURES") {
+    if let Ok(v) = std::env::var("SERIAL_MAX_FAILURES") {
+        tracing::info!("Using SERIAL_MAX_FAILURES from env: {}", v);
         if let Ok(n) = v.parse() {
             config.max_failures = n;
         }
@@ -452,7 +453,7 @@ mod tests {
     #[test]
     fn load_config_defaults_with_minimal_cli() {
         // Sanitize env vars that may leak from parallel env tests
-        for var in ["BRIDGE_BAUD", "BRIDGE_IP", "BRIDGE_PORT", "BRIDGE_MAX_FAILURES",
+        for var in ["BRIDGE_BAUD", "BRIDGE_IP", "BRIDGE_PORT", "SERIAL_MAX_FAILURES",
                      "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR"]
         {
             unsafe { std::env::remove_var(var); }
@@ -603,7 +604,7 @@ mod tests {
 
     #[test]
     fn load_config_env_and_cli_combined() {
-        unsafe { std::env::set_var("BRIDGE_MAX_FAILURES", "3"); }
+        unsafe { std::env::set_var("SERIAL_MAX_FAILURES", "3"); }
         unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "5"); }
 
         let args = vec![
@@ -620,7 +621,7 @@ mod tests {
         assert_eq!(config.timeout_secs, 5);   // from env
         assert_eq!(config.bridge_ip, "10.0.0.1"); // from CLI
 
-        unsafe { std::env::remove_var("BRIDGE_MAX_FAILURES"); }
+        unsafe { std::env::remove_var("SERIAL_MAX_FAILURES"); }
         unsafe { std::env::remove_var("BRIDGE_TIMEOUT_SECS"); }
     }
 }

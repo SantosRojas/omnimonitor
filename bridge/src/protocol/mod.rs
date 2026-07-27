@@ -50,6 +50,14 @@ pub trait DeviceCommunicator {
     /// Returns the DATA PART only (without frame header and CRC).
     fn read_response(&mut self) -> Result<Vec<u8>, DeviceError>;
 
+    /// Attempt to reconnect the underlying transport.
+    /// Returns Ok(()) if reconnection succeeded, Err otherwise.
+    /// Default implementation returns an error — override for transports
+    /// that support reconnection.
+    fn try_reconnect(&mut self) -> Result<(), DeviceError> {
+        Err(DeviceError::IoError("reconnect not supported".into()))
+    }
+
     /// Convenience: send command + read response.
     fn request(&mut self, cmd: u16, data: &[u8]) -> Result<Vec<u8>, DeviceError> {
         self.send_command(cmd, data)?;

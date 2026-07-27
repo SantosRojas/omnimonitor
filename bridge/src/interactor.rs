@@ -40,6 +40,9 @@ const META_PATIENT_ID: &str = "g_patient_id_str";
 /// Cycle interval when no readings are available (device not responding).
 const IDLE_CYCLE_MS: u64 = 1000;
 
+/// Umbral de fallos cíclicos antes de intentar auto-reconexión.
+const MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT: u64 = 50;
+
 /// State held across the cyclical loop.
 struct CyclicalState {
     handles: Vec<u16>,
@@ -827,6 +830,29 @@ pub async fn run_bridge(
             last_status_send = tokio::time::Instant::now();
         }
 
+        // ── Auto-reconnect check ──
+        if state.cycle > 0 && state.cycle % 50 == 0 {
+            let cf = manager.get_cyclical_failures().await;
+            if cf >= MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT {
+                tracing::warn!(
+                    "[bridge] cyclical failures ({}) >= threshold ({}), reopening serial port...",
+                    cf, MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT
+                );
+                match device.try_reconnect() {
+                    Ok(()) => {
+                        tracing::info!("[bridge] serial port reopened successfully");
+                        manager.record_success().await;
+                    }
+                    Err(e) => {
+                        tracing::error!("[bridge] failed to reopen serial port: {e}");
+                        if manager.record_failure().await {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // Read cyclical values
         match read_cyclical_values(device, &mut state) {
             Ok(readings) => {
@@ -893,18 +919,44 @@ pub async fn run_bridge(
                 }
             }
             Err(DeviceError::Timeout) => {
-                tracing::warn!("[bridge] cyclical read timeout");
-                manager.record_failure().await;
+                let cf = manager.get_cyclical_failures().await;
+                tracing::warn!(
+                    "[bridge] [cycle={}] cyclical read timeout (consecutive_cyclical_failures={})",
+                    state.cycle, cf
+                );
+                manager.record_cyclical_failure().await;
                 sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
+            }
+            Err(DeviceError::CrcError) => {
+                tracing::warn!(
+                    "[bridge] [cycle={}] CRC mismatch in response",
+                    state.cycle
+                );
+                manager.record_warning().await;
+            }
+            Err(DeviceError::ParseError(ref msg)) => {
+                tracing::warn!(
+                    "[bridge] [cycle={}] parse error: {}",
+                    state.cycle, msg
+                );
+                manager.record_warning().await;
             }
             Err(DeviceError::Nak(err_code)) => {
-                tracing::warn!("[bridge] cyclical read NAK (code=0x{err_code:04X})");
+                tracing::warn!(
+                    "[bridge] [cycle={}] NAK (code=0x{err_code:04X})",
+                    state.cycle
+                );
                 manager.record_warning().await;
-                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
             }
-            Err(e) => {
-                tracing::error!("[bridge] cyclical read error: {e}");
-                manager.record_failure().await;
+            Err(DeviceError::IoError(ref msg)) => {
+                tracing::error!(
+                    "[bridge] [cycle={}] I/O error: {}",
+                    state.cycle, msg
+                );
+                if manager.record_failure().await {
+                    tracing::error!("[bridge] connection failure limit reached, stopping reader");
+                    break;
+                }
                 sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
             }
         }

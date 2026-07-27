@@ -170,6 +170,23 @@ impl SerialDeviceCommunicator {
 }
 
 impl DeviceCommunicator for SerialDeviceCommunicator {
+    fn try_reconnect(&mut self) -> Result<(), DeviceError> {
+        tracing::warn!(
+            "[serial] attempting to reopen {} (baud={})...",
+            self.config.port_name, self.config.baudrate
+        );
+        let port = serialport::new(&self.config.port_name, self.config.baudrate)
+            .timeout(Duration::from_secs(self.config.timeout_secs))
+            .data_bits(serialport::DataBits::Eight)
+            .stop_bits(serialport::StopBits::One)
+            .parity(serialport::Parity::None)
+            .open()
+            .map_err(|e| DeviceError::IoError(format!("reconnect failed: {e}")))?;
+        self.port = port;
+        tracing::info!("[serial] reconnected successfully");
+        Ok(())
+    }
+
     fn send_command(&mut self, cmd: u16, data: &[u8]) -> Result<(), DeviceError> {
         // Build data_part: [cmd_code: u16][data...]
         let mut data_part = Vec::with_capacity(2 + data.len());
