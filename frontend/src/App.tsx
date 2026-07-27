@@ -63,7 +63,7 @@ const router = createBrowserRouter([
           { path: "machines/:machineId", element: <ScadaDetailContainer /> },
 
           // Global pages
-          { path: "connection", element: <ConnectionMonitor /> },
+          { path: "connections", element: <ConnectionMonitor /> },
           { path: "profile", element: <UserProfile /> },
           { path: "settings", element: <Settings /> },
 
