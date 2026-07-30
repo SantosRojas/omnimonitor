@@ -1,6 +1,7 @@
 //! Therapies API: CRUD with filters and TherapySetup integration.
 
 pub mod detail;
+pub mod history;
 
 use std::sync::Arc;
 

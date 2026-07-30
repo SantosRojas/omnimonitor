@@ -1,6 +1,6 @@
 import apiClient from "../api-client";
 import type { TherapyRepo } from "../../core/repos";
-import type { Therapy } from "../../core/types";
+import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 
 export class HttpTherapyRepo implements TherapyRepo {
   async list(params?: {
@@ -69,5 +69,35 @@ export class HttpTherapyRepo implements TherapyRepo {
       `/therapies/${id}/detail`,
     );
     return data;
+  }
+
+  async getHistory(therapyId: number, limit?: number): Promise<HistoryRow[]> {
+    const { data } = await apiClient.get<HistoryRow[]>(
+      `/therapies/${therapyId}/history`,
+      { params: { limit } },
+    );
+    return data;
+  }
+
+  async getComments(therapyId: number): Promise<TherapyComment[]> {
+    const { data } = await apiClient.get<TherapyComment[]>(
+      `/therapies/${therapyId}/comments`,
+    );
+    return data;
+  }
+
+  async createComment(
+    therapyId: number,
+    content: string,
+  ): Promise<TherapyComment> {
+    const { data } = await apiClient.post<TherapyComment>(
+      `/therapies/${therapyId}/comments`,
+      { content },
+    );
+    return data;
+  }
+
+  async deleteComment(commentId: number): Promise<void> {
+    await apiClient.delete(`/therapies/comments/${commentId}`);
   }
 }

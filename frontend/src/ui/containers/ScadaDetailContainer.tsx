@@ -2,6 +2,7 @@ import { useMemo, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
+import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useLiveDataStore } from "../../store/live-data-store";
 import { useAlarmStore } from "../../store/alarm-store";
 import { useMachineScada } from "../../hooks/use-machine-scada";
@@ -20,6 +21,7 @@ import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
 import type { Vital } from "../../features/scada/components/vitals-display";
 
 const machineRepo = new HttpMachineRepo();
+const therapyRepo = new HttpTherapyRepo();
 
 export default function ScadaDetailContainer() {
   const { id: machineIdParam } = useParams<{ id: string }>();
@@ -38,6 +40,14 @@ export default function ScadaDetailContainer() {
     queryFn: () => machineRepo.get(Number(machineId)),
     enabled: machineId.length > 0,
   });
+
+  /* ── Active therapy for history navigation ──────────────────── */
+  const { data: therapies = [] } = useQuery({
+    queryKey: ["therapies", "active", machineId],
+    queryFn: () => therapyRepo.list({ machine_id: Number(machineId), status: "active" }),
+    enabled: machineId.length > 0,
+  });
+  const activeTherapyId = therapies[0]?.id;
 
   /* ── Trend tracking ──────────────────────────────────────────── */
   const trendRef = useRef<{ timestamp: string; pressure: number }[]>([]);
@@ -136,6 +146,15 @@ export default function ScadaDetailContainer() {
             state={running ? "running" : connectionStatus === "online" ? "idle" : "error"}
             patientName={(machine as any)?.patient_name}
           />
+          {activeTherapyId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/history/${activeTherapyId}`)}
+            >
+              History
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>
             &larr; Back
           </Button>

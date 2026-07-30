@@ -67,6 +67,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(patients::router(state.clone()))
         .merge(therapies::router(state.clone()))
         .merge(therapies::detail::router(state.clone()))
+        .merge(therapies::history::router(state.clone()))
         .merge(signals::router(state.clone()))
         .merge(dashboards::router(state.clone()))
         .merge(export::router(state.clone()))

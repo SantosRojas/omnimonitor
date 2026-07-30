@@ -1,5 +1,5 @@
 export type { UserRole, User, LoginRequest, LoginResponse } from "./user";
-export type { TherapyStatus, Therapy, ActiveTherapyRow } from "./therapy";
+export type { TherapyStatus, Therapy, ActiveTherapyRow, HistoryRow, TherapyComment } from "./therapy";
 export type { MachineStatus, Machine, MachineStatusPayload } from "./machine";
 export type { Signal, SignalMapping } from "./signal";
 export type { Reading, ReadingBroadcast, ReadingsReplay } from "./reading";

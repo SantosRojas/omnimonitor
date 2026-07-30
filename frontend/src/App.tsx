@@ -6,6 +6,7 @@ import { PrivateRoute } from "./ui/components/PrivateRoute";
 import { AppLayout } from "./ui/layouts/AppLayout";
 import { LoginContainer } from "./ui/containers/LoginContainer";
 import ScadaDetailContainer from "./ui/containers/ScadaDetailContainer";
+import TherapyHistoryPage from "./ui/containers/TherapyHistoryPage";
 import { useAuthStore } from "./store/auth-store";
 import AdminPanelContainer from "./ui/containers/AdminPanelContainer";
 import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
@@ -65,6 +66,9 @@ const router = createBrowserRouter([
           { path: "machines/:machineId/history", element: <MachineHistory /> },
           { path: "machines/:machineId/signals", element: <SignalConfig /> },
           { path: "machines/:machineId", element: <ScadaDetailContainer /> },
+
+          // Therapy history (per therapy ID)
+          { path: "history/:id", element: <TherapyHistoryPage /> },
 
           // Global pages
           { path: "connections", element: <ConnectionMonitor /> },

@@ -1,4 +1,4 @@
-import type { Therapy } from "../types";
+import type { Therapy, HistoryRow, TherapyComment } from "../types";
 
 export interface TherapyRepo {
   list(params?: {
@@ -34,4 +34,16 @@ export interface TherapyRepo {
   ): Promise<Therapy>;
 
   getDetail(id: number): Promise<Therapy>;
+
+  /** GET /therapies/:id/history — readings for a therapy. */
+  getHistory(therapyId: number, limit?: number): Promise<HistoryRow[]>;
+
+  /** GET /therapies/:id/comments */
+  getComments(therapyId: number): Promise<TherapyComment[]>;
+
+  /** POST /therapies/:id/comments */
+  createComment(therapyId: number, content: string): Promise<TherapyComment>;
+
+  /** DELETE /therapies/comments/:comment_id */
+  deleteComment(commentId: number): Promise<void>;
 }

@@ -19,6 +19,32 @@ export interface Therapy {
   created_at: string;
 }
 
+/** A single historical reading row returned by GET /therapies/:id/history. */
+export interface HistoryRow {
+  id: number;
+  machine_id: number;
+  therapy_id: number | null;
+  signal_id: number | null;
+  recorded_at: string | null;
+  raw_value: number | null;
+  value: number | null;
+  unit: string | null;
+  display_label: string | null;
+  created_at: string;
+  /** Resolved via LEFT JOIN signals */
+  internal_name: string | null;
+}
+
+/** A therapy note/comment. */
+export interface TherapyComment {
+  id: number;
+  therapy_id: number;
+  user_id: number;
+  username: string;
+  content: string;
+  created_at: string;
+}
+
 export interface ActiveTherapyRow {
   therapy_id: number;
   patient_id: number;

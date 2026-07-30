@@ -25,9 +25,9 @@ interface ScadaData {
 export function useMachineScada(machineId: string): ScadaData {
   const readings = useLiveDataStore((s) => s.readings[machineId]);
   const machineEntry = useMachineStatusStore((s) => s.machines[machineId]);
-  const alarms = useAlarmStore((s) =>
-    s.alarms.filter((a) => a.machineId === machineId && !a.acknowledged),
-  );
+  // Select the raw array — keeps the same reference until the store modifies it.
+  // Filter inside useMemo to avoid creating a new array on every render.
+  const allAlarms = useAlarmStore((s) => s.alarms);
 
   return useMemo(() => {
     // Determine connection status
@@ -42,13 +42,18 @@ export function useMachineScada(machineId: string): ScadaData {
     // Heuristic: machine is "running" if we have recent readings
     const isRunning = readings !== undefined && readings.readings.length > 0;
 
+    // Filter inside useMemo — only creates a new array when allAlarms changes
+    const activeAlarms = allAlarms.filter(
+      (a) => a.machineId === machineId && !a.acknowledged,
+    );
+
     return {
       machineId,
       readings,
       connectionStatus,
-      activeAlarms: alarms,
+      activeAlarms,
       pressure,
       isRunning,
     };
-  }, [machineId, readings, machineEntry, alarms]);
+  }, [machineId, readings, machineEntry, allAlarms]);
 }
