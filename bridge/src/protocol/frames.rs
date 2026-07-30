@@ -64,6 +64,11 @@ pub enum BridgeFrame {
         #[serde(skip_serializing_if = "Option::is_none")]
         weight: Option<f64>,
     },
+    /// Sent when `c_trmt_main_state == 3` (End of therapy) is detected.
+    /// Server closes the active therapy for this machine.
+    TherapyEnd {
+        machine_id: i64,
+    },
 }
 
 /// Frame sent from the Server to the Bridge.
@@ -337,6 +342,15 @@ mod tests {
         assert_eq!(json["state"], "FailedLimit");
         assert_eq!(json["failure_count"], 5);
         assert_eq!(json["ws_state"], "disconnected");
+    }
+
+    #[test]
+    fn bridge_frame_therapy_end() {
+        let frame = BridgeFrame::TherapyEnd { machine_id: 42 };
+        round_trip(&frame, "BridgeFrame::TherapyEnd");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "TherapyEnd");
+        assert_eq!(json["machine_id"], 42);
     }
 
     #[test]

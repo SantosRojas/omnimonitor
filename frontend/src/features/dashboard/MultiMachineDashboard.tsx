@@ -1,11 +1,10 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useLiveDataStore } from "../../store/live-data-store";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useAlarmStore } from "../../store/alarm-store";
-import { startWsAdapter } from "../../data/ws-adapter";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Badge } from "../../ui/primitives/badge";
@@ -24,7 +23,7 @@ type TherapyWithMeta = Therapy & {
   patient_name?: string;
 };
 
-const connectionStatuses = ["all", "online", "offline", "error"] as const;
+const connectionStatuses = ["all", "online", "offline", "error", "unknown"] as const;
 
 export default function MultiMachineDashboard() {
   const navigate = useNavigate();
@@ -33,11 +32,6 @@ export default function MultiMachineDashboard() {
   const machineStatuses = useMachineStatusStore((s) => s.machines);
   const readings = useLiveDataStore((s) => s.readings);
   const alarms = useAlarmStore((s) => s.alarms);
-
-  useEffect(() => {
-    const stop = startWsAdapter();
-    return () => stop();
-  }, []);
 
   const { data: therapies, isLoading } = useQuery({
     queryKey: ["therapies", "active"],

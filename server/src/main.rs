@@ -108,6 +108,7 @@ const MIGRATION_NAMES: &[&str] = &[
     "003_drop_equiv_description.sql",
     "004_bridges.sql",
     "005_readings_perf_indexes.sql",
+    "006_drop_readings_therapy_phase.sql",
 ];
 
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {

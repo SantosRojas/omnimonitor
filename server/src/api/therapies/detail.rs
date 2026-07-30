@@ -24,6 +24,8 @@ pub fn router(state: Arc<AppState>) -> Router {
 }
 
 /// GET /therapies/:id/detail
+///
+/// Returns the latest reading per signal for a therapy (DISTINCT ON by therapy_id FK).
 async fn therapy_detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,

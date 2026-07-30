@@ -1,9 +1,10 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
-import { useWsMachine } from "../../data/ws-hook";
+import { useLiveDataStore } from "../../store/live-data-store";
 import { useAlarmStore } from "../../store/alarm-store";
+import { useMachineScada } from "../../hooks/use-machine-scada";
 import { PageHeader } from "../layouts/PageHeader";
 import { Button } from "../primitives/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card";
@@ -14,7 +15,7 @@ import { AlarmPanel } from "../../features/scada/components/alarm-panel";
 import { TherapyStateMachine } from "../../features/scada/components/therapy-state-machine";
 import { MachineStatusDot } from "../../features/scada/components/machine-status-dot";
 import { TrendChart } from "../../features/scada/components/trend-chart";
-import type { Machine, MachineStatus, Reading, WsMessage } from "../../core/types";
+import type { Machine, Reading } from "../../core/types";
 import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
 import type { Vital } from "../../features/scada/components/vitals-display";
 
@@ -27,6 +28,10 @@ export default function ScadaDetailContainer() {
   const acknowledgeAlarm = useAlarmStore((s) => s.acknowledgeAlarm);
   const storeAlarms = useAlarmStore((s) => s.alarms);
 
+  /* ── Store-backed live data (single WS connection via App.tsx) ── */
+  const { connectionStatus, pressure: scadaPressure } = useMachineScada(machineId);
+  const liveReadings = useLiveDataStore((s) => s.readings[machineId]);
+
   /* ── Machine info (REST) ─────────────────────────────────────── */
   const { data: machine, isLoading: machineLoading, error: machineError } = useQuery<Machine>({
     queryKey: ["machine", machineId],
@@ -34,28 +39,14 @@ export default function ScadaDetailContainer() {
     enabled: machineId.length > 0,
   });
 
-  /* ── WebSocket ───────────────────────────────────────────────── */
-  const wsMessage = useWsMachine(machineId);
-
-  const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
-
-  useEffect(() => {
-    if (wsMessage?.type === "MachineStatus" && wsMessage.machine_id === machineId) {
-      setMachineStatus(wsMessage.status.status);
-    }
-  }, [wsMessage, machineId]);
-
   /* ── Trend tracking ──────────────────────────────────────────── */
   const trendRef = useRef<{ timestamp: string; pressure: number }[]>([]);
   const prevReadingsRef = useRef<Map<string, number | null>>(new Map());
 
-  const gaugeData = useMemo<{ label: string; value: number | null; unit: string; trend: "up" | "down" | "stable" }[]>(() => {
-    if (!wsMessage || (wsMessage.type !== "ReadingsBroadcast" && wsMessage.type !== "ReadingsReplay") || wsMessage.machine_id !== machineId) {
-      return [];
-    }
-    const readings = "readings" in wsMessage ? (wsMessage as Extract<WsMessage, { readings: Reading[] }>).readings : [];
+  const gaugeData = useMemo(() => {
+    const rawReadings = liveReadings?.readings ?? [];
     const prev = new Map(prevReadingsRef.current);
-    const data = readings.map((r) => {
+    const data = rawReadings.map((r: Reading) => {
       const key = r.display_label ?? `Signal #${r.signal_id ?? r.id}`;
       const prevVal = prev.get(key);
       let trend: "up" | "down" | "stable" = "stable";
@@ -65,18 +56,13 @@ export default function ScadaDetailContainer() {
       return { label: key, value: r.value, unit: r.unit ?? "—", trend };
     });
     const current = new Map<string, number | null>();
-    data.forEach((d) => current.set(d.label, d.value));
+    data.forEach((d) => current.set(d.label, d.value ?? null));
     prevReadingsRef.current = current;
     return data;
-  }, [wsMessage, machineId]);
+  }, [liveReadings]);
 
   /* ── Derived values ──────────────────────────────────────────── */
-  const displayStatus: MachineStatus = machineStatus ?? machine?.status ?? "unknown";
-  const isOnline = displayStatus === "online";
   const hasLiveData = gaugeData.length > 0;
-
-  const pressureReading = gaugeData.find((g) => g.label.toLowerCase().includes("pressure"));
-  const pressure = pressureReading?.value ?? 0;
 
   const vitals: Vital[] = gaugeData.slice(0, 6).map((g) => ({
     label: g.label,
@@ -98,15 +84,15 @@ export default function ScadaDetailContainer() {
     }));
 
   const flowRate = gaugeData.find((g) => g.label.toLowerCase().includes("flow"))?.value ?? 0;
-  const sourcePressure = gaugeData.find((g) => g.label.toLowerCase().includes("source"))?.value ?? pressure * 1.5;
-  const running = hasLiveData && pressure > 0;
+  const sourcePressure = gaugeData.find((g) => g.label.toLowerCase().includes("source"))?.value ?? scadaPressure * 1.5;
+  const running = hasLiveData && scadaPressure > 0;
 
   /* ── Trend data ──────────────────────────────────────────────── */
   useEffect(() => {
-    if (pressure > 0) {
-      trendRef.current = [...trendRef.current.slice(-119), { timestamp: new Date().toISOString(), pressure }];
+    if (scadaPressure > 0) {
+      trendRef.current = [...trendRef.current.slice(-119), { timestamp: new Date().toISOString(), pressure: scadaPressure }];
     }
-  }, [pressure]);
+  }, [scadaPressure]);
 
   /* ── Handle alarm acknowledge ────────────────────────────────── */
   const handleAcknowledge = (alarmId: string) => acknowledgeAlarm(alarmId);
@@ -139,7 +125,7 @@ export default function ScadaDetailContainer() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <MachineStatusDot status={displayStatus as any} size="lg" />
+          <MachineStatusDot status={connectionStatus} size="lg" />
           <PageHeader
             title={machine?.label ?? machine?.serial_number ?? `Machine #${machineId}`}
             description={`Serial: ${machine?.serial_number ?? "—"}`}
@@ -147,7 +133,7 @@ export default function ScadaDetailContainer() {
         </div>
         <div className="flex items-center gap-2">
           <TherapyStateMachine
-            state={running ? "running" : isOnline ? "idle" : "error"}
+            state={running ? "running" : connectionStatus === "online" ? "idle" : "error"}
             patientName={(machine as any)?.patient_name}
           />
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>
@@ -162,7 +148,7 @@ export default function ScadaDetailContainer() {
         <Card>
           <CardHeader><CardTitle className="text-sm">Pressure</CardTitle></CardHeader>
           <CardContent>
-            <PressureGauge pressure={pressure} maxPressure={60} />
+            <PressureGauge pressure={scadaPressure} maxPressure={60} />
           </CardContent>
         </Card>
 
@@ -172,7 +158,7 @@ export default function ScadaDetailContainer() {
           <CardContent>
             <ProcessFlowDiagram
               sourcePressure={sourcePressure}
-              workingPressure={pressure}
+              workingPressure={scadaPressure}
               flowActive={running}
               flowRate={flowRate}
               isRunning={running}
@@ -205,10 +191,10 @@ export default function ScadaDetailContainer() {
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-neutral-400">
             <p className="text-sm font-medium">
-              {isOnline ? "Waiting for live data..." : "Machine is offline"}
+              {connectionStatus === "online" ? "Waiting for live data..." : "Machine is offline"}
             </p>
             <p className="mt-1 text-xs">
-              {isOnline ? "Connect to receive real-time telemetry." : "No data while disconnected."}
+              {connectionStatus === "online" ? "Connect to receive real-time telemetry." : "No data while disconnected."}
             </p>
           </CardContent>
         </Card>

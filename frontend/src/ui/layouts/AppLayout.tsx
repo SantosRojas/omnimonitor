@@ -18,6 +18,7 @@ import {
   Network,
   Cpu,
   Radio,
+  Contact,
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { useAuthStore } from "../../store/auth-store";
@@ -26,6 +27,7 @@ import { cn } from "../primitives";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/patients", icon: Contact, label: "Patients" },
   { to: "/connections", icon: Cable, label: "Connections" },
   { to: "/profile", icon: User, label: "Profile" },
   { to: "/settings", icon: Settings, label: "Settings" },

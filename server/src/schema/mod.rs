@@ -18,7 +18,14 @@ pub const MIGRATION_004: &str = include_str!("004_bridges.sql");
 /// Migration 005: performance indexes for readings queries.
 pub const MIGRATION_005: &str = include_str!("005_readings_perf_indexes.sql");
 
+/// Migration 006: drop therapy_id and phase from readings (only persist during active therapy).
+pub const MIGRATION_006: &str = include_str!("006_drop_readings_therapy_phase.sql");
+
+/// Migration 007: optional patient info fields + end weight on therapies.
+pub const MIGRATION_007: &str = include_str!("007_patient_info_and_end_weight.sql");
+
 /// Ordered list of all migrations.
 pub const ALL_MIGRATIONS: &[&str] = &[
-    MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005,
+    MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005, MIGRATION_006,
+    MIGRATION_007,
 ];

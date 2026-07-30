@@ -842,7 +842,7 @@ async fn dashboards_therapy_timeseries_empty(pool: PgPool) {
 
     // Crear terapia primero (el handler necesita la duración)
     let repos = common::create_repos(&pool);
-    let patient = repos.patient.create("TS-PATIENT").await.unwrap();
+    let patient = repos.patient.create("TS-PATIENT", None, None, None, None).await.unwrap();
     let machine = repos
         .machine
         .upsert_by_serial("TS-MACHINE", None, None, None)

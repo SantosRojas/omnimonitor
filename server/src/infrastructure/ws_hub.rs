@@ -73,6 +73,10 @@ pub enum BridgeFrame {
         failure_count: u32,
         ws_state: String,
     },
+    /// Sent when the bridge detects `c_trmt_main_state == 3` (End of therapy).
+    TherapyEnd {
+        machine_id: i64,
+    },
 }
 
 /// Server → Bridge frames.
@@ -548,35 +552,51 @@ pub async fn handle_bridge_frame(
                 return Ok(Some(err_frame));
             }
 
-            // ── Map readings to domain model ──
-            // El broadcast en tiempo real y la persistencia usan los mismos readings.
-            // El bridge ya filtra por CAPTURE_NAMES antes de enviar.
+            // ── Map readings to domain model (sin therapy_id aún) ──
+            // El broadcast usa los readings mapeados sin therapy_id.
             let domain_readings: Vec<Reading> = readings
                 .iter()
                 .map(|r| Reading {
                     id: 0,
                     machine_id: *machine_id,
-                    therapy_id: r.therapy_id,
+                    therapy_id: None,
                     signal_id: Some(r.signal_id),
                     recorded_at: chrono::DateTime::from_timestamp_millis(r.timestamp),
                     raw_value: Some(r.raw_value),
                     value: r.value,
                     unit: Some(r.unit.clone()),
                     display_label: r.display_value.clone(),
-                    phase: r.phase.clone(),
                     created_at: Utc::now(),
                 })
                 .collect();
 
-            // ── Persistence: snapshot cada N segundos por máquina ──
-            // Cada máquina persiste su ciclo actual cuando su timer individual
-            // ha expirado. No hay acumulación ni contención entre máquinas.
+            // ── Persistence: solo si hay terapia activa ──
+            // Resolvemos la terapia activa para vincular los readings con su FK.
+            // En estados sin terapia activa (preparación, finalizada, etc.)
+            // solo se hace broadcast en vivo.
             if state.check_persist_interval(*machine_id).await {
                 if !domain_readings.is_empty() {
-                    if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
-                        error!("Failed to insert readings for machine {}: {}", machine_id, e);
-                    } else if state.persistence_interval_secs > 0 {
-                        debug!("[persist] snapshot {} readings (machine {})", domain_readings.len(), machine_id);
+                    match state.therapy_repo.find_active_by_machine(*machine_id).await {
+                        Ok(Some(therapy)) => {
+                            // Vincular readings con la terapia activa
+                            let linked: Vec<Reading> = domain_readings.iter().map(|r| Reading {
+                                therapy_id: Some(therapy.id),
+                                ..r.clone()
+                            }).collect();
+
+                            if let Err(e) = state.readings_repo.insert_batch(&linked).await {
+                                error!("Failed to insert readings for machine {}: {}", machine_id, e);
+                            } else if state.persistence_interval_secs > 0 {
+                                debug!("[persist] snapshot {} readings (machine {}, therapy {})",
+                                    linked.len(), machine_id, therapy.id);
+                            }
+                        }
+                        Ok(None) => {
+                            debug!("[persist] skip — no active therapy for machine {}", machine_id);
+                        }
+                        Err(e) => {
+                            error!("Failed to check active therapy for machine {}: {}", machine_id, e);
+                        }
                     }
                 }
             }
@@ -730,6 +750,46 @@ pub async fn handle_bridge_frame(
             );
             Ok(Some(ServerFrame::Ack))
         }
+
+        BridgeFrame::TherapyEnd { machine_id } => {
+            if let Err(err_frame) = validate_identified_machine(*current_machine_id, *machine_id, "TherapyEnd") {
+                return Ok(Some(err_frame));
+            }
+
+            match state.therapy_repo.find_active_by_machine(*machine_id).await {
+                Ok(Some(therapy)) => {
+                    let completed = state.therapy_repo.update_status(therapy.id, "completed").await;
+                    match completed {
+                        Ok(t) => {
+                            info!(
+                                "TherapyEnd: closed therapy {} (machine {}, status={:?})",
+                                therapy.id, machine_id, t.status
+                            );
+                        }
+                        Err(e) => {
+                            error!(
+                                "TherapyEnd: failed to close therapy {} for machine {}: {}",
+                                therapy.id, machine_id, e
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    info!(
+                        "TherapyEnd: no active therapy to close for machine {}",
+                        machine_id
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "TherapyEnd: error finding active therapy for machine {}: {}",
+                        machine_id, e
+                    );
+                }
+            }
+
+            Ok(Some(ServerFrame::Ack))
+        }
     }
 }
 
@@ -744,14 +804,14 @@ async fn handle_therapy_setup(
 ) -> Result<(), RepoError> {
     let patient = match state.patient_repo.find_by_external_id(patient_id_str).await? {
         Some(p) => p,
-        None => state.patient_repo.create(patient_id_str).await?,
+        None => state.patient_repo.create(patient_id_str, None, None, None, None).await?,
     };
 
     match state.therapy_repo.find_active_by_machine(machine_id).await? {
         Some(therapy) => {
             state
                 .therapy_repo
-                .update_metadata(therapy.id, therapy_type, kit, weight)
+                .update_metadata(therapy.id, therapy_type, kit, weight, None)
                 .await?;
         }
         None => {
@@ -846,14 +906,14 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                                             .recorded_at
                                             .map(|t| t.timestamp_millis())
                                             .unwrap_or(0),
-                                        therapy_id: r.therapy_id,
+                                        therapy_id: None, // ya no se persiste en readings
                                         signal_id: r.signal_id.unwrap_or(0),
                                         internal_name: String::new(),
                                         raw_value: r.raw_value.unwrap_or(0),
                                         value: r.value,
                                         unit: r.unit.clone().unwrap_or_default(),
                                         display_value: r.display_label.clone(),
-                                        phase: r.phase.clone(),
+                                        phase: None, // ya no se persiste en readings
                                     })
                                     .collect();
 

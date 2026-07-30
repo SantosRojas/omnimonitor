@@ -162,7 +162,7 @@ async fn machine_touch_last_seen(pool: PgPool) {
 async fn patient_create_and_find(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    let p = repo.create("EXT-001").await.unwrap();
+    let p = repo.create("EXT-001", None, None, None, None).await.unwrap();
     assert_eq!(p.external_id, "EXT-001");
     let by_id = repo.find_by_id(p.id).await.unwrap().unwrap();
     assert_eq!(by_id.id, p.id);
@@ -176,8 +176,8 @@ async fn patient_create_and_find(pool: PgPool) {
 async fn patient_create_duplicate(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    repo.create("EXT-DUP").await.unwrap();
-    let err = repo.create("EXT-DUP").await.unwrap_err();
+    repo.create("EXT-DUP", None, None, None, None).await.unwrap();
+    let err = repo.create("EXT-DUP", None, None, None, None).await.unwrap_err();
     assert!(matches!(err, RepoError::Conflict(_)));
     assert!(err.to_string().contains("EXT-DUP"));
 }
@@ -187,8 +187,8 @@ async fn patient_list(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
     assert!(repo.list(None).await.unwrap().is_empty());
-    repo.create("P-001").await.unwrap();
-    repo.create("P-002").await.unwrap();
+    repo.create("P-001", None, None, None, None).await.unwrap();
+    repo.create("P-002", None, None, None, None).await.unwrap();
     let all = repo.list(None).await.unwrap();
     assert_eq!(all.len(), 2);
 }
@@ -197,9 +197,9 @@ async fn patient_list(pool: PgPool) {
 async fn patient_list_search(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    repo.create("PATIENT-ONE").await.unwrap();
-    repo.create("PATIENT-TWO").await.unwrap();
-    repo.create("OTHER-THING").await.unwrap();
+    repo.create("PATIENT-ONE", None, None, None, None).await.unwrap();
+    repo.create("PATIENT-TWO", None, None, None, None).await.unwrap();
+    repo.create("OTHER-THING", None, None, None, None).await.unwrap();
     let results = repo.list(Some("PATIENT")).await.unwrap();
     assert_eq!(results.len(), 2);
 }
@@ -208,8 +208,8 @@ async fn patient_list_search(pool: PgPool) {
 async fn patient_update(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    let p = repo.create("OLD-ID").await.unwrap();
-    let updated = repo.update(p.id, "NEW-ID").await.unwrap();
+    let p = repo.create("OLD-ID", None, None, None, None).await.unwrap();
+    let updated = repo.update(p.id, Some("NEW-ID"), None, None, None, None).await.unwrap();
     assert_eq!(updated.external_id, "NEW-ID");
     assert!(updated.updated_at.is_some());
 }
@@ -218,7 +218,7 @@ async fn patient_update(pool: PgPool) {
 async fn patient_update_not_found(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    let err = repo.update(999_999, "ANY").await.unwrap_err();
+    let err = repo.update(999_999, Some("ANY"), None, None, None, None).await.unwrap_err();
     assert!(matches!(err, RepoError::NotFound(_)));
 }
 
@@ -226,9 +226,9 @@ async fn patient_update_not_found(pool: PgPool) {
 async fn patient_update_duplicate(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = PatientRepo::new(pool);
-    repo.create("A").await.unwrap();
-    let p2 = repo.create("B").await.unwrap();
-    let err = repo.update(p2.id, "A").await.unwrap_err();
+    repo.create("A", None, None, None, None).await.unwrap();
+    let p2 = repo.create("B", None, None, None, None).await.unwrap();
+    let err = repo.update(p2.id, Some("A"), None, None, None, None).await.unwrap_err();
     assert!(matches!(err, RepoError::Conflict(_)));
 }
 
@@ -239,7 +239,7 @@ async fn patient_therapy_count(pool: PgPool) {
     let patient_repo = PatientRepo::new(pool.clone());
     let machine_repo = MachineRepo::new(pool.clone());
     let therapy_repo = TherapyRepo::new(pool.clone());
-    let patient = patient_repo.create("COUNT-TEST").await.unwrap();
+    let patient = patient_repo.create("COUNT-TEST", None, None, None, None).await.unwrap();
     let machine = machine_repo.upsert_by_serial("SN-COUNT", None, None, None).await.unwrap();
     therapy_repo.create(patient.id, machine.id, None, None, None).await.unwrap();
     therapy_repo.create(patient.id, machine.id, Some("HD"), None, None).await.unwrap();
@@ -255,7 +255,7 @@ async fn patient_therapy_count(pool: PgPool) {
 async fn seed_patient_and_machine(pool: &PgPool) -> (i64, i64) {
     let patient_repo = PatientRepo::new(pool.clone());
     let machine_repo = MachineRepo::new(pool.clone());
-    let patient = patient_repo.create("THERAPY-PATIENT").await.unwrap();
+    let patient = patient_repo.create("THERAPY-PATIENT", None, None, None, None).await.unwrap();
     let machine = machine_repo
         .upsert_by_serial("THERAPY-MACHINE", None, None, None)
         .await
@@ -329,7 +329,7 @@ async fn therapy_update_metadata(pool: PgPool) {
     let (pid, mid) = seed_patient_and_machine(&pool).await;
     let repo = TherapyRepo::new(pool);
     let t = repo.create(pid, mid, None, None, None).await.unwrap();
-    let updated = repo.update_metadata(t.id, Some("HD"), Some("Kit-X"), Some(80.0)).await.unwrap();
+    let updated = repo.update_metadata(t.id, Some("HD"), Some("Kit-X"), Some(80.0), None).await.unwrap();
     assert_eq!(updated.therapy_type.as_deref(), Some("HD"));
     assert_eq!(updated.kit.as_deref(), Some("Kit-X"));
     assert_eq!(updated.weight, Some(80.0));
@@ -339,7 +339,7 @@ async fn therapy_update_metadata(pool: PgPool) {
 async fn therapy_update_metadata_not_found(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = TherapyRepo::new(pool);
-    let err = repo.update_metadata(999_999, None, None, None).await.unwrap_err();
+    let err = repo.update_metadata(999_999, None, None, None, None).await.unwrap_err();
     assert!(matches!(err, RepoError::NotFound(_)));
 }
 
@@ -490,7 +490,7 @@ async fn seed_readings_prereqs(pool: &PgPool) -> (MachineRepo, ReadingsRepo, i64
     let machine = machine_repo.upsert_by_serial("RD-MACH", None, None, None).await.unwrap();
     let signal_a = signal_repo.create("sig_a", None, None).await.unwrap();
     let _signal_b = signal_repo.create("sig_b", None, None).await.unwrap();
-    let patient = patient_repo.create("RD-PATIENT").await.unwrap();
+    let patient = patient_repo.create("RD-PATIENT", None, None, None, None).await.unwrap();
     let therapy = therapy_repo.create(patient.id, machine.id, None, None, None).await.unwrap();
 
     (
@@ -519,7 +519,6 @@ fn make_reading(
         value: Some(value),
         unit: Some("mmHg".into()),
         display_label: None,
-        phase: None,
         created_at: chrono::Utc::now(),
     }
 }
@@ -535,7 +534,7 @@ async fn readings_insert_batch_and_query(pool: PgPool) {
     ];
     readings_repo.insert_batch(&readings).await.unwrap();
 
-    let by_therapy = readings_repo.query_by_therapy(therapy_id).await.unwrap();
+    let by_therapy = readings_repo.query_by_therapy(therapy_id, None).await.unwrap();
     assert_eq!(by_therapy.len(), 2);
 
     let by_machine = readings_repo.query_by_machine(machine_id, None).await.unwrap();

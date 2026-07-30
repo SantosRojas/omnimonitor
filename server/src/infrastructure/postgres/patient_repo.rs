@@ -18,11 +18,23 @@ impl PatientRepo {
 
     /// Create a new patient with a unique external_id.
     /// Returns `RepoError::Conflict` if the external_id already exists.
-    pub async fn create(&self, external_id: &str) -> Result<Patient, RepoError> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create(
+        &self,
+        external_id: &str,
+        name: Option<&str>,
+        age: Option<i32>,
+        email: Option<&str>,
+        address: Option<&str>,
+    ) -> Result<Patient, RepoError> {
         let result = sqlx::query_as::<_, Patient>(
-            "INSERT INTO patients (external_id) VALUES ($1) RETURNING *",
+            "INSERT INTO patients (external_id, name, age, email, address) VALUES ($1, $2, $3, $4, $5) RETURNING *",
         )
         .bind(external_id)
+        .bind(name)
+        .bind(age)
+        .bind(email)
+        .bind(address)
         .fetch_one(&self.pool)
         .await;
 
@@ -60,12 +72,12 @@ impl PatientRepo {
         Ok(row)
     }
 
-    /// List all patients, with optional search by external_id (partial match).
+    /// List all patients, with optional search by external_id or name (partial match).
     pub async fn list(&self, search: Option<&str>) -> Result<Vec<Patient>, RepoError> {
         let rows = match search {
             Some(term) if !term.is_empty() => {
                 sqlx::query_as::<_, Patient>(
-                    "SELECT * FROM patients WHERE external_id ILIKE $1 ORDER BY created_at DESC",
+                    "SELECT * FROM patients WHERE external_id ILIKE $1 OR name ILIKE $1 ORDER BY created_at DESC",
                 )
                 .bind(format!("%{}%", term))
                 .fetch_all(&self.pool)
@@ -83,13 +95,36 @@ impl PatientRepo {
         Ok(rows)
     }
 
-    /// Update a patient's external_id.
-    pub async fn update(&self, id: i64, external_id: &str) -> Result<Patient, RepoError> {
+    /// Update patient info.
+    /// Only non-None fields are applied (COALESCE pattern).
+    pub async fn update(
+        &self,
+        id: i64,
+        external_id: Option<&str>,
+        name: Option<&str>,
+        age: Option<i32>,
+        email: Option<&str>,
+        address: Option<&str>,
+    ) -> Result<Patient, RepoError> {
         let result = sqlx::query_as::<_, Patient>(
-            "UPDATE patients SET external_id = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+            r#"
+            UPDATE patients SET
+                external_id = COALESCE($2, external_id),
+                name        = COALESCE($3, name),
+                age         = COALESCE($4, age),
+                email       = COALESCE($5, email),
+                address     = COALESCE($6, address),
+                updated_at  = NOW()
+            WHERE id = $1
+            RETURNING *
+            "#,
         )
-        .bind(external_id)
         .bind(id)
+        .bind(external_id)
+        .bind(name)
+        .bind(age)
+        .bind(email)
+        .bind(address)
         .fetch_optional(&self.pool)
         .await;
 
@@ -99,7 +134,7 @@ impl PatientRepo {
             Err(sqlx::Error::Database(db_err)) if db_err.constraint() == Some("patients_external_id_key") => {
                 Err(RepoError::Conflict(format!(
                     "external_id '{}' is already in use",
-                    external_id
+                    external_id.unwrap_or("")
                 )))
             }
             Err(e) => Err(RepoError::Database(e)),

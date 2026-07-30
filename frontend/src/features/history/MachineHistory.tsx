@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { PageHeader } from "../../ui/layouts/PageHeader";
@@ -7,6 +7,7 @@ import { Card, CardContent } from "../../ui/primitives/card";
 import { Input } from "../../ui/primitives/input";
 import { Button } from "../../ui/primitives/button";
 import { Badge } from "../../ui/primitives/badge";
+import { Check } from "lucide-react";
 const therapyRepo = new HttpTherapyRepo();
 const PAGE_SIZE = 10;
 
@@ -24,6 +25,8 @@ export default function MachineHistory() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(0);
+  const [editingEndWeight, setEditingEndWeight] = useState<Record<number, string>>({});
+  const queryClient = useQueryClient();
 
   const { data: therapies, isLoading } = useQuery({
     queryKey: ["therapies", "history", machineId],
@@ -70,6 +73,27 @@ export default function MachineHistory() {
     URL.revokeObjectURL(url);
   };
 
+  const setEndWeight = useMutation({
+    mutationFn: ({ therapyId, endWeight }: { therapyId: number; endWeight: number }) =>
+      therapyRepo.updateMetadata(therapyId, { end_weight: endWeight }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["therapies"] });
+    },
+  });
+
+  const handleRecordWeight = (therapyId: number) => {
+    const val = editingEndWeight[therapyId];
+    if (val === undefined || val === "") return;
+    const num = parseFloat(val);
+    if (isNaN(num) || num <= 0) return;
+    setEndWeight.mutate({ therapyId, endWeight: num });
+    setEditingEndWeight((prev) => {
+      const next = { ...prev };
+      delete next[therapyId];
+      return next;
+    });
+  };
+
   const therapyTypes = useMemo(() => {
     const types = new Set((therapies ?? []).map((t: any) => t.therapy_type).filter(Boolean));
     return [...types] as string[];
@@ -112,6 +136,8 @@ export default function MachineHistory() {
                   <th className="px-4 py-3 text-left font-medium text-neutral-500">Type</th>
                   <th className="px-4 py-3 text-left font-medium text-neutral-500">Start</th>
                   <th className="px-4 py-3 text-left font-medium text-neutral-500">End</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Weight (initial)</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Weight (end)</th>
                   <th className="px-4 py-3 text-left font-medium text-neutral-500">Status</th>
                 </tr>
               </thead>
@@ -122,6 +148,39 @@ export default function MachineHistory() {
                     <td className="px-4 py-3 text-neutral-500">{t.therapy_type ?? "—"}</td>
                     <td className="px-4 py-3 text-neutral-500">{t.created_at ? new Date(t.created_at).toLocaleString() : "—"}</td>
                     <td className="px-4 py-3 text-neutral-500">{t.ended_at ? new Date(t.ended_at).toLocaleString() : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500">{t.weight != null ? `${t.weight} kg` : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500">
+                      {t.end_weight != null ? (
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">{t.end_weight} kg</span>
+                      ) : t.status === "completed" ? (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="kg"
+                            className="h-8 w-20 text-xs"
+                            value={editingEndWeight[t.id] ?? ""}
+                            onChange={(e) =>
+                              setEditingEndWeight((prev) => ({ ...prev, [t.id]: e.target.value }))
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={!editingEndWeight[t.id] || !isFinite(Number(editingEndWeight[t.id])) || Number(editingEndWeight[t.id]) <= 0}
+                            onClick={() => handleRecordWeight(t.id)}
+                            title="Record end weight"
+                          >
+                            <Check className="h-4 w-4 text-green-500" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3"><Badge variant={statusVariant[t.status ?? ""] ?? "secondary"}>{t.status ?? "unknown"}</Badge></td>
                   </tr>
                 ))}

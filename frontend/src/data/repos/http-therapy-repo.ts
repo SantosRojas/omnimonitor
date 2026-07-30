@@ -50,9 +50,14 @@ export class HttpTherapyRepo implements TherapyRepo {
 
   async updateMetadata(
     id: number,
-    metadata: { therapy_type?: string; kit?: string; weight?: number },
+    metadata: {
+      therapy_type?: string;
+      kit?: string;
+      weight?: number;
+      end_weight?: number | null;
+    },
   ): Promise<Therapy> {
-    const { data } = await apiClient.patch<Therapy>(
+    const { data } = await apiClient.put<Therapy>(
       `/therapies/${id}/metadata`,
       metadata,
     );

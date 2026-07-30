@@ -15,6 +15,7 @@ export interface Therapy {
   therapy_type: string | null;
   kit: string | null;
   weight: number | null;
+  end_weight: number | null;
   created_at: string;
 }
 

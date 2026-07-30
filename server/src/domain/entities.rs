@@ -39,6 +39,10 @@ pub struct Machine {
 pub struct Patient {
     pub id: i64,
     pub external_id: String,
+    pub name: Option<String>,
+    pub age: Option<i32>,
+    pub email: Option<String>,
+    pub address: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: Option<DateTime<Utc>>,
 }
@@ -55,6 +59,7 @@ pub struct Therapy {
     pub therapy_type: Option<String>,
     pub kit: Option<String>,
     pub weight: Option<f64>,
+    pub end_weight: Option<f64>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -129,6 +134,7 @@ pub struct TherapyNote {
 }
 
 /// A single telemetry reading persisted from bridge data.
+/// Solo se persisten readings durante terapia activa.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Reading {
     pub id: i64,
@@ -140,6 +146,5 @@ pub struct Reading {
     pub value: Option<f64>,
     pub unit: Option<String>,
     pub display_label: Option<String>,
-    pub phase: Option<String>,
     pub created_at: DateTime<Utc>,
 }

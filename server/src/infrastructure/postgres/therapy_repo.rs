@@ -106,20 +106,23 @@ impl TherapyRepo {
         Ok(row)
     }
 
-    /// Update therapy metadata (therapy_type, kit, weight) from bridge TherapySetup.
+    /// Update therapy metadata (therapy_type, kit, weight, end_weight).
+    /// Called from bridge TherapySetup or from the UI for end-of-therapy weight.
     pub async fn update_metadata(
         &self,
         id: i64,
         therapy_type: Option<&str>,
         kit: Option<&str>,
         weight: Option<f64>,
+        end_weight: Option<f64>,
     ) -> Result<Therapy, RepoError> {
         let row = sqlx::query_as::<_, Therapy>(
             r#"
             UPDATE therapies SET
                 therapy_type = COALESCE($2, therapy_type),
                 kit = COALESCE($3, kit),
-                weight = COALESCE($4, weight)
+                weight = COALESCE($4, weight),
+                end_weight = COALESCE($5, end_weight)
             WHERE id = $1
             RETURNING *
             "#,
@@ -128,6 +131,7 @@ impl TherapyRepo {
         .bind(therapy_type)
         .bind(kit)
         .bind(weight)
+        .bind(end_weight)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| RepoError::NotFound(format!("Therapy {} not found", id)))?;

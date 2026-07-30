@@ -83,20 +83,20 @@ impl ReadingsRepo {
 
         let mut tx = self.pool.begin().await?;
 
-        // Build a single multi-row INSERT:  VALUES ($1,$2,...,$9), ($10,$11,...,$18), ...
-        let ncols = 9usize;
+        // Build a single multi-row INSERT:  VALUES ($1,$2,...,$8), ($9,$10,...,$16), ...
+        let ncols = 8usize;
         let rows: Vec<String> = (0..readings.len())
             .map(|i| {
                 let base = i * ncols + 1;
                 format!(
-                    "(${},${},${},${},${},${},${},${},${})",
-                    base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7, base + 8,
+                    "(${},${},${},${},${},${},${},${})",
+                    base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7,
                 )
             })
             .collect();
 
         let sql = format!(
-            "INSERT INTO readings (machine_id, therapy_id, signal_id, recorded_at, raw_value, value, unit, display_label, phase) VALUES {}",
+            "INSERT INTO readings (machine_id, therapy_id, signal_id, recorded_at, raw_value, value, unit, display_label) VALUES {}",
             rows.join(","),
         );
 
@@ -110,8 +110,7 @@ impl ReadingsRepo {
                 .bind(r.raw_value)
                 .bind(r.value)
                 .bind(&r.unit)
-                .bind(&r.display_label)
-                .bind(&r.phase);
+                .bind(&r.display_label);
         }
 
         q.execute(&mut *tx).await?;
@@ -120,11 +119,18 @@ impl ReadingsRepo {
     }
 
     /// Query readings for a therapy, ordered by recorded_at.
-    pub async fn query_by_therapy(&self, therapy_id: i64) -> Result<Vec<Reading>, RepoError> {
+    pub async fn query_by_therapy(
+        &self,
+        therapy_id: i64,
+        limit: Option<i64>,
+    ) -> Result<Vec<Reading>, RepoError> {
+        let limit = limit.unwrap_or(100);
+
         let rows = sqlx::query_as::<_, Reading>(
-            "SELECT * FROM readings WHERE therapy_id = $1 ORDER BY recorded_at DESC",
+            "SELECT * FROM readings WHERE therapy_id = $1 ORDER BY recorded_at DESC LIMIT $2",
         )
         .bind(therapy_id)
+        .bind(limit)
         .fetch_all(&self.read_pool)
         .await?;
 
@@ -150,9 +156,13 @@ impl ReadingsRepo {
         Ok(rows)
     }
 
-    /// Get the latest reading for each signal for a given therapy using DISTINCT ON.
-    /// This is a single-query replacement for the legacy ~20 correlated subqueries.
-    pub async fn therapy_detail(&self, therapy_id: i64) -> Result<Vec<TherapyDetailReading>, RepoError> {
+    /// Get the latest reading for each signal for a machine within a time window using DISTINCT ON.
+    pub async fn machine_detail_in_window(
+        &self,
+        machine_id: i64,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Result<Vec<TherapyDetailReading>, RepoError> {
         let rows = sqlx::query_as::<_, TherapyDetailReading>(
             r#"
             SELECT DISTINCT ON (r.signal_id)
@@ -164,20 +174,28 @@ impl ReadingsRepo {
                 r.recorded_at
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
-            WHERE r.therapy_id = $1
+            WHERE r.machine_id = $1
+              AND r.recorded_at >= $2
+              AND r.recorded_at <= $3
             ORDER BY r.signal_id, r.recorded_at DESC
             "#,
         )
-        .bind(therapy_id)
+        .bind(machine_id)
+        .bind(since)
+        .bind(until)
         .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
     }
 
-    /// Get aggregate statistics per signal for a therapy.
-    /// Uses WHERE value IS NOT NULL — no CAST needed, value is already FLOAT.
-    pub async fn therapy_aggregates(&self, therapy_id: i64) -> Result<Vec<SignalAggregate>, RepoError> {
+    /// Get aggregate statistics per signal for a machine within a time window.
+    pub async fn aggregates_in_window(
+        &self,
+        machine_id: i64,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Result<Vec<SignalAggregate>, RepoError> {
         let rows = sqlx::query_as::<_, SignalAggregate>(
             r#"
             SELECT
@@ -189,21 +207,30 @@ impl ReadingsRepo {
                 COUNT(*) AS count
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
-            WHERE r.therapy_id = $1 AND r.value IS NOT NULL
+            WHERE r.machine_id = $1
+              AND r.recorded_at >= $2
+              AND r.recorded_at <= $3
+              AND r.value IS NOT NULL
             GROUP BY r.signal_id, s.internal_name
             ORDER BY s.internal_name
             "#,
         )
-        .bind(therapy_id)
+        .bind(machine_id)
+        .bind(since)
+        .bind(until)
         .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
     }
 
-    /// Get timeseries data for a therapy (all readings ordered by timestamp).
-    /// ⚠️ No LIMIT — use only when the caller guarantees bounded data (e.g. short window).
-    pub async fn therapy_timeseries(&self, therapy_id: i64) -> Result<Vec<TimeseriesPoint>, RepoError> {
+    /// Get timeseries data for a machine within a time window.
+    pub async fn timeseries_in_window(
+        &self,
+        machine_id: i64,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
+    ) -> Result<Vec<TimeseriesPoint>, RepoError> {
         let rows = sqlx::query_as::<_, TimeseriesPoint>(
             r#"
             SELECT
@@ -214,24 +241,31 @@ impl ReadingsRepo {
                 r.recorded_at
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
-            WHERE r.therapy_id = $1 AND r.value IS NOT NULL
+            WHERE r.machine_id = $1
+              AND r.recorded_at >= $2
+              AND r.recorded_at <= $3
+              AND r.value IS NOT NULL
             ORDER BY r.recorded_at ASC, r.signal_id
             "#,
         )
-        .bind(therapy_id)
+        .bind(machine_id)
+        .bind(since)
+        .bind(until)
         .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
     }
 
-    /// Get bucketed/downsampled timeseries for a therapy chart.
+    /// Get bucketed/downsampled timeseries for a machine within a time window.
     ///
     /// `bucket_interval` is a PostgreSQL interval string (e.g. `'10 minutes'`, `'1 hour'`).
-    /// Returns AVG, MIN, MAX per bucket per signal — safe for unbounded therapy durations.
-    pub async fn therapy_timeseries_bucketed(
+    /// Returns AVG, MIN, MAX per bucket per signal — safe for unbounded durations.
+    pub async fn bucketed_in_window(
         &self,
-        therapy_id: i64,
+        machine_id: i64,
+        since: DateTime<Utc>,
+        until: DateTime<Utc>,
         bucket_interval: &str,
     ) -> Result<Vec<BucketedTimeseriesPoint>, RepoError> {
         let sql = format!(
@@ -246,14 +280,19 @@ impl ReadingsRepo {
                 date_trunc('{}', r.recorded_at) AS bucket
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
-            WHERE r.therapy_id = $1 AND r.value IS NOT NULL
+            WHERE r.machine_id = $1
+              AND r.recorded_at >= $2
+              AND r.recorded_at <= $3
+              AND r.value IS NOT NULL
             GROUP BY r.signal_id, s.internal_name, r.unit, bucket
             ORDER BY bucket ASC, r.signal_id
             "#,
             bucket_interval,
         );
         let rows = sqlx::query_as::<_, BucketedTimeseriesPoint>(&sql)
-            .bind(therapy_id)
+            .bind(machine_id)
+            .bind(since)
+            .bind(until)
             .fetch_all(&self.read_pool)
             .await?;
 
@@ -306,6 +345,113 @@ impl ReadingsRepo {
         .bind(machine_id)
         .fetch_all(&self.read_pool)
         .await?;
+
+        Ok(rows)
+    }
+
+    /// Get the latest reading per signal for a therapy via FK (DISTINCT ON).
+    pub async fn therapy_detail(&self, therapy_id: i64) -> Result<Vec<TherapyDetailReading>, RepoError> {
+        let rows = sqlx::query_as::<_, TherapyDetailReading>(
+            r#"
+            SELECT DISTINCT ON (r.signal_id)
+                r.signal_id,
+                s.internal_name,
+                r.value,
+                r.unit,
+                r.display_label,
+                r.recorded_at
+            FROM readings r
+            JOIN signals s ON r.signal_id = s.id
+            WHERE r.therapy_id = $1
+            ORDER BY r.signal_id, r.recorded_at DESC
+            "#,
+        )
+        .bind(therapy_id)
+        .fetch_all(&self.read_pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Get aggregate statistics per signal for a therapy via FK.
+    pub async fn therapy_aggregates(&self, therapy_id: i64) -> Result<Vec<SignalAggregate>, RepoError> {
+        let rows = sqlx::query_as::<_, SignalAggregate>(
+            r#"
+            SELECT
+                r.signal_id,
+                s.internal_name,
+                AVG(r.value) AS avg_value,
+                MIN(r.value) AS min_value,
+                MAX(r.value) AS max_value,
+                COUNT(*) AS count
+            FROM readings r
+            JOIN signals s ON r.signal_id = s.id
+            WHERE r.therapy_id = $1
+              AND r.value IS NOT NULL
+            GROUP BY r.signal_id, s.internal_name
+            ORDER BY s.internal_name
+            "#,
+        )
+        .bind(therapy_id)
+        .fetch_all(&self.read_pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Get timeseries data for a therapy via FK.
+    pub async fn therapy_timeseries(&self, therapy_id: i64) -> Result<Vec<TimeseriesPoint>, RepoError> {
+        let rows = sqlx::query_as::<_, TimeseriesPoint>(
+            r#"
+            SELECT
+                r.signal_id,
+                s.internal_name,
+                r.value,
+                r.unit,
+                r.recorded_at
+            FROM readings r
+            JOIN signals s ON r.signal_id = s.id
+            WHERE r.therapy_id = $1
+              AND r.value IS NOT NULL
+            ORDER BY r.recorded_at ASC, r.signal_id
+            "#,
+        )
+        .bind(therapy_id)
+        .fetch_all(&self.read_pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Get bucketed/downsampled timeseries for a therapy via FK.
+    pub async fn therapy_timeseries_bucketed(
+        &self,
+        therapy_id: i64,
+        bucket_interval: &str,
+    ) -> Result<Vec<BucketedTimeseriesPoint>, RepoError> {
+        let sql = format!(
+            r#"
+            SELECT
+                r.signal_id,
+                s.internal_name,
+                AVG(r.value) AS avg_value,
+                MIN(r.value) AS min_value,
+                MAX(r.value) AS max_value,
+                r.unit,
+                date_trunc('{}', r.recorded_at) AS bucket
+            FROM readings r
+            JOIN signals s ON r.signal_id = s.id
+            WHERE r.therapy_id = $1
+              AND r.value IS NOT NULL
+            GROUP BY r.signal_id, s.internal_name, r.unit, bucket
+            ORDER BY bucket ASC, r.signal_id
+            "#,
+            bucket_interval,
+        );
+        let rows = sqlx::query_as::<_, BucketedTimeseriesPoint>(&sql)
+            .bind(therapy_id)
+            .fetch_all(&self.read_pool)
+            .await?;
 
         Ok(rows)
     }

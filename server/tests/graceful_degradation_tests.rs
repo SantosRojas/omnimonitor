@@ -224,7 +224,6 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
                 "value": 10.0,
                 "unit": "unit",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -259,7 +258,6 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
                 "value": 20.0,
                 "unit": "unit",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -343,7 +341,6 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
                 "value": 42.0,
                 "unit": "amp",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -449,7 +446,6 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
                 "value": 11.1,
                 "unit": "mm",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -474,7 +470,6 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
                 "value": 22.2,
                 "unit": "cm",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -540,3 +535,4 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         "Machine B should NOT have a_sig (data isolation)"
     );
 }
+

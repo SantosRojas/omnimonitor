@@ -16,12 +16,18 @@ export class HttpPatientRepo implements PatientRepo {
 
   async search(query: string): Promise<Patient[]> {
     const { data } = await apiClient.get<Patient[]>("/patients/search", {
-      params: { q: query },
+      params: { search: query },
     });
     return data;
   }
 
-  async create(input: { external_id: string }): Promise<Patient> {
+  async create(input: {
+    external_id: string;
+    name?: string | null;
+    age?: number | null;
+    email?: string | null;
+    address?: string | null;
+  }): Promise<Patient> {
     const { data } = await apiClient.post<Patient>("/patients", input);
     return data;
   }
@@ -33,9 +39,15 @@ export class HttpPatientRepo implements PatientRepo {
 
   async update(
     id: number,
-    input: { external_id: string },
+    input: {
+      external_id?: string;
+      name?: string | null;
+      age?: number | null;
+      email?: string | null;
+      address?: string | null;
+    },
   ): Promise<Patient> {
-    const { data } = await apiClient.patch<Patient>(
+    const { data } = await apiClient.put<Patient>(
       `/patients/${id}`,
       input,
     );

@@ -9,10 +9,12 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::api::AppState;
+use crate::domain::entities::Reading;
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -80,13 +82,24 @@ async fn export_therapies(
 }
 
 /// GET /export/readings?therapy_id=X&format=csv|json
+///
+/// Export readings for a therapy session. Internamente resuelve la terapia
+/// para obtener machine_id y ventana de tiempo, luego consulta por ese rango.
 async fn export_readings(
     State(state): State<Arc<AppState>>,
     Query(params): Query<ExportReadingsParams>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let therapy = state.therapy_repo.find_by_id(params.therapy_id).await.map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()})))
+    })?
+    .ok_or_else(|| (StatusCode::NOT_FOUND, Json(json!({"error": "Therapy not found"}))))?;
+
+    let since = therapy.started_at.unwrap_or(therapy.created_at);
+    let until = therapy.ended_at.unwrap_or_else(Utc::now);
+
     let readings = state
         .readings_repo
-        .query_by_therapy(params.therapy_id)
+        .query_by_machine_since(therapy.machine_id, since, None)
         .await
         .map_err(|e| {
             (
@@ -95,28 +108,31 @@ async fn export_readings(
             )
         })?;
 
+    // Filter to records within the therapy window
+    let readings: Vec<Reading> = readings.into_iter()
+        .filter(|r| r.recorded_at.map_or(false, |t| t <= until))
+        .collect();
+
     let fmt = params.format.as_deref().unwrap_or("csv");
 
     match fmt {
         "json" => Ok(Json(json!(readings)).into_response()),
         _ => {
             let mut csv = String::from(
-                "id,machine_id,therapy_id,signal_id,recorded_at,raw_value,value,unit,display_label,phase,created_at\n",
+                "id,machine_id,signal_id,recorded_at,raw_value,value,unit,display_label,created_at\n",
             );
             for r in &readings {
                 csv.push_str(&format!(
-                    "{},{},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{:?},{}\n",
+                    "{},{},{},{},{},{},{},{},{}\n",
                     r.id,
                     r.machine_id,
-                    r.therapy_id,
-                    r.signal_id,
-                    r.recorded_at,
-                    r.raw_value,
-                    r.value,
-                    r.unit,
-                    r.display_label,
-                    r.phase,
-                    r.created_at,
+                    r.signal_id.map_or("".into(), |v: i64| v.to_string()),
+                    r.recorded_at.map_or("".into(), |v: DateTime<Utc>| v.to_rfc3339()),
+                    r.raw_value.map_or("".into(), |v: i64| v.to_string()),
+                    r.value.map_or("".into(), |v: f64| v.to_string()),
+                    r.unit.as_deref().unwrap_or(""),
+                    r.display_label.as_deref().unwrap_or(""),
+                    r.created_at.to_rfc3339(),
                 ));
             }
             Ok((

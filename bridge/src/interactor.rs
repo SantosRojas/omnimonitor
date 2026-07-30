@@ -38,6 +38,11 @@ const DEFAULT_CAPTURE_NAMES: &str = "c_press_ep_act,c_pump_bs_bl_flow_act,c_pump
 /// and patient identification (never sent as readings).
 const DEFAULT_METADATA_NAMES: &str = "d_serial_number_to_odi,g_patient_id_str,g_therapy_mode_set,g_anticoag_mode_set,d_kit_type_str,g_patient_data_weight_set";
 
+/// Default control-state names: signals that indicate machine state transitions
+/// (e.g. end-of-therapy). These are read every cycle but stored separately from
+/// metadata — they never trigger TherapySetup and never become TelemetryReadings.
+const DEFAULT_CONTROL_STATE_NAMES: &str = "c_trmt_main_state";
+
 
 /// Umbral de fallos cíclicos antes de intentar auto-reconexión.
 const MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT: u64 = 50;
@@ -49,6 +54,9 @@ struct CyclicalState {
     dict_cache: HashMap<u16, String>,
     /// Last known metadata values for change detection.
     metadata_cache: HashMap<String, Option<Value>>,
+    /// Control-state signals read every cycle (e.g. c_trmt_main_state).
+    /// Never trigger TherapySetup and never become TelemetryReadings.
+    control_cache: HashMap<String, Option<Value>>,
     patient_id_str: String,
     /// Serial number extracted from the `d_serial_number_to_odi` signal.
     serial_number_str: Option<String>,
@@ -62,6 +70,7 @@ impl CyclicalState {
             attr_cache: HashMap::new(),
             dict_cache: HashMap::new(),
             metadata_cache: HashMap::new(),
+            control_cache: HashMap::new(),
             patient_id_str: String::new(),
             serial_number_str: None,
             cycle: 0,
@@ -459,6 +468,7 @@ fn read_cyclical_values(
     state: &mut CyclicalState,
     capture_names: &HashSet<String>,
     metadata_names: &HashSet<String>,
+    control_state_names: &HashSet<String>,
 ) -> Result<Vec<TelemetryReading>, DeviceError> {
     let data = device.request(CMD_CODE_GET_CYCLICAL_VALUES, &[])?;
 
@@ -563,6 +573,20 @@ fn read_cyclical_values(
             }
 
             // Never persist metadata as readings
+            continue;
+        }
+
+        // ── Control state: store in control_cache, skip from readings ──
+        if control_state_names.contains(&name_lower) {
+            let value = match &physical_value {
+                TelemetryValue::Number(n) => Some(Value::Number(
+                    serde_json::Number::from_f64(*n).unwrap_or(serde_json::Number::from(0)),
+                )),
+                TelemetryValue::String(s) => Some(Value::String(s.clone())),
+            };
+            state
+                .control_cache
+                .insert(attr.internal_name.clone(), value);
             continue;
         }
 
@@ -717,7 +741,18 @@ pub async fn run_bridge(
                 .collect()
         });
 
-    tracing::info!("[bridge] capture_names={} signals, metadata_names={} signals", capture_names.len(), metadata_names.len());
+    let control_state_names: HashSet<String> = DEFAULT_CONTROL_STATE_NAMES
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    tracing::info!(
+        "[bridge] capture_names={} signals, metadata_names={} signals, control_state_names={} signals",
+        capture_names.len(),
+        metadata_names.len(),
+        control_state_names.len(),
+    );
 
     tracing::info!("[bridge] sending register (IP={bridge_ip})...");
     let bridge_id = match send_register(bridge_ip, &tx_readings, &mut rx_commands).await {
@@ -816,6 +851,7 @@ pub async fn run_bridge(
     // resolved machine_id (starts at 0 until serial discovery completes).
     let machine_id = Arc::new(AtomicI64::new(0));
     let mut serial_resolved = false;
+    let mut therapy_end_sent = false;
 
     manager.set_running().await;
     tracing::info!("[bridge] entering cyclical loop (bridge_id={bridge_id})");
@@ -900,7 +936,7 @@ pub async fn run_bridge(
         }
 
         // Read cyclical values
-        match read_cyclical_values(device, &mut state, &capture_names, &metadata_names) {
+        match read_cyclical_values(device, &mut state, &capture_names, &metadata_names, &control_state_names) {
             Ok(readings) => {
                 manager.record_success().await;
 
@@ -950,6 +986,43 @@ pub async fn run_bridge(
                         break;
                     }
                     meta_tracker.snapshot(&state.metadata_cache);
+                }
+
+                // ── End-of-therapy detection from control state ──
+                if current_machine_id > 0 {
+                    let is_end_state = state
+                        .control_cache
+                        .get("c_trmt_main_state")
+                        .and_then(|v| v.as_ref())
+                        .and_then(|v| v.as_f64())
+                        .map(|v| (v - 3.0).abs() < f64::EPSILON)
+                        .unwrap_or(false);
+
+                    if is_end_state && !therapy_end_sent {
+                        tracing::info!(
+                            "[bridge] c_trmt_main_state=3 (End of therapy), sending TherapyEnd"
+                        );
+                        if tx_readings
+                            .send(BridgeFrame::TherapyEnd {
+                                machine_id: current_machine_id,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            tracing::error!("[bridge] tx_readings closed, stopping");
+                            break;
+                        }
+                        // Resetear metadata cache para forzar un nuevo TherapySetup
+                        // cuando el próximo paciente se conecte, aunque tenga los
+                        // mismos valores (mismo patient_id, modo, kit, peso).
+                        state.metadata_cache.clear();
+                        meta_tracker = MetadataTracker::new();
+                        therapy_end_sent = true;
+                    } else if !is_end_state {
+                        // Reset flag when we leave end-of-therapy state
+                        // (next therapy session can trigger a new end detection)
+                        therapy_end_sent = false;
+                    }
                 }
 
                 // ── Send readings (non-metadata signals only) ──

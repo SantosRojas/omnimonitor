@@ -25,7 +25,12 @@ export interface TherapyRepo {
 
   updateMetadata(
     id: number,
-    metadata: { therapy_type?: string; kit?: string; weight?: number },
+    metadata: {
+      therapy_type?: string;
+      kit?: string;
+      weight?: number;
+      end_weight?: number | null;
+    },
   ): Promise<Therapy>;
 
   getDetail(id: number): Promise<Therapy>;

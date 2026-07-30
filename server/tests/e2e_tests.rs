@@ -234,7 +234,6 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
                 "value": 120.0,
                 "unit": "mmHg",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -364,7 +363,6 @@ async fn e2e_browser_receives_readings_replay_on_subscribe(pool: PgPool) {
                 "value": 50.0,
                 "unit": "cm",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -465,7 +463,6 @@ async fn e2e_ip_auth_registered_ip_full_flow(pool: PgPool) {
                 "value": 120.0,
                 "unit": "mmHg",
                 "display_value": null,
-                "phase": null,
             }
         ],
     });
@@ -577,3 +574,4 @@ async fn e2e_ip_auth_deauthorized_ip_gets_error(pool: PgPool) {
     assert_eq!(resp["type"], "Error");
     assert_eq!(resp["message"], "IP not authorized");
 }
+

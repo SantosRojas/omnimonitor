@@ -1,9 +1,7 @@
-import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useBridgeStatusStore } from "../../store/bridge-status-store";
-import { startWsAdapter } from "../../data/ws-adapter";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Badge } from "../../ui/primitives/badge";
@@ -17,6 +15,7 @@ const statusBadgeVariant: Record<string, "success" | "danger" | "secondary" | "w
   online: "success",
   offline: "secondary",
   error: "danger",
+  unknown: "warning",
 };
 
 const bridgeStateColor: Record<string, string> = {
@@ -42,11 +41,6 @@ const wsStateBadge: Record<string, "success" | "secondary" | "warning"> = {
 export default function ConnectionMonitor() {
   const machineStatuses = useMachineStatusStore((s) => s.machines);
   const bridgeStatuses = useBridgeStatusStore((s) => s.bridges);
-
-  useEffect(() => {
-    const stop = startWsAdapter();
-    return () => stop();
-  }, []);
 
   const { data: machines, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["machines"],

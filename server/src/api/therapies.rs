@@ -56,6 +56,7 @@ pub struct UpdateMetadataRequest {
     pub therapy_type: Option<String>,
     pub kit: Option<String>,
     pub weight: Option<f64>,
+    pub end_weight: Option<f64>,
 }
 
 /// GET /therapies
@@ -187,6 +188,7 @@ async fn update_therapy_metadata(
             req.therapy_type.as_deref(),
             req.kit.as_deref(),
             req.weight,
+            req.end_weight,
         )
         .await
         .map_err(|e| match e {

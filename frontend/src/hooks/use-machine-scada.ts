@@ -32,11 +32,7 @@ export function useMachineScada(machineId: string): ScadaData {
   return useMemo(() => {
     // Determine connection status
     const connectionStatus: ConnectionStatus =
-      machineEntry?.status.status === "online"
-        ? "online"
-        : machineEntry?.status.status === "error"
-          ? "error"
-          : "offline";
+      machineEntry?.status.status ?? "unknown";
 
     // Extract pressure from the latest reading
     const pressure =

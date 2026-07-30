@@ -9,9 +9,24 @@ export interface PatientRepo {
 
   search(query: string): Promise<Patient[]>;
 
-  create(data: { external_id: string }): Promise<Patient>;
+  create(data: {
+    external_id: string;
+    name?: string | null;
+    age?: number | null;
+    email?: string | null;
+    address?: string | null;
+  }): Promise<Patient>;
 
   get(id: number): Promise<Patient>;
 
-  update(id: number, data: { external_id: string }): Promise<Patient>;
+  update(
+    id: number,
+    data: {
+      external_id?: string;
+      name?: string | null;
+      age?: number | null;
+      email?: string | null;
+      address?: string | null;
+    },
+  ): Promise<Patient>;
 }

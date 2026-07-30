@@ -1,7 +1,7 @@
 import type { FC } from "react";
 import { cn } from "../../../ui/primitives";
 
-export type ConnectionStatus = "online" | "offline" | "error";
+export type ConnectionStatus = "online" | "offline" | "error" | "unknown";
 
 interface MachineStatusDotProps {
   status: ConnectionStatus;
@@ -15,6 +15,7 @@ const colorMap: Record<ConnectionStatus, string> = {
   online: "bg-green-500",
   offline: "bg-neutral-400",
   error: "bg-red-500",
+  unknown: "bg-yellow-500",
 };
 
 const MachineStatusDot: FC<MachineStatusDotProps> = ({
