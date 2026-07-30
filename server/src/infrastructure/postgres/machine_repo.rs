@@ -161,21 +161,22 @@ impl MachineRepo {
     }
 
     /// Mark machines as offline if they haven't been seen in `timeout_secs` seconds.
-    /// Returns the number of machines that were marked offline.
-    pub async fn set_stale_machines_offline(&self, timeout_secs: i64) -> Result<u64, RepoError> {
+    /// Returns the IDs of machines that were marked offline.
+    pub async fn set_stale_machines_offline(&self, timeout_secs: i64) -> Result<Vec<i64>, RepoError> {
         let interval = format!("{} seconds", timeout_secs);
-        let result = sqlx::query(
+        let rows = sqlx::query_as::<_, (i64,)>(
             r#"
             UPDATE machines
             SET status = 'offline'
             WHERE status = 'online'
               AND last_seen_at < NOW() - $1::interval
+            RETURNING id
             "#,
         )
         .bind(&interval)
-        .execute(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
-        Ok(result.rows_affected())
+        Ok(rows.into_iter().map(|r| r.0).collect())
     }
 }

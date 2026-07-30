@@ -279,23 +279,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let version_repo = VersionRepo::new(write_pool.clone());
     let user_repo = UserRepo::new(write_pool.clone());
 
-    // ── Stale machine checker (every 30s, 60s timeout) ──
-    let stale_checker_repo = machine_repo.clone();
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        loop {
-            interval.tick().await;
-            match stale_checker_repo.set_stale_machines_offline(60).await {
-                Ok(count) => {
-                    if count > 0 {
-                        info!("Marked {} stale machine(s) offline", count);
-                    }
-                }
-                Err(e) => error!("Stale machine check failed: {}", e),
-            }
-        }
-    });
-
     // ── Seed admin user ────────────────────────────
     let existing = user_repo.find_by_username("admin").await.ok().flatten();
     if existing.is_none() {
@@ -341,6 +324,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         bridge_repo.clone(),
         persistence_interval_secs,
     ));
+
+    // ── Stale machine watchdog (every 30s, 60s timeout) ──
+    let watchdog_machine_repo = machine_repo.clone();
+    let watchdog_ws_hub = ws_hub.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        interval.tick().await; // skip immediate first tick
+        loop {
+            interval.tick().await;
+            match watchdog_machine_repo.set_stale_machines_offline(60).await {
+                Ok(ids) => {
+                    if !ids.is_empty() {
+                        info!("Watchdog: marked {} stale machine(s) offline", ids.len());
+                        for machine_id in &ids {
+                            let event = server::infrastructure::ws_hub::BrowserEvent::MachineStatus {
+                                machine_id: *machine_id,
+                                status: "offline".into(),
+                                last_seen_at: chrono::Utc::now().to_rfc3339(),
+                            };
+                            if let Ok(json) = serde_json::to_string(&event) {
+                                watchdog_ws_hub.broadcast_to_machine(*machine_id, &json).await;
+                            }
+                        }
+                    }
+                }
+                Err(e) => error!("Watchdog: stale machine check failed: {}", e),
+            }
+        }
+    });
 
     // ── Unified app state ─────────────────────────
     let app_state = Arc::new(AppState {

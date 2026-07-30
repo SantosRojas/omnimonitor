@@ -431,6 +431,39 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
     info!("Bridge connection closed");
 }
 
+/// Validate that a frame's claimed machine_id matches the identified machine_id
+/// for this bridge connection. Returns an error frame if validation fails.
+fn validate_identified_machine(
+    current_machine_id: Option<i64>,
+    claimed_machine_id: i64,
+    frame_type: &str,
+) -> Result<(), ServerFrame> {
+    match current_machine_id {
+        Some(identified) if identified == claimed_machine_id => Ok(()),
+        Some(identified) => {
+            warn!(
+                "{}: machine_id mismatch — claimed {}, identified {}",
+                frame_type, claimed_machine_id, identified
+            );
+            Err(ServerFrame::Error {
+                message: format!(
+                    "Machine mismatch: claimed {} but bridge identified as {}",
+                    claimed_machine_id, identified
+                ),
+            })
+        }
+        None => {
+            warn!(
+                "{} received before machine identification (machine_id={})",
+                frame_type, claimed_machine_id
+            );
+            Err(ServerFrame::Error {
+                message: "Bridge must identify a machine before sending data frames".into(),
+            })
+        }
+    }
+}
+
 pub async fn handle_bridge_frame(
     state: &WsHubState,
     frame: &BridgeFrame,
@@ -511,8 +544,8 @@ pub async fn handle_bridge_frame(
             cycle,
             readings,
         } => {
-            if current_machine_id.is_none() {
-                *current_machine_id = Some(*machine_id);
+            if let Err(err_frame) = validate_identified_machine(*current_machine_id, *machine_id, "Readings") {
+                return Ok(Some(err_frame));
             }
 
             // ── Map readings to domain model ──
@@ -562,8 +595,8 @@ pub async fn handle_bridge_frame(
         }
 
         BridgeFrame::Heartbeat { machine_id } => {
-            if current_machine_id.is_none() {
-                *current_machine_id = Some(*machine_id);
+            if let Err(err_frame) = validate_identified_machine(*current_machine_id, *machine_id, "Heartbeat") {
+                return Ok(Some(err_frame));
             }
 
             state.machine_repo.touch_last_seen(*machine_id).await?;
@@ -677,6 +710,10 @@ pub async fn handle_bridge_frame(
             kit,
             weight,
         } => {
+            if let Err(err_frame) = validate_identified_machine(*current_machine_id, *machine_id, "TherapySetup") {
+                return Ok(Some(err_frame));
+            }
+
             handle_therapy_setup(
                 state,
                 *machine_id,
