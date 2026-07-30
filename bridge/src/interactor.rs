@@ -38,8 +38,6 @@ const DEFAULT_CAPTURE_NAMES: &str = "c_press_ep_act,c_pump_bs_bl_flow_act,c_pump
 /// and patient identification (never sent as readings).
 const DEFAULT_METADATA_NAMES: &str = "d_serial_number_to_odi,g_patient_id_str,g_therapy_mode_set,g_anticoag_mode_set,d_kit_type_str,g_patient_data_weight_set";
 
-/// Cycle interval when no readings are available (device not responding).
-const IDLE_CYCLE_MS: u64 = 1000;
 
 /// Umbral de fallos cíclicos antes de intentar auto-reconexión.
 const MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT: u64 = 50;
@@ -670,6 +668,7 @@ pub async fn run_bridge(
     mut rx_commands: mpsc::Receiver<ServerFrame>,
     bridge_ip: &str,
     ws_state_rx: watch::Receiver<WsState>,
+    cycle_interval_ms: u64,
 ) {
     tracing::info!("[bridge] starting interactor for bridge_ip={bridge_ip}");
 
@@ -974,7 +973,6 @@ pub async fn run_bridge(
                     state.cycle, cf
                 );
                 manager.record_cyclical_failure().await;
-                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
             }
             Err(DeviceError::CrcError) => {
                 tracing::warn!(
@@ -1006,8 +1004,15 @@ pub async fn run_bridge(
                     tracing::error!("[bridge] connection failure limit reached, stopping reader");
                     break;
                 }
-                sleep(Duration::from_millis(IDLE_CYCLE_MS)).await;
+                // cycle_interval_ms handles pacing at the bottom of the loop
             }
+        }
+
+        // ── Cycle interval pacing ──
+        // Pausa configurable entre ciclos de lectura serial.
+        // Mínimo práctico: 1000ms (diseño del protocolo OMNI-ODI).
+        if cycle_interval_ms > 0 {
+            sleep(Duration::from_millis(cycle_interval_ms)).await;
         }
     }
 

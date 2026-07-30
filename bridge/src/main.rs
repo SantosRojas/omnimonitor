@@ -57,6 +57,9 @@ pub struct BridgeConfig {
     pub max_failures: u32,
     pub timeout_secs: u64,
     pub developer_mode: bool,
+    /// Millisegundos entre ciclos de lectura exitosa.
+    /// 0 = sin pausa (tan rápido como responda el serial).
+    pub cycle_interval_ms: u64,
 }
 
 impl Default for BridgeConfig {
@@ -71,6 +74,7 @@ impl Default for BridgeConfig {
             max_failures: 10,
             timeout_secs: 3,
             developer_mode: false,
+            cycle_interval_ms: 1000,
         }
     }
 }
@@ -123,6 +127,11 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
     if let Ok(v) = std::env::var("BRIDGE_DEVELOPER_MODE") {
         config.developer_mode =
             v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("1") || v == "yes";
+    }
+    if let Ok(v) = std::env::var("BRIDGE_CYCLE_INTERVAL") {
+        if let Ok(n) = v.parse() {
+            config.cycle_interval_ms = n;
+        }
     }
 
     // ── Override from CLI args ──
@@ -183,6 +192,14 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
             "--developer-mode" => {
                 config.developer_mode = true;
                 i += 1;
+            }
+            "--cycle-interval" => {
+                if i + 1 < args.len() {
+                    config.cycle_interval_ms = args[i + 1].parse().unwrap_or(config.cycle_interval_ms);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
             }
             _ => {
                 i += 1;
@@ -276,7 +293,7 @@ fn init_tracing(developer_mode: bool) -> Vec<tracing_appender::non_blocking::Wor
 async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
     tracing::info!(
         "bridge starting: port={}, baud={}, ws={}, src={}, dst={}, \
-         bridge_ip={}, max_failures={}, timeout_secs={}",
+         bridge_ip={}, max_failures={}, timeout_secs={}, cycle_interval_ms={}",
         config.port,
         config.baud,
         config.ws_url,
@@ -285,6 +302,7 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
         config.bridge_ip,
         config.max_failures,
         config.timeout_secs,
+        config.cycle_interval_ms,
     );
 
     // ── Open serial port ──
@@ -325,6 +343,7 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
     let manager_clone = manager;
     let serial_number_clone = serial_number.clone();
     let bridge_ip_clone = config.bridge_ip.clone();
+    let cycle_interval = config.cycle_interval_ms; // u64, Copy
     let serial_handle = tokio::spawn(async move {
         let mut device = device_clone.lock().await;
         run_bridge(
@@ -335,6 +354,7 @@ async fn run_bridge_instance(config: &BridgeConfig) -> Result<(), String> {
             rx_commands,
             &bridge_ip_clone,
             ws_state_rx,
+            cycle_interval,
         )
         .await;
     });
@@ -454,7 +474,8 @@ mod tests {
     fn load_config_defaults_with_minimal_cli() {
         // Sanitize env vars that may leak from parallel env tests
         for var in ["BRIDGE_BAUD", "BRIDGE_IP", "BRIDGE_PORT", "SERIAL_MAX_FAILURES",
-                     "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR"]
+                     "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR",
+                     "BRIDGE_CYCLE_INTERVAL"]
         {
             unsafe { std::env::remove_var(var); }
         }
@@ -474,6 +495,7 @@ mod tests {
         assert_eq!(config.bridge_ip, BridgeConfig::default().bridge_ip);
         assert_eq!(config.max_failures, BridgeConfig::default().max_failures);
         assert_eq!(config.timeout_secs, BridgeConfig::default().timeout_secs);
+        assert_eq!(config.cycle_interval_ms, BridgeConfig::default().cycle_interval_ms);
     }
 
     #[test]
@@ -600,6 +622,38 @@ mod tests {
         assert_eq!(config.timeout_secs, BridgeConfig::default().timeout_secs);
 
         unsafe { std::env::remove_var("BRIDGE_TIMEOUT_SECS"); }
+    }
+
+    #[test]
+    fn load_config_cycle_interval_env_var() {
+        unsafe { std::env::set_var("BRIDGE_CYCLE_INTERVAL", "2000"); }
+
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.cycle_interval_ms, 2000);
+
+        unsafe { std::env::remove_var("BRIDGE_CYCLE_INTERVAL"); }
+    }
+
+    #[test]
+    fn load_config_cycle_interval_cli() {
+        let args = vec![
+            "bridge".to_string(),
+            "--port".to_string(),
+            "COM1".to_string(),
+            "--ws".to_string(),
+            "ws://localhost:9000".to_string(),
+            "--cycle-interval".to_string(),
+            "3000".to_string(),
+        ];
+        let config = load_config(&args);
+        assert_eq!(config.cycle_interval_ms, 3000);
     }
 
     #[test]
