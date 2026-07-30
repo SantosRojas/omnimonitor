@@ -1,5 +1,6 @@
 target/
 *.log
+logs/
 .env
 .env.local
 *.env.local
