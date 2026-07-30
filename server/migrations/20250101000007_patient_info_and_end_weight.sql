@@ -1,5 +1,4 @@
 -- Migration 007: optional patient info fields + end weight on therapies
-BEGIN;
 
 ALTER TABLE patients
     ADD COLUMN IF NOT EXISTS name    VARCHAR(255),
@@ -9,5 +8,3 @@ ALTER TABLE patients
 
 ALTER TABLE therapies
     ADD COLUMN IF NOT EXISTS end_weight DOUBLE PRECISION;
-
-COMMIT;

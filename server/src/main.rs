@@ -9,7 +9,10 @@
 #![allow(clippy::print_stdout)]
 
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
+
+use sqlx::migrate::Migrator;
 
 use argon2::PasswordHasher;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
@@ -25,7 +28,6 @@ use server::infrastructure::postgres::{
     therapy_repo::TherapyRepo, user_repo::UserRepo, version_repo::VersionRepo,
 };
 use server::infrastructure::{seed, ws_hub::WsHubState};
-use server::schema::ALL_MIGRATIONS;
 
 // ───────────────────────────────────────────────
 //  CLI configuration
@@ -98,26 +100,16 @@ fn parse_args() -> Args {
 }
 
 // ───────────────────────────────────────────────
-//  Migration runner
+//  Migration runner — sqlx::Migrator tracks state
+//  via the _sqlx_migrations table.
+//  Path is baked at compile time via CARGO_MANIFEST_DIR.
+//  Files read at runtime → no recompile needed on SQL changes.
 // ───────────────────────────────────────────────
 
-/// Migration file names — mirrors the order in `ALL_MIGRATIONS`.
-const MIGRATION_NAMES: &[&str] = &[
-    "001_initial.sql",
-    "002_unique_signal_name.sql",
-    "003_drop_equiv_description.sql",
-    "004_bridges.sql",
-    "005_readings_perf_indexes.sql",
-    "006_drop_readings_therapy_phase.sql",
-];
-
-async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    for (i, migration) in ALL_MIGRATIONS.iter().enumerate() {
-        sqlx::raw_sql(migration).execute(pool).await?;
-        let name = MIGRATION_NAMES.get(i).unwrap_or(&"unknown");
-        info!("Applied migration {} ({})", i + 1, name);
-    }
-    Ok(())
+async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::migrate::MigrateError> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let migrator = Migrator::new(dir).await?;
+    migrator.run(pool).await
 }
 
 /// Health check handler with DB ping.
