@@ -84,7 +84,8 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
     ));
     let state = Arc::new(AppState {
         jwt_secret: "test-jwt-secret".into(),
-        db_pool: pool,
+        db_pool: pool.clone(),
+        read_pool: pool, // tests: mismo pool para read y write
         equivalence_repo: repos.equivalence,
         machine_repo: repos.machine,
         patient_repo: repos.patient,

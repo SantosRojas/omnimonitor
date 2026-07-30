@@ -107,6 +107,7 @@ const MIGRATION_NAMES: &[&str] = &[
     "002_unique_signal_name.sql",
     "003_drop_equiv_description.sql",
     "004_bridges.sql",
+    "005_readings_perf_indexes.sql",
 ];
 
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
@@ -191,8 +192,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Port: {}", args.port);
     info!("DB: {}", args.db_url);
 
-    // ── Database pool (with retry loop) ────────────
-    let pool = {
+    // ── Database pools (write + read, with retry loop) ──
+    // write_pool: 10 conexiones para inserts/updates (bridge, repos)
+    // read_pool:  30 conexiones para SELECT pesados (dashboard, timeseries)
+    let write_pool = {
         let max_attempts = 10;
         let base_delay = std::time::Duration::from_secs(2);
         let max_delay = std::time::Duration::from_secs(30);
@@ -225,20 +228,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // Run migrations
-    run_migrations(&pool).await?;
+    // Read pool: 30 conexiones para queries pesados (dashboard, timeseries)
+    let read_pool = {
+        let max_attempts = 10;
+        let base_delay = std::time::Duration::from_secs(2);
+        let max_delay = std::time::Duration::from_secs(30);
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+            match PgPoolOptions::new()
+                .max_connections(30)
+                .connect(&args.db_url)
+                .await
+            {
+                Ok(pool) => break pool,
+                Err(e) => {
+                    if attempt >= max_attempts {
+                        error!(
+                            "Failed to connect read pool after {max_attempts} attempts: {e}"
+                        );
+                        return Err(e.into());
+                    }
+                    let delay = (base_delay * 2u32.saturating_pow(attempt - 1)).min(max_delay);
+                    warn!(
+                        "Read pool attempt {attempt}/{max_attempts} failed, \
+                         retrying in {delay}s... ({e})",
+                        delay = delay.as_secs(),
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+    };
+    info!("Read pool: 30 connections (isolated from write pool)");
+
+    // Run migrations (usar write_pool)
+    run_migrations(&write_pool).await?;
     info!("Database schema up to date");
 
     // ── Repositories ──────────────────────────────
-    let bridge_repo = BridgeRepo::new(pool.clone());
-    let equivalence_repo = EquivalenceRepo::new(pool.clone());
-    let machine_repo = MachineRepo::new(pool.clone());
-    let patient_repo = PatientRepo::new(pool.clone());
-    let therapy_repo = TherapyRepo::new(pool.clone());
-    let readings_repo = ReadingsRepo::new(pool.clone());
-    let signal_repo = SignalRepo::new(pool.clone());
-    let version_repo = VersionRepo::new(pool.clone());
-    let user_repo = UserRepo::new(pool.clone());
+    // ReadingsRepo usa read_pool separado para SELECT
+    let bridge_repo = BridgeRepo::new(write_pool.clone());
+    let equivalence_repo = EquivalenceRepo::new(write_pool.clone());
+    let machine_repo = MachineRepo::new(write_pool.clone());
+    let patient_repo = PatientRepo::new(write_pool.clone());
+    let therapy_repo = TherapyRepo::new(write_pool.clone());
+    let readings_repo = ReadingsRepo::new_with_read_pool(write_pool.clone(), read_pool.clone());
+    let signal_repo = SignalRepo::new(write_pool.clone());
+    let version_repo = VersionRepo::new(write_pool.clone());
+    let user_repo = UserRepo::new(write_pool.clone());
 
     // ── Stale machine checker (every 30s, 60s timeout) ──
     let stale_checker_repo = machine_repo.clone();
@@ -277,7 +316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── Seed signals and value mappings ───────────
-    match seed::run(&pool).await {
+    match seed::run(&write_pool).await {
         Ok(_) => info!("Seed completed successfully"),
         Err(e) => error!("Seed failed: {}", e),
     }
@@ -306,7 +345,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Unified app state ─────────────────────────
     let app_state = Arc::new(AppState {
         jwt_secret: args.jwt_secret.clone(),
-        db_pool: pool.clone(),
+        db_pool: write_pool.clone(),
+        read_pool: read_pool.clone(),
         bridge_repo,
         equivalence_repo,
         machine_repo,

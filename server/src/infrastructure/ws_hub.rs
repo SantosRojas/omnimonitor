@@ -4,13 +4,13 @@
 //! subscribe/unsubscribe per `machine_id` and receive live broadcasts.
 
 use std::collections::HashMap;
+
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
 
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
@@ -99,7 +99,8 @@ pub enum ServerFrame {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BridgeTelemetryReading {
     pub id: Option<i64>,
-    pub timestamp: String,
+    /// Unix epoch milliseconds (i64, no string parsing needed).
+    pub timestamp: i64,
     pub therapy_id: Option<i64>,
     pub signal_id: i64,
     pub internal_name: String,
@@ -214,7 +215,11 @@ pub enum BrowserCommand {
 //  Hub state
 // ───────────────────────────────────────────────
 
-type BrowserSenders = Arc<RwLock<HashMap<i64, Vec<mpsc::UnboundedSender<String>>>>>;
+/// Buffer del canal por browser subscriber. Si el cliente es lento,
+/// el canal se llena y se desconecta en vez de acumular memoria infinita.
+const BROWSER_CHANNEL_BUFFER: usize = 256;
+
+type BrowserSenders = Arc<RwLock<HashMap<i64, Vec<mpsc::Sender<String>>>>>;
 
 /// Shared state for the WebSocket hub.
 #[derive(Debug, Clone)]
@@ -228,8 +233,9 @@ pub struct WsHubState {
     browser_subs: BrowserSenders,
     /// Latest serial status per bridge_id, stored in-memory.
     pub bridge_statuses: Arc<RwLock<HashMap<i64, BridgeSerialStatusPayload>>>,
-    /// Timestamp del último snapshot persistido a BD.
-    last_persist: Arc<Mutex<Instant>>,
+    /// Timestamp (epoch ms) del último snapshot por máquina.
+    /// Cada máquina lleva su propio timer — no se pierden snapshots por contención global.
+    last_persist_per_machine: Arc<RwLock<HashMap<i64, u64>>>,
     /// Intervalo mínimo entre persists de snapshot (segundos). 0 = cada ciclo.
     persistence_interval_secs: u64,
 }
@@ -253,20 +259,33 @@ impl WsHubState {
             bridge_repo,
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
             bridge_statuses: Arc::new(RwLock::new(HashMap::new())),
-            last_persist: Arc::new(Mutex::new(Instant::now())),
+            last_persist_per_machine: Arc::new(RwLock::new(HashMap::new())),
             persistence_interval_secs,
         }
     }
 
+    /// Returns the configured persistence interval in seconds.
+    pub fn persistence_interval_secs(&self) -> u64 {
+        self.persistence_interval_secs
+    }
+
+    /// Current time as epoch milliseconds.
+    fn epoch_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_millis() as u64
+    }
+
     /// Subscribe a browser sender to a machine_id.
-    pub async fn subscribe_machine(&self, machine_id: i64, tx: mpsc::UnboundedSender<String>) {
+    pub async fn subscribe_machine(&self, machine_id: i64, tx: mpsc::Sender<String>) {
         let mut subs = self.browser_subs.write().await;
         subs.entry(machine_id).or_default().push(tx);
         info!("Browser subscribed to machine {}", machine_id);
     }
 
     /// Unsubscribe a sender from all machines.
-    pub async fn unsubscribe_sender(&self, tx: &mpsc::UnboundedSender<String>) {
+    pub async fn unsubscribe_sender(&self, tx: &mpsc::Sender<String>) {
         let mut subs = self.browser_subs.write().await;
         for (_, senders) in subs.iter_mut() {
             senders.retain(|s| !s.same_channel(tx));
@@ -275,26 +294,32 @@ impl WsHubState {
     }
 
     /// Broadcast a JSON payload to ALL browser clients (regardless of machine subscription).
+    /// Los clients lentos se descartan silenciosamente (bounded channel evita OOM).
     pub async fn broadcast_to_all_browsers(&self, payload: &str) {
         let subs = self.browser_subs.read().await;
         for (_, senders) in subs.iter() {
             for tx in senders {
-                let _ = tx.send(payload.to_string());
+                let _ = tx.try_send(payload.to_string());
             }
         }
     }
 
-    /// Verifica si puede persistir un snapshot según el intervalo configurado.
-    /// Si `persistence_interval_secs == 0` o pasó el tiempo, persiste y retorna true.
-    /// Si aún no toca (interval > 0 y no pasó), no hace nada y retorna false.
-    fn check_persist_interval(&self) -> bool {
+    /// Verifica si puede persistir un snapshot para una máquina específica.
+    /// Cada máquina tiene su propio timer — no se pierden snapshots por contención global.
+    /// Si `persistence_interval_secs == 0` o pasó el tiempo desde su último persist, retorna true.
+    async fn check_persist_interval(&self, machine_id: i64) -> bool {
         let interval = self.persistence_interval_secs;
         if interval == 0 {
             return true; // modo inmediato: siempre persistir
         }
-        let mut last = self.last_persist.lock().unwrap();
-        if last.elapsed().as_secs() >= interval {
-            *last = Instant::now();
+        let interval_ms = interval * 1000;
+        let now = Self::epoch_ms();
+
+        // Actualización atómica por máquina vía async write lock
+        let mut timers = self.last_persist_per_machine.write().await;
+        let last = timers.get(&machine_id).copied().unwrap_or(0);
+        if now.saturating_sub(last) >= interval_ms {
+            timers.insert(machine_id, now);
             true
         } else {
             false
@@ -302,13 +327,14 @@ impl WsHubState {
     }
 
     /// Broadcast a JSON payload to all browsers subscribed to a machine.
+    /// Los clients lentos (buffer lleno) se descartan — bounded channel evita OOM.
     pub async fn broadcast_to_machine(&self, machine_id: i64, payload: &str) {
         let mut dead: Vec<usize> = Vec::new();
         {
             let subs = self.browser_subs.read().await;
             if let Some(senders) = subs.get(&machine_id) {
                 for (i, tx) in senders.iter().enumerate() {
-                    if tx.send(payload.to_string()).is_err() {
+                    if tx.try_send(payload.to_string()).is_err() {
                         dead.push(i);
                     }
                 }
@@ -499,9 +525,7 @@ pub async fn handle_bridge_frame(
                     machine_id: *machine_id,
                     therapy_id: r.therapy_id,
                     signal_id: Some(r.signal_id),
-                    recorded_at: chrono::DateTime::parse_from_rfc3339(&r.timestamp)
-                        .ok()
-                        .map(|dt| dt.with_timezone(&Utc)),
+                    recorded_at: chrono::DateTime::from_timestamp_millis(r.timestamp),
                     raw_value: Some(r.raw_value),
                     value: r.value,
                     unit: Some(r.unit.clone()),
@@ -511,11 +535,10 @@ pub async fn handle_bridge_frame(
                 })
                 .collect();
 
-            // ── Persistence: snapshot cada N segundos ──
-            // Igual que pdms-omni con DB_SAVE_INTERVAL: solo se persiste
-            // el batch actual cuando el intervalo ha pasado. El broadcast
-            // a browsers es siempre inmediato (abajo).
-            if state.check_persist_interval() {
+            // ── Persistence: snapshot cada N segundos por máquina ──
+            // Cada máquina persiste su ciclo actual cuando su timer individual
+            // ha expirado. No hay acumulación ni contención entre máquinas.
+            if state.check_persist_interval(*machine_id).await {
                 if !domain_readings.is_empty() {
                     if let Err(e) = state.readings_repo.insert_batch(&domain_readings).await {
                         error!("Failed to insert readings for machine {}: {}", machine_id, e);
@@ -738,7 +761,7 @@ fn compute_fingerprint(version: &BridgeVersionInfo) -> String {
 /// Multiplexes between incoming WS commands (subscribe/unsubscribe)
 /// and outbound broadcasts from the hub. Uses `tokio::select!`.
 pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>) {
-    let (browser_tx, mut browser_rx) = mpsc::unbounded_channel::<String>();
+    let (browser_tx, mut browser_rx) = mpsc::channel::<String>(BROWSER_CHANNEL_BUFFER);
 
     loop {
         tokio::select! {
@@ -784,8 +807,8 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                                         id: Some(r.id),
                                         timestamp: r
                                             .recorded_at
-                                            .map(|t| t.to_rfc3339())
-                                            .unwrap_or_default(),
+                                            .map(|t| t.timestamp_millis())
+                                            .unwrap_or(0),
                                         therapy_id: r.therapy_id,
                                         signal_id: r.signal_id.unwrap_or(0),
                                         internal_name: String::new(),

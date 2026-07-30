@@ -156,7 +156,7 @@ mod tests {
     fn bridge_frame_readings() {
         let reading = TelemetryReading {
             id: Some(1),
-            timestamp: "2026-07-20T10:00:00Z".into(),
+            timestamp: 1721476800000, // 2026-07-20T10:00:00Z en epoch millis
             therapy_id: Some(42),
             serial_session_id: Some(100),
             signal_id: 5,

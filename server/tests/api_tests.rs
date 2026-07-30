@@ -837,12 +837,27 @@ async fn dashboards_therapy_aggregates_empty(pool: PgPool) {
 
 #[sqlx::test]
 async fn dashboards_therapy_timeseries_empty(pool: PgPool) {
-    let app = common::build_test_app(pool).await;
+    let app = common::build_test_app(pool.clone()).await;
     let token = common::test_jwt();
+
+    // Crear terapia primero (el handler necesita la duración)
+    let repos = common::create_repos(&pool);
+    let patient = repos.patient.create("TS-PATIENT").await.unwrap();
+    let machine = repos
+        .machine
+        .upsert_by_serial("TS-MACHINE", None, None, None)
+        .await
+        .unwrap();
+    let therapy = repos
+        .therapy
+        .create(patient.id, machine.id, Some("HD"), None, None)
+        .await
+        .unwrap();
+
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/dashboards/therapy/999999/timeseries")
+                .uri(&format!("/dashboards/therapy/{}/timeseries", therapy.id))
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -851,7 +866,9 @@ async fn dashboards_therapy_timeseries_empty(pool: PgPool) {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let body: Value = body_json(response).await;
-    assert!(body.as_array().unwrap().is_empty());
+    // Array vacío (no hay readings para esta terapia)
+    let arr = body.as_array().unwrap();
+    assert!(arr.is_empty());
 }
 
 #[sqlx::test]

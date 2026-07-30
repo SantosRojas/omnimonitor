@@ -15,5 +15,10 @@ pub const MIGRATION_003: &str = include_str!("003_drop_equiv_description.sql");
 /// Migration 004: create bridges table for IP-based auth.
 pub const MIGRATION_004: &str = include_str!("004_bridges.sql");
 
+/// Migration 005: performance indexes for readings queries.
+pub const MIGRATION_005: &str = include_str!("005_readings_perf_indexes.sql");
+
 /// Ordered list of all migrations.
-pub const ALL_MIGRATIONS: &[&str] = &[MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004];
+pub const ALL_MIGRATIONS: &[&str] = &[
+    MIGRATION_001, MIGRATION_002, MIGRATION_003, MIGRATION_004, MIGRATION_005,
+];

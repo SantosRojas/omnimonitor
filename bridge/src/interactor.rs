@@ -575,9 +575,7 @@ fn read_cyclical_values(
 
         readings.push(TelemetryReading {
             id: None,
-            timestamp: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
+            timestamp: chrono::Utc::now().timestamp_millis(),
             therapy_id: None,
             serial_session_id: None,
             signal_id: attr.signal_id,

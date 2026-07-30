@@ -39,15 +39,36 @@ pub struct TimeseriesPoint {
     pub recorded_at: Option<DateTime<Utc>>,
 }
 
+/// A bucketed timeseries point with AVG/MIN/MAX for downsampled charts.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct BucketedTimeseriesPoint {
+    pub signal_id: i64,
+    pub internal_name: String,
+    pub avg_value: Option<f64>,
+    pub min_value: Option<f64>,
+    pub max_value: Option<f64>,
+    pub unit: Option<String>,
+    pub bucket: Option<DateTime<Utc>>,
+}
+
 /// Repository for readings.
 #[derive(Debug, Clone)]
 pub struct ReadingsRepo {
-    pool: PgPool,
+    pool: PgPool,     // escritura (inserts)
+    read_pool: PgPool, // lecturas pesadas (SELECT)
 }
 
 impl ReadingsRepo {
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            read_pool: pool.clone(),
+            pool,
+        }
+    }
+
+    /// Create with separate read pool for read/write isolation.
+    pub fn new_with_read_pool(pool: PgPool, read_pool: PgPool) -> Self {
+        Self { pool, read_pool }
     }
 
     /// Insert a batch of readings using a single multi-row INSERT.
@@ -104,7 +125,7 @@ impl ReadingsRepo {
             "SELECT * FROM readings WHERE therapy_id = $1 ORDER BY recorded_at DESC",
         )
         .bind(therapy_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
@@ -123,7 +144,7 @@ impl ReadingsRepo {
         )
         .bind(machine_id)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
@@ -148,7 +169,7 @@ impl ReadingsRepo {
             "#,
         )
         .bind(therapy_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
@@ -174,13 +195,14 @@ impl ReadingsRepo {
             "#,
         )
         .bind(therapy_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
     }
 
     /// Get timeseries data for a therapy (all readings ordered by timestamp).
+    /// ⚠️ No LIMIT — use only when the caller guarantees bounded data (e.g. short window).
     pub async fn therapy_timeseries(&self, therapy_id: i64) -> Result<Vec<TimeseriesPoint>, RepoError> {
         let rows = sqlx::query_as::<_, TimeseriesPoint>(
             r#"
@@ -197,8 +219,43 @@ impl ReadingsRepo {
             "#,
         )
         .bind(therapy_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
+
+        Ok(rows)
+    }
+
+    /// Get bucketed/downsampled timeseries for a therapy chart.
+    ///
+    /// `bucket_interval` is a PostgreSQL interval string (e.g. `'10 minutes'`, `'1 hour'`).
+    /// Returns AVG, MIN, MAX per bucket per signal — safe for unbounded therapy durations.
+    pub async fn therapy_timeseries_bucketed(
+        &self,
+        therapy_id: i64,
+        bucket_interval: &str,
+    ) -> Result<Vec<BucketedTimeseriesPoint>, RepoError> {
+        let sql = format!(
+            r#"
+            SELECT
+                r.signal_id,
+                s.internal_name,
+                AVG(r.value) AS avg_value,
+                MIN(r.value) AS min_value,
+                MAX(r.value) AS max_value,
+                r.unit,
+                date_trunc('{}', r.recorded_at) AS bucket
+            FROM readings r
+            JOIN signals s ON r.signal_id = s.id
+            WHERE r.therapy_id = $1 AND r.value IS NOT NULL
+            GROUP BY r.signal_id, s.internal_name, r.unit, bucket
+            ORDER BY bucket ASC, r.signal_id
+            "#,
+            bucket_interval,
+        );
+        let rows = sqlx::query_as::<_, BucketedTimeseriesPoint>(&sql)
+            .bind(therapy_id)
+            .fetch_all(&self.read_pool)
+            .await?;
 
         Ok(rows)
     }
@@ -223,7 +280,7 @@ impl ReadingsRepo {
         .bind(machine_id)
         .bind(since)
         .bind(limit)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)
@@ -247,7 +304,7 @@ impl ReadingsRepo {
             "#,
         )
         .bind(machine_id)
-        .fetch_all(&self.pool)
+        .fetch_all(&self.read_pool)
         .await?;
 
         Ok(rows)

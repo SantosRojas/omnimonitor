@@ -36,6 +36,7 @@ use crate::infrastructure::ws_hub::{self, WsHubState};
 pub struct AppState {
     pub jwt_secret: String,
     pub db_pool: sqlx::PgPool,
+    pub read_pool: sqlx::PgPool,
     pub equivalence_repo: EquivalenceRepo,
     pub machine_repo: MachineRepo,
     pub patient_repo: PatientRepo,

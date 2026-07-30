@@ -205,7 +205,8 @@ impl From<String> for TelemetryValue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TelemetryReading {
     pub id: Option<i64>,
-    pub timestamp: String,
+    /// Unix epoch milliseconds (i64, no string parsing needed).
+    pub timestamp: i64,
     pub therapy_id: Option<i64>,
     pub serial_session_id: Option<i64>,
     pub signal_id: i64,
