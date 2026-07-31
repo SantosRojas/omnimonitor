@@ -43,22 +43,29 @@ const mockEquivalences = [
   { id: 2, from: "C", to: "D" },
 ];
 
+const mockBridges = [
+  {
+    id: 1,
+    ip_address: "192.168.0.10",
+    label: "RPi-1",
+    authorized: true,
+    status: "online",
+    last_seen_at: "2026-07-24T10:00:00Z",
+  },
+  {
+    id: 2,
+    ip_address: "192.168.0.11",
+    label: null,
+    authorized: false,
+    status: "offline",
+    last_seen_at: "2026-07-23T08:00:00Z",
+  },
+];
+
 const mockMachines = [
   { id: 1, serial_number: "OMNI-001", ip_address: "192.168.1.100", status: "online", last_seen_at: "2026-07-24T10:00:00Z", created_at: "2026-07-01T00:00:00Z", software_version: null, port: null, label: null },
   { id: 2, serial_number: "OMNI-002", ip_address: "192.168.1.101", status: "offline", last_seen_at: "2026-07-23T08:00:00Z", created_at: "2026-07-02T00:00:00Z", software_version: null, port: null, label: null },
 ];
-
-const mockComments = [
-  { id: 1, content: "Checked vitals", created_at: "2026-07-20T14:30:00Z" },
-  { id: 2, content: "Changed filter", created_at: "2026-07-20T15:00:00Z" },
-];
-
-const mockConfig = {
-  max_therapies: 10,
-  ws_reconnect_interval: 5,
-  log_level: "info",
-  db_host: "localhost",
-};
 
 /* ── MSW server ──────────────────────────────────────────────────── */
 
@@ -101,26 +108,32 @@ const server = setupServer(
     HttpResponse.json(null, { status: 204 }),
   ),
 
-  // Machines (read-only, from /api/machines)
-  http.get("/api/machines", () => HttpResponse.json(mockMachines)),
-
-  // Comments
-  http.get("/api/admin/therapies/:therapyId/comments", () =>
-    HttpResponse.json(mockComments),
-  ),
-  http.post("/api/admin/therapies/:therapyId/comments", async ({ request }) => {
+  // Bridges
+  http.get("/api/admin/bridges", () => HttpResponse.json(mockBridges)),
+  http.post("/api/admin/bridges", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     return HttpResponse.json(
-      { id: 3, content: body.content, created_at: new Date().toISOString() },
+      { id: 3, ip_address: body.ip_address, label: body.label ?? null, authorized: false, status: "offline", last_seen_at: null },
       { status: 201 },
     );
   }),
-  http.delete("/api/admin/comments/:id", () =>
+  http.patch("/api/admin/bridges/:id", async ({ request, params }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({
+      id: Number(params.id),
+      ip_address: "192.168.0.10",
+      label: body.label ?? null,
+      authorized: body.authorized === true,
+      status: "online",
+      last_seen_at: "2026-07-24T10:00:00Z",
+    });
+  }),
+  http.delete("/api/admin/bridges/:id", () =>
     HttpResponse.json(null, { status: 204 }),
   ),
 
-  // Config
-  http.get("/api/admin/config", () => HttpResponse.json(mockConfig)),
+  // Machines (read-only, from /api/machines)
+  http.get("/api/machines", () => HttpResponse.json(mockMachines)),
 
   // Signals (uses SignalRepo → /api/signals)
   http.get("/api/signals", () => HttpResponse.json([])),
@@ -132,7 +145,7 @@ afterAll(() => server.close());
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
-function createWrapper() {
+function createWrapper(initialPath = "/") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -143,7 +156,7 @@ function createWrapper() {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>{children}</MemoryRouter>
+        <MemoryRouter initialEntries={[initialPath]}>{children}</MemoryRouter>
       </QueryClientProvider>
     );
   };
@@ -163,47 +176,40 @@ describe("AdminPanelContainer", () => {
 
     expect(screen.getByText("Admin Panel")).toBeInTheDocument();
     expect(
-      screen.getByText(/manage users, signals, machines/i),
+      screen.getByText(/manage users, signals, equivalences, bridges, and machines/i),
     ).toBeInTheDocument();
   });
 
-  it("renders all tab buttons", () => {
-    render(<AdminPanelContainer />, { wrapper: createWrapper() });
+  it("renders the active section heading for each route", () => {
+    const routes: { path: string; heading: string }[] = [
+      { path: "/admin/users", heading: "Users" },
+      { path: "/admin/signals", heading: "Signals" },
+      { path: "/admin/equivalences", heading: "Equivalences" },
+      { path: "/admin/bridges", heading: "Bridges" },
+      { path: "/admin/machines", heading: "Machines" },
+    ];
 
-    expect(screen.getByRole("button", { name: /^users$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^signals$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^equivalences$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^machines$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^comments$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^config$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^tokens$/i })).toBeInTheDocument();
+    for (const { path, heading } of routes) {
+      const { unmount } = render(<AdminPanelContainer />, {
+        wrapper: createWrapper(path),
+      });
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+      unmount();
+    }
   });
 
-  it("navigates between sections when tabs are clicked", async () => {
-    render(<AdminPanelContainer />, { wrapper: createWrapper() });
+  it("defaults to the Users section on unknown paths", () => {
+    render(<AdminPanelContainer />, { wrapper: createWrapper("/admin/unknown") });
 
-    // Default section is Users — should show users
-    await waitFor(() => {
-      expect(screen.getByText("admin1")).toBeInTheDocument();
-    });
+    expect(screen.getByRole("heading", { name: "Users" })).toBeInTheDocument();
+  });
 
-    // Click Equivalences tab
-    await user.click(screen.getByRole("button", { name: /^equivalences$/i }));
+  it("redirects bare /admin to /admin/users", async () => {
+    render(<AdminPanelContainer />, { wrapper: createWrapper("/admin") });
 
     await waitFor(() => {
-      // The heading is a <h2>, the tab is a <button> — check by role
-      expect(screen.getByRole("heading", { name: /^equivalences$/i })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Users" })).toBeInTheDocument();
     });
-    expect(screen.getByText("A")).toBeInTheDocument();
-
-    // Click Config tab
-    await user.click(screen.getByRole("button", { name: /^config$/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /^configuration$/i })).toBeInTheDocument();
-    });
-    expect(screen.getByText("max_therapies")).toBeInTheDocument();
-    expect(screen.getByText("10")).toBeInTheDocument();
   });
 
   describe("Users section", () => {
@@ -294,9 +300,7 @@ describe("AdminPanelContainer", () => {
 
   describe("Equivalences section", () => {
     it("renders equivalence list and supports CRUD", async () => {
-      render(<AdminPanelContainer />, { wrapper: createWrapper() });
-
-      await user.click(screen.getByRole("button", { name: /^equivalences$/i }));
+      render(<AdminPanelContainer />, { wrapper: createWrapper("/admin/equivalences") });
 
       await waitFor(() => {
         expect(screen.getByText("A")).toBeInTheDocument();
@@ -312,11 +316,27 @@ describe("AdminPanelContainer", () => {
     });
   });
 
+  describe("Bridges section", () => {
+    it("renders bridge list and opens register form", async () => {
+      render(<AdminPanelContainer />, { wrapper: createWrapper("/admin/bridges") });
+
+      await waitFor(() => {
+        expect(screen.getByText("192.168.0.10")).toBeInTheDocument();
+      });
+      expect(screen.getByText("RPi-1")).toBeInTheDocument();
+      expect(screen.getByText("192.168.0.11")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /\+ new/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Register Bridge")).toBeInTheDocument();
+      });
+    });
+  });
+
   describe("Machines section", () => {
     it("renders machine list (read-only)", async () => {
-      render(<AdminPanelContainer />, { wrapper: createWrapper() });
-
-      await user.click(screen.getByRole("button", { name: /^machines$/i }));
+      render(<AdminPanelContainer />, { wrapper: createWrapper("/admin/machines") });
 
       await waitFor(() => {
         expect(screen.getByText("OMNI-001")).toBeInTheDocument();
@@ -329,41 +349,13 @@ describe("AdminPanelContainer", () => {
     });
   });
 
-  describe("Comments section", () => {
-    it("loads comments by therapy ID", async () => {
-      render(<AdminPanelContainer />, { wrapper: createWrapper() });
-
-      await user.click(screen.getByRole("button", { name: /^comments$/i }));
+  describe("Signals section", () => {
+    it("renders empty signals list", async () => {
+      render(<AdminPanelContainer />, { wrapper: createWrapper("/admin/signals") });
 
       await waitFor(() => {
-        expect(screen.getByText("Therapy Comments")).toBeInTheDocument();
+        expect(screen.getByText("No signals found.")).toBeInTheDocument();
       });
-
-      // Enter therapy ID and load
-      const input = screen.getByPlaceholderText("Enter therapy ID");
-      await user.type(input, "1");
-
-      await user.click(screen.getByRole("button", { name: /load/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText("Checked vitals")).toBeInTheDocument();
-      });
-      expect(screen.getByText("Changed filter")).toBeInTheDocument();
-    });
-  });
-
-  describe("Config section", () => {
-    it("displays config key-value pairs", async () => {
-      render(<AdminPanelContainer />, { wrapper: createWrapper() });
-
-      await user.click(screen.getByRole("button", { name: /^config$/i }));
-
-      await waitFor(() => {
-        expect(screen.getByText("max_therapies")).toBeInTheDocument();
-      });
-      expect(screen.getByText("10")).toBeInTheDocument();
-      expect(screen.getByText("ws_reconnect_interval")).toBeInTheDocument();
-      expect(screen.getByText("5")).toBeInTheDocument();
     });
   });
 });
