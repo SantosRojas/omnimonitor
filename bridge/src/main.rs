@@ -3,7 +3,7 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo run -p bridge -- --port COM1 --baud 115200 --ws ws://localhost:9000/ws --bridge-ip 10.0.0.50
+//! cargo run -p bridge -- --port COM1 --baud 115200 --ws ws://localhost:9000/ws
 //! ```
 //!
 //! # Architecture
@@ -23,7 +23,10 @@
 //! 1. Hardcoded defaults
 //! 2. `.env` file (loaded via `dotenvy`)
 //! 3. Environment variables (`BRIDGE_*`)
-//! 4. CLI arguments (`--port`, `--ws`, `--bridge-ip`, etc.)
+//! 4. CLI arguments (`--port`, `--ws`, etc.)
+//!
+//! The bridge IP is always **auto-detected** at startup (`local_ip_address`); it is
+//! used for IP-based register auth against the server and is never configurable.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -110,9 +113,6 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
             config.dst_addr = n;
         }
     }
-    if let Ok(v) = std::env::var("BRIDGE_IP") {
-        config.bridge_ip = v;
-    }
     if let Ok(v) = std::env::var("SERIAL_MAX_FAILURES") {
         tracing::info!("Using SERIAL_MAX_FAILURES from env: {}", v);
         if let Ok(n) = v.parse() {
@@ -180,15 +180,6 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
                     i += 1;
                 }
             }
-            "--bridge-ip" => {
-                if i + 1 < args.len() {
-                    config.bridge_ip = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    eprintln!("Missing value for --bridge-ip");
-                    i += 1;
-                }
-            }
             "--developer-mode" => {
                 config.developer_mode = true;
                 i += 1;
@@ -210,9 +201,19 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
     config
 }
 
-// ───────────────────────────────────────────────
-//  Tracing
-// ───────────────────────────────────────────────
+/// Apply the locally detected IP to the config when detection succeeds.
+///
+/// The bridge IP is always auto-detected — there is no manual configuration
+/// (the `BRIDGE_IP` env var and `--bridge-ip` CLI flag were removed). The
+/// detected IP is used for IP-based register auth against the server.
+///
+/// Kept as a pure function so the behavior is deterministically testable
+/// without touching real network interfaces.
+fn apply_detected_ip(config: &mut BridgeConfig, detected: Option<String>) {
+    if let Some(ip) = detected {
+        config.bridge_ip = ip;
+    }
+}
 
 /// Initializes the tracing/logging subsystem.
 ///
@@ -394,7 +395,21 @@ async fn main() {
     dotenvy::dotenv().ok();
     dotenvy::from_path("bridge/.env").ok();
 
-    let config = load_config(&args);
+    let mut config = load_config(&args);
+
+    // ── Auto-detect local IP ──
+    // The bridge IP is always auto-detected (no manual configuration).
+    // It is used for IP-based register auth against the server.
+    let detected = local_ip_address::local_ip().ok().map(|ip| ip.to_string());
+    if detected.is_some() {
+        tracing::info!(
+            "auto-detected local IP: {}",
+            detected.as_ref().unwrap()
+        );
+    } else {
+        tracing::warn!("local IP auto-detection failed");
+    }
+    apply_detected_ip(&mut config, detected);
 
     // ── Initialize tracing after config is loaded ──
     // Keep guards alive for the entire process lifetime (non-blocking writers)
@@ -403,8 +418,7 @@ async fn main() {
     if config.port.is_empty() || config.ws_url.is_empty() {
         eprintln!(
             "Usage: {} --port <PORT> --ws <WS_URL> \
-              [--baud 115200] [--src-addr 11] [--dst-addr 16] \
-             [--bridge-ip <IP>]",
+              [--baud 115200] [--src-addr 11] [--dst-addr 16]",
             args[0]
         );
         std::process::exit(1);
@@ -458,8 +472,6 @@ mod tests {
             "2".to_string(),
             "--dst-addr".to_string(),
             "32".to_string(),
-            "--bridge-ip".to_string(),
-            "10.0.0.50".to_string(),
         ];
         let config = load_config(&args);
         assert_eq!(config.port, "COM1");
@@ -467,13 +479,12 @@ mod tests {
         assert_eq!(config.ws_url, "ws://localhost:9000");
         assert_eq!(config.src_addr, 2);
         assert_eq!(config.dst_addr, 32);
-        assert_eq!(config.bridge_ip, "10.0.0.50");
     }
 
     #[test]
     fn load_config_defaults_with_minimal_cli() {
         // Sanitize env vars that may leak from parallel env tests
-        for var in ["BRIDGE_BAUD", "BRIDGE_IP", "BRIDGE_PORT", "SERIAL_MAX_FAILURES",
+        for var in ["BRIDGE_BAUD", "BRIDGE_PORT", "SERIAL_MAX_FAILURES",
                      "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR",
                      "BRIDGE_CYCLE_INTERVAL"]
         {
@@ -542,22 +553,6 @@ mod tests {
         assert_eq!(config.baud, BridgeConfig::default().baud);
     }
 
-    #[test]
-    fn load_config_bridge_ip_cli_only() {
-        let args = vec![
-            "bridge".to_string(),
-            "--port".to_string(),
-            "COM4".to_string(),
-            "--ws".to_string(),
-            "ws://example.com/ws".to_string(),
-            "--bridge-ip".to_string(),
-            "192.168.1.100".to_string(),
-        ];
-        let config = load_config(&args);
-        assert_eq!(config.bridge_ip, "192.168.1.100");
-        assert_eq!(config.port, "COM4");
-    }
-
     // ── Environment variable tests ──
     //
     // NOTE: these set process-global env vars and MAY interfere if tests
@@ -568,7 +563,6 @@ mod tests {
     fn load_config_env_overrides_defaults() {
         // SAFETY: single-threaded test — no concurrent env access
         unsafe { std::env::set_var("BRIDGE_BAUD", "19200"); }
-        unsafe { std::env::set_var("BRIDGE_IP", "10.0.0.99"); }
 
         let args = vec![
             "bridge".to_string(),
@@ -579,10 +573,8 @@ mod tests {
         ];
         let config = load_config(&args);
         assert_eq!(config.baud, 19200);
-        assert_eq!(config.bridge_ip, "10.0.0.99");
 
         unsafe { std::env::remove_var("BRIDGE_BAUD"); }
-        unsafe { std::env::remove_var("BRIDGE_IP"); }
     }
 
     #[test]
@@ -657,6 +649,28 @@ mod tests {
     }
 
     #[test]
+    fn apply_detected_ip_sets_ip_when_detected() {
+        let mut config = BridgeConfig::default();
+        apply_detected_ip(&mut config, Some("10.0.0.9".into()));
+        assert_eq!(config.bridge_ip, "10.0.0.9");
+    }
+
+    #[test]
+    fn apply_detected_ip_keeps_empty_when_detection_fails() {
+        let mut config = BridgeConfig::default();
+        apply_detected_ip(&mut config, None);
+        assert_eq!(config.bridge_ip, "");
+    }
+
+    #[test]
+    fn apply_detected_ip_overwrites_existing_value() {
+        let mut config = BridgeConfig::default();
+        config.bridge_ip = "192.168.1.50".into();
+        apply_detected_ip(&mut config, Some("10.0.0.5".into()));
+        assert_eq!(config.bridge_ip, "10.0.0.5");
+    }
+
+    #[test]
     fn load_config_env_and_cli_combined() {
         unsafe { std::env::set_var("SERIAL_MAX_FAILURES", "3"); }
         unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "5"); }
@@ -667,13 +681,10 @@ mod tests {
             "COM1".to_string(),
             "--ws".to_string(),
             "ws://localhost:9000".to_string(),
-            "--bridge-ip".to_string(),
-            "10.0.0.1".to_string(),
         ];
         let config = load_config(&args);
         assert_eq!(config.max_failures, 3);   // from env
         assert_eq!(config.timeout_secs, 5);   // from env
-        assert_eq!(config.bridge_ip, "10.0.0.1"); // from CLI
 
         unsafe { std::env::remove_var("SERIAL_MAX_FAILURES"); }
         unsafe { std::env::remove_var("BRIDGE_TIMEOUT_SECS"); }
