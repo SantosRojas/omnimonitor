@@ -1,6 +1,79 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  /* SCADA dark palette (overridden in .dark) */
+  --color-scada-bg: #0a0e14;
+  --color-scada-surface: #131820;
+  --color-scada-card: #1a212c;
+  --color-scada-border: #2a3342;
+  --color-scada-text: #e2e8f0;
+  --color-scada-muted: #7e8a98;
+  --color-scada-accent: #00d4ff;
+  --color-scada-success: #22c55e;
+  --color-scada-warning: #f59e0b;
+  --color-scada-danger: #ef4444;
+  --color-scada-info: #3b82f6;
+
+  /* Signal-specific colors */
+  --color-press-ap: #ef4444;
+  --color-press-vp: #3b82f6;
+  --color-press-tmp: #22c55e;
+  --color-press-fp: #f59e0b;
+  --color-press-ep: #a855f7;
+  --color-flow-bf: #a78bfa;
+  --color-flow-df: #06b6d4;
+  --color-flow-nr: #f97316;
+
+  /* Animations */
+  --animate-flow: flow 2s linear infinite;
+  @keyframes flow {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
+
+:root {
+  /* Light SCADA theme */
+  --color-scada-bg: #f4f6f8;
+  --color-scada-surface: #ffffff;
+  --color-scada-card: #ffffff;
+  --color-scada-border: #e2e8f0;
+  --color-scada-text: #0f172a;
+  --color-scada-muted: #64748b;
+  --color-scada-accent: #00d4ff;
+  --color-scada-success: #16a34a;
+  --color-scada-warning: #d97706;
+  --color-scada-danger: #dc2626;
+  --color-scada-info: #2563eb;
+}
+
+.dark {
+  /* Same dark palette as @theme */
+  --color-scada-bg: #0a0e14;
+  --color-scada-surface: #131820;
+  --color-scada-card: #1a212c;
+  --color-scada-border: #2a3342;
+  --color-scada-text: #e2e8f0;
+  --color-scada-muted: #7e8a98;
+  --color-scada-accent: #00d4ff;
+  --color-scada-success: #22c55e;
+  --color-scada-warning: #f59e0b;
+  --color-scada-danger: #ef4444;
+  --color-scada-info: #3b82f6;
+}
+
+.glass {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 :root {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;

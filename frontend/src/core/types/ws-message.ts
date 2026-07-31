@@ -6,6 +6,9 @@ export type WsMessage =
       type: "ReadingsBroadcast";
       machine_id: string;
       readings: Reading[];
+      therapy_active: boolean;
+      therapy_state_name: string;
+      therapy_start: string | null;
     }
   | {
       type: "ReadingsReplay";

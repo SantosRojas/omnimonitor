@@ -3,6 +3,7 @@ export interface Reading {
   machine_id: number;
   therapy_id: number | null;
   signal_id: number | null;
+  internal_name: string;
   recorded_at: string | null;
   raw_value: number | null;
   value: number | null;

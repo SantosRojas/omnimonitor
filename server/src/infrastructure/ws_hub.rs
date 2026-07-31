@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, error, info, warn};
 
-use crate::domain::entities::Reading;
+use crate::domain::entities::{Reading, Therapy};
 use crate::infrastructure::postgres::{
     bridge_repo::BridgeRepo,
     machine_repo::MachineRepo,
@@ -183,6 +183,9 @@ pub enum BrowserEvent {
         machine_id: i64,
         cycle: u64,
         readings: Vec<BridgeTelemetryReading>,
+        therapy_active: bool,
+        therapy_state_name: String,
+        therapy_start: Option<String>,
     },
     ReadingsReplay {
         machine_id: i64,
@@ -570,42 +573,59 @@ pub async fn handle_bridge_frame(
                 })
                 .collect();
 
+            // ── Resolve active therapy once per frame: used for FK linking on
+            //    persist AND for the therapy-state fields of the broadcast. ──
+            let active_therapy: Option<Therapy> = match state.therapy_repo.find_active_by_machine(*machine_id).await {
+                Ok(t) => t,
+                Err(e) => {
+                    error!("Failed to check active therapy for machine {}: {}", machine_id, e);
+                    None
+                }
+            };
+
             // ── Persistence: solo si hay terapia activa ──
             // Resolvemos la terapia activa para vincular los readings con su FK.
             // En estados sin terapia activa (preparación, finalizada, etc.)
             // solo se hace broadcast en vivo.
             if state.check_persist_interval(*machine_id).await {
                 if !domain_readings.is_empty() {
-                    match state.therapy_repo.find_active_by_machine(*machine_id).await {
-                        Ok(Some(therapy)) => {
-                            // Vincular readings con la terapia activa
-                            let linked: Vec<Reading> = domain_readings.iter().map(|r| Reading {
-                                therapy_id: Some(therapy.id),
-                                ..r.clone()
-                            }).collect();
+                    if let Some(therapy) = &active_therapy {
+                        // Vincular readings con la terapia activa
+                        let linked: Vec<Reading> = domain_readings.iter().map(|r| Reading {
+                            therapy_id: Some(therapy.id),
+                            ..r.clone()
+                        }).collect();
 
-                            if let Err(e) = state.readings_repo.insert_batch(&linked).await {
-                                error!("Failed to insert readings for machine {}: {}", machine_id, e);
-                            } else if state.persistence_interval_secs > 0 {
-                                debug!("[persist] snapshot {} readings (machine {}, therapy {})",
-                                    linked.len(), machine_id, therapy.id);
-                            }
+                        if let Err(e) = state.readings_repo.insert_batch(&linked).await {
+                            error!("Failed to insert readings for machine {}: {}", machine_id, e);
+                        } else if state.persistence_interval_secs > 0 {
+                            debug!("[persist] snapshot {} readings (machine {}, therapy {})",
+                                linked.len(), machine_id, therapy.id);
                         }
-                        Ok(None) => {
-                            debug!("[persist] skip — no active therapy for machine {}", machine_id);
-                        }
-                        Err(e) => {
-                            error!("Failed to check active therapy for machine {}: {}", machine_id, e);
-                        }
+                    } else {
+                        debug!("[persist] skip — no active therapy for machine {}", machine_id);
                     }
                 }
             }
 
             // ── Broadcast en tiempo real (siempre inmediato) ──
+            // La terapia activa viaja en cada broadcast para que el SCADA
+            // muestre el estado de terapia sin una round-trip REST adicional.
+            let (therapy_active, therapy_state_name, therapy_start) = match &active_therapy {
+                Some(therapy) => (
+                    therapy.status != Some("completed".into()),
+                    therapy.status.clone().unwrap_or_default(),
+                    therapy.started_at.map(|t| t.to_rfc3339()),
+                ),
+                None => (false, String::new(), None),
+            };
             let event = BrowserEvent::ReadingsBroadcast {
                 machine_id: *machine_id,
                 cycle: *cycle,
                 readings: readings.clone(),
+                therapy_active,
+                therapy_state_name,
+                therapy_start,
             };
             if let Ok(json) = serde_json::to_string(&event) {
                 state.broadcast_to_machine(*machine_id, &json).await;
