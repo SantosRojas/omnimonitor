@@ -5,6 +5,7 @@ export type WsMessage =
   | {
       type: "ReadingsBroadcast";
       machine_id: string;
+      cycle: number;
       readings: Reading[];
       therapy_active: boolean;
       therapy_state_name: string;

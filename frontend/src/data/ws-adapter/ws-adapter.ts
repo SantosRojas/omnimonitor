@@ -2,6 +2,7 @@ import { wsManager } from "../ws-manager";
 import { useLiveDataStore } from "../../store/live-data-store";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useBridgeStatusStore } from "../../store/bridge-status-store";
+import { useScadaStore } from "../../features/scada/domain/scada-store";
 import type { WsMessage } from "../../core/types";
 
 /**
@@ -25,7 +26,22 @@ export function startWsAdapter(wsUrl = "/ws/browser"): () => void {
 function handleMachineMessage(msg: WsMessage): void {
   switch (msg.type) {
     case "ReadingsBroadcast":
+      useScadaStore
+        .getState()
+        .updateReadings(
+          msg.machine_id,
+          msg.readings,
+          msg.cycle,
+          msg.therapy_active,
+          msg.therapy_state_name,
+          msg.therapy_start,
+        );
+      // Keep the legacy store fed during migration (old dashboard consumes it).
+      useLiveDataStore.getState().updateReadings(msg.machine_id, msg);
+      break;
+
     case "ReadingsReplay":
+      // Replay has no cycle/therapy fields — feed the legacy store only.
       useLiveDataStore.getState().updateReadings(msg.machine_id, msg);
       break;
 

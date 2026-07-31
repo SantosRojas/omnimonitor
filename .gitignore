@@ -9,3 +9,7 @@ logs/
 frontend/dist/
 frontend/node_modules/
 node_modules/
+
+# CodeGraph local index
+.codegraph/
+
