@@ -19,6 +19,8 @@ export class WsManager {
   private shouldReconnect = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalClose = false;
+  private sendQueue: string[] = [];
+  private activeMachines = new Set<string>();
 
   // ── Connection lifecycle ────────────────────────────────────────
 
@@ -27,8 +29,23 @@ export class WsManager {
    * first.
    */
   connect(url: string): void {
+    // Idempotent connect: if a socket for the same URL already exists and is
+    // connecting/connected, keep it. Without this, React StrictMode's
+    // mount → cleanup → mount cycle on a full reload tears down the socket
+    // mid-handshake ("WebSocket is closed before the connection is
+    // established") and wipes the pending subscription state, so the server
+    // never receives Subscribe and the screen stays empty.
+    if (
+      this.ws &&
+      this.url === url &&
+      (this.ws.readyState === WebSocket.CONNECTING ||
+        this.ws.readyState === WebSocket.OPEN)
+    ) {
+      return;
+    }
+
     if (this.ws) {
-      this.disconnect();
+      this.closeSocket();
     }
 
     this.url = url;
@@ -45,15 +62,61 @@ export class WsManager {
     this.intentionalClose = true;
     this.clearReconnectTimer();
 
-    if (this.ws) {
-      this.ws.onclose = null; // prevent reconnect
-      this.ws.onerror = null;
-      this.ws.onmessage = null;
-      this.ws.close();
-      this.ws = null;
-    }
+    this.closeSocket();
 
     this.retryDelay = 1_000;
+    this.sendQueue = [];
+    this.activeMachines.clear();
+  }
+
+  /**
+   * Closes the current socket WITHOUT clearing subscription state, so a
+   * replacement socket can resume (re-subscribe) where the old one left off.
+   */
+  private closeSocket(): void {
+    if (!this.ws) return;
+    this.ws.onclose = null; // prevent reconnect
+    this.ws.onerror = null;
+    this.ws.onmessage = null;
+    this.ws.close();
+    this.ws = null;
+  }
+
+  // ── Outbound commands ───────────────────────────────────────────
+
+  /**
+   * Sends raw `data` over the socket, or queues it while the socket is
+   * connecting/reconnecting. Never throws.
+   */
+  send(data: string): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    } else {
+      this.sendQueue.push(data);
+    }
+  }
+
+  /**
+   * Registers `machineId` as actively subscribed. Sends the Subscribe command
+   * now and re-sends it after every reconnect (the server drops browser
+   * subscriptions when a connection closes).
+   */
+  subscribeMachine(machineId: string): void {
+    this.activeMachines.add(machineId);
+    this.send(
+      JSON.stringify({ action: "Subscribe", machine_id: Number(machineId) }),
+    );
+  }
+
+  /**
+   * Removes `machineId` from the active subscriptions and sends the
+   * Unsubscribe command so the server stops broadcasting to this browser.
+   */
+  unsubscribeMachine(machineId: string): void {
+    this.activeMachines.delete(machineId);
+    this.send(
+      JSON.stringify({ action: "Unsubscribe", machine_id: Number(machineId) }),
+    );
   }
 
   // ── Subscription management ─────────────────────────────────────
@@ -113,6 +176,21 @@ export class WsManager {
 
     this.ws.onopen = () => {
       this.retryDelay = 1_000; // reset backoff on successful connect
+
+      // Flush anything queued while the socket was connecting.
+      const queued = this.sendQueue;
+      this.sendQueue = [];
+      for (const data of queued) {
+        this.send(data);
+      }
+
+      // Re-subscribe every machine that still wants live data — the server
+      // forgets browser subscriptions on connection close.
+      for (const id of this.activeMachines) {
+        this.send(
+          JSON.stringify({ action: "Subscribe", machine_id: Number(id) }),
+        );
+      }
     };
 
     this.ws.onmessage = (event: MessageEvent) => {

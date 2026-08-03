@@ -30,3 +30,20 @@ export function useWsMachine(machineId: string): WsMessage | null {
 
   return latest;
 }
+
+/**
+ * Registers this machine with the server so its broadcasts flow to the browser.
+ *
+ * Sends the Subscribe command on mount and Unsubscribe on unmount. Does nothing
+ * when `machineId` is empty. The connection itself is managed by
+ * `startWsAdapter` at the App root.
+ *
+ * @param machineId — The machine to subscribe to.
+ */
+export function useMachineSubscription(machineId: string): void {
+  useEffect(() => {
+    if (!machineId) return;
+    wsManager.subscribeMachine(machineId);
+    return () => wsManager.unsubscribeMachine(machineId);
+  }, [machineId]);
+}

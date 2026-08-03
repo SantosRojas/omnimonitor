@@ -9,6 +9,7 @@ interface MockWebSocket {
   onclose: ((() => void) | null);
   onerror: ((() => void) | null);
   close: ReturnType<typeof vi.fn>;
+  send: ReturnType<typeof vi.fn>;
   readyState: number;
 }
 
@@ -24,18 +25,22 @@ describe("WsManager", () => {
 
     vi.stubGlobal(
       "WebSocket",
-      vi.fn(function MockWebSocketConstructor() {
-        const ws: MockWebSocket = {
-          onopen: null,
-          onmessage: null,
-          onclose: null,
-          onerror: null,
-          close: vi.fn(),
-          readyState: 1,
-        };
-        mockWebSockets.push(ws);
-        return ws;
-      }),
+      Object.assign(
+        vi.fn(function MockWebSocketConstructor() {
+          const ws: MockWebSocket = {
+            onopen: null,
+            onmessage: null,
+            onclose: null,
+            onerror: null,
+            close: vi.fn(),
+            send: vi.fn(),
+            readyState: 1,
+          };
+          mockWebSockets.push(ws);
+          return ws;
+        }),
+        { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 },
+      ),
     );
 
     vi.useFakeTimers();
@@ -342,6 +347,120 @@ describe("WsManager", () => {
 
       expect(cb1).toHaveBeenCalledTimes(1);
       expect(cb2).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /* ── Server subscription commands ─────────────────────────── */
+
+  describe("server subscription commands", () => {
+    it("subscribeMachine sends Subscribe when the socket is open", () => {
+      manager.connect("ws://test");
+      manager.subscribeMachine("1");
+
+      expect(mockWebSockets[0]!.send).toHaveBeenCalledWith(
+        JSON.stringify({ action: "Subscribe", machine_id: 1 }),
+      );
+    });
+
+    it("unsubscribeMachine sends Unsubscribe when the socket is open", () => {
+      manager.connect("ws://test");
+      manager.subscribeMachine("1");
+      manager.unsubscribeMachine("1");
+
+      expect(mockWebSockets[0]!.send).toHaveBeenLastCalledWith(
+        JSON.stringify({ action: "Unsubscribe", machine_id: 1 }),
+      );
+    });
+
+    it("queues outbound messages while the socket is closed and flushes on open", () => {
+      manager.connect("ws://test");
+      const ws = mockWebSockets[0]!;
+      ws.readyState = 0; // CONNECTING — not yet open
+
+      manager.send("hello");
+
+      expect(ws.send).not.toHaveBeenCalled();
+
+      ws.readyState = 1; // socket reaches OPEN, then fires onopen
+      ws.onopen!();
+
+      expect(ws.send).toHaveBeenCalledWith("hello");
+    });
+
+    it("re-sends Subscribe for active machines after a reconnect", () => {
+      manager.connect("ws://test");
+      manager.subscribeMachine("1");
+
+      // Connection drops; reconnect fires after the backoff delay.
+      mockWebSockets[0]!.onclose!();
+      vi.advanceTimersByTime(1000);
+      expect(mockWebSockets).toHaveLength(2);
+
+      mockWebSockets[1]!.onopen!();
+
+      expect(mockWebSockets[1]!.send).toHaveBeenCalledWith(
+        JSON.stringify({ action: "Subscribe", machine_id: 1 }),
+      );
+    });
+
+    it("disconnect() clears active machines so a new connection does not re-subscribe", () => {
+      manager.connect("ws://test");
+      manager.subscribeMachine("1");
+      manager.disconnect();
+
+      manager.connect("ws://test");
+      mockWebSockets[1]!.onopen!();
+
+      expect(mockWebSockets[1]!.send).not.toHaveBeenCalled();
+    });
+
+    it("connect() with the same URL while connecting keeps the in-flight socket (StrictMode reload)", () => {
+      manager.connect("ws://test");
+      const ws = mockWebSockets[0]!;
+      ws.readyState = 0; // CONNECTING — handshake in progress
+
+      // React StrictMode reload order: the child (useMachineSubscription)
+      // registers the machine BEFORE App's second connect() call.
+      manager.subscribeMachine("1");
+      manager.connect("ws://test");
+
+      // Must NOT tear down the connecting socket nor wipe the subscription.
+      expect(mockWebSockets).toHaveLength(1);
+      expect(ws.close).not.toHaveBeenCalled();
+
+      ws.readyState = 1; // handshake completes
+      ws.onopen!();
+
+      // Subscription registered while connecting is flushed on open.
+      expect(ws.send).toHaveBeenCalledWith(
+        JSON.stringify({ action: "Subscribe", machine_id: 1 }),
+      );
+    });
+
+    it("connect() with the same URL while open does not recreate the socket", () => {
+      manager.connect("ws://test");
+      manager.connect("ws://test");
+
+      expect(mockWebSockets).toHaveLength(1);
+      expect(mockWebSockets[0]!.close).not.toHaveBeenCalled();
+    });
+
+    it("connect() to a different URL replaces the socket but preserves active subscriptions", () => {
+      manager.connect("ws://old");
+      manager.subscribeMachine("1");
+      mockWebSockets[0]!.readyState = 0;
+
+      manager.connect("ws://new");
+
+      expect(mockWebSockets).toHaveLength(2);
+
+      // Active machine survives the socket swap and is re-subscribed on open.
+      mockWebSockets[1]!.readyState = 1;
+      mockWebSockets[1]!.onopen!();
+
+      expect(mockWebSockets[1]!.send).toHaveBeenCalledWith(
+        JSON.stringify({ action: "Subscribe", machine_id: 1 }),
+      );
     });
   });
 });
