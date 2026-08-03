@@ -140,6 +140,29 @@ describe("useScadaViewModel", () => {
     });
   });
 
+  it("prefers the REST-provided therapy id override over classified readings", async () => {
+    useScadaStore.getState().updateReadings(
+      "m1",
+      [
+        reading({
+          id: 1,
+          internal_name: SIGNAL_NAMES.PRESSURES[0],
+          therapy_id: 77,
+        }),
+      ],
+      1,
+      true,
+      "Running",
+      null,
+    );
+
+    const { result } = renderHook(() => useScadaViewModel("m1", 42), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.therapy.id).toBe(42);
+    });
+  });
+
   it("exposes the serial number from the info bucket", async () => {
     useScadaStore.getState().updateReadings(
       "m1",

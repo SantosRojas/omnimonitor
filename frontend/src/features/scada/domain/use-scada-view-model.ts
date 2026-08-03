@@ -50,7 +50,10 @@ function findTherapyId(machine: ScadaMachineState | undefined): number | undefin
  * ScadaStore state plus the signal display-name map fetched from
  * `GET /api/signals`.
  */
-export function useScadaViewModel(machineId: string): ScadaViewModel {
+export function useScadaViewModel(
+  machineId: string,
+  therapyId?: number,
+): ScadaViewModel {
   const machine = useScadaStore((s) => s.machines[machineId]);
 
   const { data: signals } = useQuery<Signal[]>({
@@ -89,7 +92,9 @@ export function useScadaViewModel(machineId: string): ScadaViewModel {
       active: machine?.therapyActive ?? false,
       stateName: machine?.therapyStateName ?? "",
       start: machine?.therapyStart ?? null,
-      id: findTherapyId(machine),
+      // REST-provided active therapy id wins (cheap, fresh, no hot-path
+      // broadcast change); fall back to classifying from readings.
+      id: therapyId ?? findTherapyId(machine),
     },
     presentation: {
       displayNameMap,

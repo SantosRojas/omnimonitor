@@ -39,8 +39,20 @@ export default function ScadaDetailContainer() {
   const acknowledgeAlarm = useAlarmStore((s) => s.acknowledgeAlarm);
   const storeAlarms = useAlarmStore((s) => s.alarms);
 
+  /* ── Active therapy (REST) for comments panel + history navigation ──
+     Resolved before the SCADA VM so the active therapy id can be passed
+     as an override; the WS broadcast intentionally does not carry it
+     (keeps the hot path lean). */
+  const { data: therapies = [] } = useQuery({
+    queryKey: ["therapies", "active", machineId],
+    queryFn: () => therapyRepo.list({ machine_id: Number(machineId), status: "active" }),
+    enabled: machineId.length > 0,
+  });
+  const activeTherapy = therapies[0];
+  const activeTherapyId = activeTherapy?.id;
+
   /* ── Store-backed live data (single WS connection via App.tsx) ── */
-  const vm = useScadaViewModel(machineId);
+  const vm = useScadaViewModel(machineId, activeTherapyId);
   const machineEntry = useMachineStatusStore((s) => s.machines[machineId]);
   const connectionStatus: ConnectionStatus = machineEntry?.status.status ?? "unknown";
 
@@ -50,15 +62,6 @@ export default function ScadaDetailContainer() {
     queryFn: () => machineRepo.get(Number(machineId)),
     enabled: machineId.length > 0,
   });
-
-  /* ── Active therapy for history navigation ──────────────────── */
-  const { data: therapies = [] } = useQuery({
-    queryKey: ["therapies", "active", machineId],
-    queryFn: () => therapyRepo.list({ machine_id: Number(machineId), status: "active" }),
-    enabled: machineId.length > 0,
-  });
-  const activeTherapy = therapies[0];
-  const activeTherapyId = activeTherapy?.id;
 
   /* ── Alarms from the store ───────────────────────────────────── */
   const machineAlarms: ScadaAlarm[] = storeAlarms
