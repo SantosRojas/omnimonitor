@@ -699,6 +699,31 @@ pub async fn handle_bridge_frame(
                 }
             };
 
+            // ── Promote a 'planned' session to 'active' on first telemetry ──
+            // The bridge creates therapies as 'planned' on TherapySetup; the
+            // first Readings frame after that means the session is running, so
+            // promote it to 'active' (which also backfills started_at).
+            let mut therapy_activated = false;
+            if let Some(therapy) = &active_therapy {
+                if therapy.status.as_deref() == Some("planned") {
+                    match state.therapy_repo.update_status(therapy.id, "active").await {
+                        Ok(_) => {
+                            therapy_activated = true;
+                            info!(
+                                "Promoted therapy {} to active on first telemetry (machine {})",
+                                therapy.id, machine_id
+                            );
+                        }
+                        Err(e) => {
+                            error!(
+                                "Failed to promote therapy {} to active for machine {}: {}",
+                                therapy.id, machine_id, e
+                            );
+                        }
+                    }
+                }
+            }
+
             // ── Persistence: solo si hay terapia activa ──
             // Resolvemos la terapia activa para vincular los readings con su FK.
             // En estados sin terapia activa (preparación, finalizada, etc.)
@@ -728,11 +753,22 @@ pub async fn handle_bridge_frame(
             // La terapia activa viaja en cada broadcast para que el SCADA
             // muestre el estado de terapia sin una round-trip REST adicional.
             let (therapy_active, therapy_state_name, therapy_start) = match &active_therapy {
-                Some(therapy) => (
-                    therapy.status != Some("completed".into()),
-                    therapy.status.clone().unwrap_or_default(),
-                    therapy.started_at.map(|t| t.to_rfc3339()),
-                ),
+                Some(therapy) => {
+                    // If we just promoted the session, reflect the new status
+                    // and start time in this very broadcast (the local Therapy
+                    // struct still holds the pre-update values).
+                    let status = if therapy_activated {
+                        "active".to_string()
+                    } else {
+                        therapy.status.clone().unwrap_or_default()
+                    };
+                    let start = if therapy_activated {
+                        Some(Utc::now().to_rfc3339())
+                    } else {
+                        therapy.started_at.map(|t| t.to_rfc3339())
+                    };
+                    (status != "completed", status, start)
+                }
                 None => (false, String::new(), None),
             };
             let event = BrowserEvent::ReadingsBroadcast {
