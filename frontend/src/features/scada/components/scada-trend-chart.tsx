@@ -22,9 +22,29 @@ interface ScadaTrendChartProps {
 }
 
 /**
+ * Formats an ISO timestamp into a local-time HH:MM:SS label for the chart.
+ * The store keeps timestamps as UTC ISO (toISOString), so slicing the raw
+ * string would show UTC — convert to the viewer's timezone instead.
+ */
+function formatChartTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return iso;
+  }
+}
+
+/**
  * Multi-series recharts line chart for SCADA trends.
  * Ported from pdms-omni `presentation/components/scada/trend-chart.tsx`
- * (omni timestamps are ISO, so `_time` extracts HH:MM:SS via slice).
+ * (omni timestamps are ISO UTC, so `_time` converts to local time).
  */
 export function ScadaTrendChart({
   data,
@@ -39,7 +59,7 @@ export function ScadaTrendChart({
       .filter((point) => point.timestamp)
       .map((point) => ({
         ...point,
-        _time: point.timestamp ? point.timestamp.slice(11, 19) || point.timestamp : "",
+        _time: point.timestamp ? formatChartTime(point.timestamp) : "",
       }));
   }, [data]);
 

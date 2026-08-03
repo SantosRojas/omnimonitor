@@ -148,9 +148,14 @@ export default function TherapyHistoryPage() {
     for (const r of historyRows) {
       if (!r.recorded_at || !r.internal_name) continue;
 
-      // Group by minute
+      // Group by minute (UTC key — only used for grouping/sorting).
       const minuteKey = r.recorded_at.slice(0, 16);
-      const timeOnly = r.recorded_at.slice(11, 16);
+      // Display time in the viewer's local timezone (recorded_at is UTC ISO).
+      const timeOnly = new Date(r.recorded_at).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
 
       let point = map.get(minuteKey);
       if (!point) {

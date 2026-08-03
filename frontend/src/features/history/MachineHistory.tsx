@@ -18,6 +18,22 @@ const statusVariant: Record<string, "default" | "success" | "secondary" | "warni
   error: "danger",
 };
 
+/** Formats an ISO UTC timestamp as local-time ISO 8601 with offset (Excel-friendly). */
+function toLocalIso(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  );
+}
+
 export default function MachineHistory() {
   const { machineId } = useParams();
   const [search, setSearch] = useState("");
@@ -62,7 +78,7 @@ export default function MachineHistory() {
   const exportCsv = () => {
     const header = "Patient,Type,Start,End,Status";
     const rows = filtered.map((t: any) =>
-      `"${t.patient_name ?? ""}","${t.therapy_type ?? ""}","${t.created_at ?? ""}","${t.ended_at ?? ""}","${t.status ?? ""}"`,
+      `"${t.patient_name ?? ""}","${t.therapy_type ?? ""}","${toLocalIso(t.created_at)}","${toLocalIso(t.ended_at)}","${t.status ?? ""}"`,
     );
     const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
