@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
@@ -6,24 +5,15 @@ import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useAlarmStore } from "../../store/alarm-store";
 import { useScadaViewModel } from "../../features/scada/domain/use-scada-view-model";
-import { FLOW_INDICATORS, PRESSURE_GAUGES } from "../../features/scada/signal-configs";
 import { PageHeader } from "../layouts/PageHeader";
 import { Button } from "../primitives/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card";
-import { PressureGauge } from "../../features/scada/components/pressure-gauge";
-import { ProcessFlowDiagram } from "../../features/scada/components/process-flow-diagram";
-import { VitalsDisplay } from "../../features/scada/components/vitals-display";
-import { AlarmPanel } from "../../features/scada/components/alarm-panel";
-import { TherapyStateMachine } from "../../features/scada/components/therapy-state-machine";
 import { MachineStatusDot } from "../../features/scada/components/machine-status-dot";
-import { TrendChart } from "../../features/scada/components/trend-chart";
+import { TherapyStateMachine } from "../../features/scada/components/therapy-state-machine";
+import { ScadaLayout } from "../../features/scada/components/scada-layout";
 import type { Machine } from "../../core/types";
 import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
-import type { Vital } from "../../features/scada/components/vitals-display";
 import type { TherapyState } from "../../features/scada/components/therapy-state-machine";
 import type { ConnectionStatus } from "../../features/scada/components/machine-status-dot";
-import type { TrendDataPoint } from "../../features/scada/components/trend-chart";
-import type { TelemetryHistoryPoint } from "../../features/scada/domain/scada-store";
 
 const machineRepo = new HttpMachineRepo();
 const therapyRepo = new HttpTherapyRepo();
@@ -38,23 +28,6 @@ function toTherapyState(
   if (active) return name === "paused" ? "paused" : "running";
   if (name === "completed") return "complete";
   return connectionStatus === "online" ? "idle" : "error";
-}
-
-/** Latest-vs-previous numeric trend for a signal across the history points. */
-function signalTrend(
-  history: TelemetryHistoryPoint[],
-  internalName: string,
-): "up" | "down" | "stable" | undefined {
-  const values = history
-    .map((h) => h[internalName])
-    .filter((v): v is number => typeof v === "number");
-  if (values.length < 2) return undefined;
-  const last = values[values.length - 1];
-  const prev = values[values.length - 2];
-  if (last == null || prev == null) return undefined;
-  if (last > prev) return "up";
-  if (last < prev) return "down";
-  return "stable";
 }
 
 export default function ScadaDetailContainer() {
@@ -84,89 +57,7 @@ export default function ScadaDetailContainer() {
   });
   const activeTherapyId = therapies[0]?.id;
 
-  /* ── Primary signals (configured gauge order, numeric only) ──── */
-  const primaryPressure = useMemo(() => {
-    for (const g of PRESSURE_GAUGES) {
-      const r = vm.telemetry.pressures[g.key];
-      if (r && typeof r.value === "number") return r;
-    }
-    return Object.values(vm.telemetry.pressures).find(
-      (r) => typeof r.value === "number",
-    );
-  }, [vm.telemetry.pressures]);
-
-  const pressure = primaryPressure?.value ?? 0;
-
-  const primaryFlow = useMemo(() => {
-    for (const f of FLOW_INDICATORS) {
-      const r = vm.telemetry.flows[f.key];
-      if (r && typeof r.value === "number") return r;
-    }
-    return Object.values(vm.telemetry.flows).find(
-      (r) => typeof r.value === "number",
-    );
-  }, [vm.telemetry.flows]);
-
-  const flowRate = primaryFlow?.value ?? 0;
-
-  /* Source cylinder pressure: secondary pressure when available. */
-  const sourcePressure = useMemo(() => {
-    for (const g of PRESSURE_GAUGES) {
-      const r = vm.telemetry.pressures[g.key];
-      if (r && typeof r.value === "number" && r !== primaryPressure) {
-        return r.value;
-      }
-    }
-    return pressure;
-  }, [vm.telemetry.pressures, pressure, primaryPressure]);
-
-  /* ── Trend data from classified history ──────────────────────── */
-  const trendData = useMemo<TrendDataPoint[]>(() => {
-    const key = primaryPressure?.internal_name;
-    if (!key) return [];
-    return vm.telemetry.history
-      .map((h) => ({ timestamp: h.timestamp, pressure: h[key] }))
-      .filter(
-        (p): p is { timestamp: string; pressure: number } =>
-          typeof p.pressure === "number",
-      );
-  }, [vm.telemetry.history, primaryPressure]);
-
-  /* ── Derived values ──────────────────────────────────────────── */
-  const hasLiveData =
-    Object.keys(vm.telemetry.pressures).length > 0 ||
-    Object.keys(vm.telemetry.flows).length > 0;
-  const running = vm.therapy.active;
-  const therapyState = toTherapyState(
-    vm.therapy.stateName,
-    vm.therapy.active,
-    connectionStatus,
-  );
-
-  const vitals: Vital[] = useMemo(() => {
-    const items: Vital[] = [];
-    for (const key of [
-      ...PRESSURE_GAUGES.map((g) => g.key),
-      ...FLOW_INDICATORS.map((f) => f.key),
-    ]) {
-      const r = vm.telemetry.pressures[key] ?? vm.telemetry.flows[key];
-      if (!r) continue;
-      items.push({
-        label: vm.presentation.displayNameMap[r.internal_name] ?? r.internal_name,
-        value: r.value?.toFixed(1) ?? "—",
-        unit: r.unit ?? undefined,
-        trend: signalTrend(vm.telemetry.history, r.internal_name),
-        status: "normal",
-      });
-    }
-    return items;
-  }, [
-    vm.telemetry.pressures,
-    vm.telemetry.flows,
-    vm.telemetry.history,
-    vm.presentation.displayNameMap,
-  ]);
-
+  /* ── Alarms from the store ───────────────────────────────────── */
   const machineAlarms: ScadaAlarm[] = storeAlarms
     .filter((a) => a.machineId === machineId)
     .map((a) => ({
@@ -217,7 +108,7 @@ export default function ScadaDetailContainer() {
         </div>
         <div className="flex items-center gap-2">
           <TherapyStateMachine
-            state={therapyState}
+            state={toTherapyState(vm.therapy.stateName, vm.therapy.active, connectionStatus)}
             patientName={(machine as any)?.patient_name}
           />
           {activeTherapyId && (
@@ -235,63 +126,8 @@ export default function ScadaDetailContainer() {
         </div>
       </div>
 
-      {/* SCADA Visualization Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Pressure Gauge */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Pressure</CardTitle></CardHeader>
-          <CardContent>
-            <PressureGauge pressure={pressure} maxPressure={60} />
-          </CardContent>
-        </Card>
-
-        {/* Process Flow */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Flow Diagram</CardTitle></CardHeader>
-          <CardContent>
-            <ProcessFlowDiagram
-              sourcePressure={sourcePressure}
-              workingPressure={pressure}
-              flowActive={running}
-              flowRate={flowRate}
-              isRunning={running}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Trend Chart */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">Trend</CardTitle></CardHeader>
-          <CardContent>
-            <TrendChart data={trendData} width={260} height={100} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Vitals */}
-      <Card>
-        <CardHeader><CardTitle className="text-sm">Vitals</CardTitle></CardHeader>
-        <CardContent>
-          <VitalsDisplay vitals={vitals.length > 0 ? vitals : [{ label: "No data", value: "—", status: "normal" }]} columns={3} />
-        </CardContent>
-      </Card>
-
-      {/* Alarms */}
-      <AlarmPanel alarms={machineAlarms} onAcknowledge={handleAcknowledge} />
-
-      {/* No data state */}
-      {!hasLiveData && (
-        <Card>
-          <CardContent className="flex flex-col items-center py-12 text-neutral-400">
-            <p className="text-sm font-medium">
-              {connectionStatus === "online" ? "Waiting for live data..." : "Machine is offline"}
-            </p>
-            <p className="mt-1 text-xs">
-              {connectionStatus === "online" ? "Connect to receive real-time telemetry." : "No data while disconnected."}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      {/* Ported SCADA layout (pdms-omni) */}
+      <ScadaLayout vm={vm} alarms={machineAlarms} onAcknowledge={handleAcknowledge} />
     </div>
   );
 }

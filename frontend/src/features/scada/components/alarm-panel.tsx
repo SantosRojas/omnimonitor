@@ -1,4 +1,5 @@
 import { useState, type FC } from "react";
+import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { Badge } from "../../../ui/primitives/badge";
 import { Button } from "../../../ui/primitives/button";
 import { cn } from "../../../ui/primitives";
@@ -20,9 +21,24 @@ interface AlarmPanelProps {
 }
 
 const severityConfig = {
-  critical: { label: "CRITICAL", variant: "danger" as const },
-  warning: { label: "WARNING", variant: "warning" as const },
-  info: { label: "INFO", variant: "secondary" as const },
+  critical: {
+    icon: AlertCircle,
+    label: "CRITICAL",
+    variant: "danger" as const,
+    color: "text-scada-danger",
+  },
+  warning: {
+    icon: AlertTriangle,
+    label: "WARNING",
+    variant: "warning" as const,
+    color: "text-scada-warning",
+  },
+  info: {
+    icon: Info,
+    label: "INFO",
+    variant: "secondary" as const,
+    color: "text-scada-info",
+  },
 };
 
 const AlarmPanel: FC<AlarmPanelProps> = ({
@@ -62,6 +78,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
         <ul className="space-y-2">
           {visible.map((alarm) => {
             const cfg = severityConfig[alarm.severity];
+            const Icon = cfg.icon;
             return (
               <li
                 key={alarm.id}
@@ -72,6 +89,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
                     : "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900",
                 )}
               >
+                <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", cfg.color)} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <Badge variant={cfg.variant}>{cfg.label}</Badge>
