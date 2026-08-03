@@ -11,7 +11,9 @@ import { Badge } from "../../ui/primitives/badge";
 import { Input } from "../../ui/primitives/input";
 import { MachineStatusDot } from "../scada/components/machine-status-dot";
 import { TherapyStateMachine } from "../scada/components/therapy-state-machine";
+import { Clock, Timer, User } from "lucide-react";
 import type { Therapy } from "../../core/types/therapy";
+import { relativeTime, formatDuration } from "../../core/utils/time";
 
 const therapyRepo = new HttpTherapyRepo();
 
@@ -20,7 +22,7 @@ type TherapyWithMeta = Therapy & {
   connection_status: string;
   pressure: number;
   unacked_alarms: number;
-  patient_name?: string;
+  patient_external_id?: string | null;
 };
 
 const connectionStatuses = ["all", "online", "offline", "error", "unknown"] as const;
@@ -45,12 +47,12 @@ export default function MultiMachineDashboard() {
       const status = machineStatuses[mid];
       const machineReadings = readings[mid];
       const pressure = machineReadings?.readings?.find(
-        (r: any) => r.display_label?.toLowerCase().includes("pressure"),
+        (r: any) => r.internal_name?.toLowerCase().includes("press"),
       )?.value ?? 0;
       return {
         ...t,
         machine_label: t.machine_label ?? `Machine ${mid}`,
-        patient_name: t.patient_name,
+        patient_external_id: t.patient_external_id,
         connection_status: status?.status?.status ?? "unknown",
         pressure,
         unacked_alarms: alarms.filter((a) => a.machineId === mid && !a.acknowledged).length,
@@ -64,7 +66,7 @@ export default function MultiMachineDashboard() {
       const q = search.toLowerCase();
       list = list.filter((r) =>
         r.machine_label.toLowerCase().includes(q) ||
-        r.patient_name?.toLowerCase().includes(q) ||
+        r.patient_external_id?.toLowerCase().includes(q) ||
         String(r.id).includes(q),
       );
     }
@@ -134,7 +136,23 @@ export default function MultiMachineDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <TherapyStateMachine state={t.status as any ?? "idle"} patientName={t.patient_name} />
+                <TherapyStateMachine state={t.status as any ?? "idle"} patientName={t.patient_external_id ?? undefined} />
+                <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
+                  <span className="flex min-w-0 items-center gap-1">
+                    <User className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {t.patient_external_id ?? `Paciente #${t.id}`}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Clock className="h-3.5 w-3.5" />
+                    {relativeTime(t.started_at)}
+                  </span>
+                  <span className="flex items-center gap-1 shrink-0">
+                    <Timer className="h-3.5 w-3.5" />
+                    {formatDuration(t.started_at, t.ended_at)}
+                  </span>
+                </div>
                 <div className="mt-2 flex items-center justify-between text-sm text-neutral-500">
                   <span>{t.pressure.toFixed(1)} cmH₂O</span>
                   {t.unacked_alarms > 0 && (

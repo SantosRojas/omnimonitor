@@ -31,10 +31,20 @@ const TREND_CHART_FALLBACK = (
   </div>
 );
 
+interface TherapySummary {
+  patientExternalId?: string | null;
+  patientName?: string | null;
+  age?: number | null;
+  weight?: number | null;
+  kit?: string | null;
+  therapyType?: string | null;
+}
+
 interface ScadaLayoutProps {
   vm: ScadaViewModel;
   alarms?: ScadaAlarm[];
   onAcknowledge?: (alarmId: string) => void;
+  therapySummary?: TherapySummary;
   children?: ReactNode;
 }
 
@@ -53,6 +63,7 @@ export function ScadaLayout({
   vm,
   alarms = [],
   onAcknowledge,
+  therapySummary,
   children,
 }: ScadaLayoutProps) {
   const { telemetry, therapy, presentation } = vm;
@@ -120,6 +131,7 @@ export function ScadaLayout({
           therapyTime={presentation.therapyTimeDisplay}
           netRemovalVol={presentation.netRemovalDisplay}
           displayNameMap={presentation.displayNameMap}
+          therapySummary={therapySummary}
         />
         {alarms.length > 0 && <AlarmPanel alarms={alarms} onAcknowledge={onAcknowledge} />}
 

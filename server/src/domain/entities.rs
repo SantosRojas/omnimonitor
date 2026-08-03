@@ -63,6 +63,25 @@ pub struct Therapy {
     pub created_at: DateTime<Utc>,
 }
 
+/// Therapy row enriched for list responses with the patient's external identifier.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct TherapyListItem {
+    pub id: i64,
+    pub patient_id: i64,
+    pub machine_id: i64,
+    pub started_at: Option<DateTime<Utc>>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub status: Option<String>,
+    pub therapy_type: Option<String>,
+    pub kit: Option<String>,
+    pub weight: Option<f64>,
+    pub end_weight: Option<f64>,
+    pub created_at: DateTime<Utc>,
+    pub patient_external_id: Option<String>,
+    pub patient_name: Option<String>,
+    pub patient_age: Option<i32>,
+}
+
 /// OMNI signal catalog entry.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Signal {

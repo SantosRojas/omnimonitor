@@ -79,7 +79,7 @@ async fn list_therapies(
 
     let therapies = state
         .therapy_repo
-        .list(
+        .list_with_patient(
             params.patient_id,
             params.machine_id,
             params.status.as_deref(),

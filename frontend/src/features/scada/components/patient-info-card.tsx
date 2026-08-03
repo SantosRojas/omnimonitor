@@ -1,6 +1,17 @@
+import { Fragment } from "react";
 import { Card } from "../../../ui/primitives/card";
 import { Play } from "lucide-react";
 import type { TelemetryReading } from "../domain/scada-store";
+
+/** Database-backed subset of the active therapy, used when the bridge has not sent a signal. */
+export interface TherapySummary {
+  patientExternalId?: string | null;
+  patientName?: string | null;
+  age?: number | null;
+  weight?: number | null;
+  kit?: string | null;
+  therapyType?: string | null;
+}
 
 interface PatientInfoCardProps {
   info: Record<string, TelemetryReading>;
@@ -8,6 +19,7 @@ interface PatientInfoCardProps {
   therapyTime?: string;
   netRemovalVol?: string;
   displayNameMap?: Record<string, string>;
+  therapySummary?: TherapySummary;
 }
 
 interface FieldConfig {
@@ -20,8 +32,7 @@ interface FieldConfig {
 /**
  * Patient / therapy setup card. Ported from pdms-omni
  * `presentation/components/scada/patient-info-card.tsx`, adapted to the
- * omni `Reading` shape (`value` + `display_label` instead of
- * `physical_value` + `display_value`).
+ * omni `Reading` shape (`value` + `unit`).
  */
 export function PatientInfoCard({
   info,
@@ -29,6 +40,7 @@ export function PatientInfoCard({
   therapyTime,
   netRemovalVol,
   displayNameMap,
+  therapySummary,
 }: PatientInfoCardProps) {
   const fields: FieldConfig[] = [
     { key: "g_patient_id_str", label: "Patient", format: (v) => v },
@@ -41,13 +53,52 @@ export function PatientInfoCard({
   ];
 
   function formatValue(reading: TelemetryReading, field: FieldConfig): string | null {
-    if (field.unit) {
-      return typeof reading.value === "number" ? `${reading.value} ${field.unit}` : null;
+    if (reading.value == null) return null;
+    if (field.format) {
+      return field.format(String(reading.value));
     }
-    const display = reading.display_label;
-    if (display !== null && display !== undefined && display !== "") return display;
-    return typeof reading.value === "number" ? String(reading.value) : null;
+    if (field.unit) {
+      return `${reading.value} ${field.unit}`;
+    }
+    return String(reading.value);
   }
+
+  /**
+   * Patient identifier: merges the DB name with the bridge DNI so the live
+   * reading never hides the patient's name. DNI comes from the bridge
+   * reading (`g_patient_id_str`) or the therapy's `patientExternalId`.
+   */
+  function mergePatientName(reading?: TelemetryReading): string | null {
+    const summary = therapySummary;
+    const liveDni = reading && reading.value != null ? String(reading.value) : null;
+    const dni = liveDni ?? summary?.patientExternalId ?? null;
+    const name = summary?.patientName ?? null;
+    if (name && dni) return `${name} (${dni})`;
+    return name ?? dni;
+  }
+
+  /** Database-backed fallback for a field the bridge has not sent yet. */
+  function fallbackValue(field: FieldConfig): string | null {
+    const summary = therapySummary;
+    if (!summary) return null;
+    switch (field.key) {
+      case "g_patient_data_weight_set":
+        return summary.weight != null ? `${summary.weight} kg` : null;
+      case "g_therapy_mode_set":
+        return summary.therapyType ?? null;
+      case "d_kit_type_str":
+        return summary.kit ?? null;
+      default:
+        return null;
+    }
+  }
+
+  const age = therapySummary?.age ?? null;
+
+  /** Therapy time and net removal labels come from the signals catalog
+   *  (`displayNameMap`), falling back to English when not present. */
+  const therapyTimeLabel = displayNameMap?.["c_acc_therapy_time_act"] ?? "Therapy Time";
+  const netRemovalLabel = displayNameMap?.["c_acc_net_rem_vol_act"] ?? "Net Removal Vol";
 
   return (
     <Card className="rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
@@ -57,22 +108,35 @@ export function PatientInfoCard({
       <div className="space-y-2">
         {fields.map((field) => {
           const reading = info[field.key];
-          if (!reading) return null;
+          const value =
+            field.key === "g_patient_id_str"
+              ? mergePatientName(reading)
+              : reading
+                ? formatValue(reading, field)
+                : fallbackValue(field);
+          if (!value) return null;
           const label = displayNameMap?.[field.key] ?? field.label;
-          const value = formatValue(reading, field);
           return (
-            <div key={field.key} className="flex justify-between text-xs">
-              <span className="text-scada-muted">{label}</span>
-              <span className="font-mono text-scada-text">{value ?? "--"}</span>
-            </div>
+            <Fragment key={field.key}>
+              <div className="flex justify-between text-xs">
+                <span className="text-scada-muted">{label}</span>
+                <span className="font-mono text-scada-text">{value}</span>
+              </div>
+              {field.key === "g_patient_id_str" && age != null && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-scada-muted">Age</span>
+                  <span className="font-mono text-scada-text">{age}</span>
+                </div>
+              )}
+            </Fragment>
           );
         })}
         <div className="flex justify-between text-xs">
-          <span className="text-scada-muted">Therapy Time</span>
+          <span className="text-scada-muted">{therapyTimeLabel}</span>
           <span className="font-mono text-scada-text">{therapyTime || "--:--:--"}</span>
         </div>
         <div className="flex justify-between text-xs">
-          <span className="text-scada-muted">Net Removal Vol</span>
+          <span className="text-scada-muted">{netRemovalLabel}</span>
           <span className="font-mono text-scada-text">{netRemovalVol || "--- ml"}</span>
         </div>
         {therapyStart && (

@@ -20,10 +20,13 @@ import {
   AlertTriangle,
   Clock,
   Search,
+  Timer,
+  User,
   Wifi,
   WifiOff,
 } from "lucide-react";
 import type { Machine, Therapy, Patient } from "../../core/types";
+import { relativeTime, formatDuration } from "../../core/utils/time";
 
 const machineRepo = new HttpMachineRepo();
 const therapyRepo = new HttpTherapyRepo();
@@ -168,7 +171,7 @@ export default function NurseStation() {
       const machineReadings = readings[mid];
       const pressure =
         machineReadings?.readings?.find(
-          (r) => r.display_label?.toLowerCase().includes("pressure"),
+          (r) => r.internal_name?.toLowerCase().includes("press"),
         )?.value ?? 0;
 
       const connectionStatus: ConnectionStatus =
@@ -342,12 +345,25 @@ export default function NurseStation() {
                 {/* Patient info */}
                 {c.therapy && c.patient && (
                   <div className="mt-2 rounded-md bg-neutral-50 p-2 dark:bg-neutral-800/50">
-                    <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                      {c.patient.name ?? "Unknown patient"}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                      <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                        {c.patient.name ?? "Unknown patient"}
+                      </p>
+                    </div>
                     <p className="truncate text-xs text-neutral-500">
                       DNI: {c.patient.external_id}
                     </p>
+                    <div className="mt-1 flex items-center gap-3 text-[11px] text-neutral-500">
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {relativeTime(c.therapy.started_at)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Timer className="h-3 w-3" />
+                        {formatDuration(c.therapy.started_at, c.therapy.ended_at)}
+                      </span>
+                    </div>
                   </div>
                 )}
 

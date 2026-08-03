@@ -17,6 +17,12 @@ export interface Therapy {
   weight: number | null;
   end_weight: number | null;
   created_at: string;
+  /** Patient's external identifier (DNI/code from the bridge), set by GET /therapies. */
+  patient_external_id?: string | null;
+  /** Patient's display name, set by GET /therapies. */
+  patient_name?: string | null;
+  /** Patient's age, set by GET /therapies. */
+  patient_age?: number | null;
 }
 
 /** A single historical reading row returned by GET /therapies/:id/history. */
@@ -29,7 +35,6 @@ export interface HistoryRow {
   raw_value: number | null;
   value: number | null;
   unit: string | null;
-  display_label: string | null;
   created_at: string;
   /** Resolved via LEFT JOIN signals */
   internal_name: string | null;

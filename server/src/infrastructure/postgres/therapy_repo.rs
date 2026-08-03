@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
 use super::RepoError;
-use crate::domain::entities::Therapy;
+use crate::domain::entities::{Therapy, TherapyListItem};
 
 /// Repository for therapy CRUD and bridge-integration operations.
 #[derive(Debug, Clone)]
@@ -72,6 +72,46 @@ impl TherapyRepo {
               AND ($4::timestamptz IS NULL OR started_at >= $4)
               AND ($5::timestamptz IS NULL OR started_at <= $5)
             ORDER BY created_at DESC
+            "#,
+        )
+        .bind(patient_id)
+        .bind(machine_id)
+        .bind(status)
+        .bind(date_from)
+        .bind(date_to)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// List therapies with optional filters, joined to the patient's external identifier.
+    pub async fn list_with_patient(
+        &self,
+        patient_id: Option<i64>,
+        machine_id: Option<i64>,
+        status: Option<&str>,
+        date_from: Option<DateTime<Utc>>,
+        date_to: Option<DateTime<Utc>>,
+    ) -> Result<Vec<TherapyListItem>, RepoError> {
+        let rows = sqlx::query_as::<_, TherapyListItem>(
+            r#"
+            SELECT t.id, t.patient_id, t.machine_id, t.started_at, t.ended_at, t.status,
+                   t.therapy_type, t.kit, t.weight, t.end_weight, t.created_at,
+                   p.external_id AS patient_external_id,
+                   p.name AS patient_name,
+                   p.age AS patient_age
+            FROM therapies t
+            LEFT JOIN patients p ON p.id = t.patient_id
+            WHERE ($1::bigint IS NULL OR t.patient_id = $1)
+              AND ($2::bigint IS NULL OR t.machine_id = $2)
+              AND (
+                $3::text IS NULL OR t.status = $3
+                OR ($3 = 'active' AND t.status IN ('active', 'planned'))
+              )
+              AND ($4::timestamptz IS NULL OR t.started_at >= $4)
+              AND ($5::timestamptz IS NULL OR t.started_at <= $5)
+            ORDER BY t.created_at DESC
             "#,
         )
         .bind(patient_id)

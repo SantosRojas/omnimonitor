@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useMachineSubscription } from "../../data/ws-hook";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useMachineStatusStore } from "../../store/machine-status-store";
@@ -34,6 +35,7 @@ export default function ScadaDetailContainer() {
   const { id: machineIdParam } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const machineId = machineIdParam ?? "";
+  useMachineSubscription(machineId);
   const acknowledgeAlarm = useAlarmStore((s) => s.acknowledgeAlarm);
   const storeAlarms = useAlarmStore((s) => s.alarms);
 
@@ -55,7 +57,8 @@ export default function ScadaDetailContainer() {
     queryFn: () => therapyRepo.list({ machine_id: Number(machineId), status: "active" }),
     enabled: machineId.length > 0,
   });
-  const activeTherapyId = therapies[0]?.id;
+  const activeTherapy = therapies[0];
+  const activeTherapyId = activeTherapy?.id;
 
   /* ── Alarms from the store ───────────────────────────────────── */
   const machineAlarms: ScadaAlarm[] = storeAlarms
@@ -71,6 +74,18 @@ export default function ScadaDetailContainer() {
 
   /* ── Handle alarm acknowledge ────────────────────────────────── */
   const handleAcknowledge = (alarmId: string) => acknowledgeAlarm(alarmId);
+
+  /* ── Active therapy summary for header + patient info fallback ─ */
+  const therapySummary = activeTherapy
+    ? {
+        patientExternalId: activeTherapy.patient_external_id ?? null,
+        patientName: activeTherapy.patient_name ?? null,
+        age: activeTherapy.patient_age ?? null,
+        weight: activeTherapy.weight ?? null,
+        kit: activeTherapy.kit ?? null,
+        therapyType: activeTherapy.therapy_type ?? null,
+      }
+    : undefined;
 
   /* ── Loading state ────────────────────────────────────────── */
   if (machineLoading) {
@@ -109,7 +124,8 @@ export default function ScadaDetailContainer() {
         <div className="flex items-center gap-2">
           <TherapyStateMachine
             state={toTherapyState(vm.therapy.stateName, vm.therapy.active, connectionStatus)}
-            patientName={(machine as any)?.patient_name}
+            patientName={activeTherapy?.patient_name ?? activeTherapy?.patient_external_id ?? undefined}
+            startedAt={activeTherapy?.started_at ?? undefined}
           />
           {activeTherapyId && (
             <Button
@@ -127,7 +143,12 @@ export default function ScadaDetailContainer() {
       </div>
 
       {/* Ported SCADA layout (pdms-omni) */}
-      <ScadaLayout vm={vm} alarms={machineAlarms} onAcknowledge={handleAcknowledge} />
+      <ScadaLayout
+        vm={vm}
+        alarms={machineAlarms}
+        onAcknowledge={handleAcknowledge}
+        therapySummary={therapySummary}
+      />
     </div>
   );
 }
