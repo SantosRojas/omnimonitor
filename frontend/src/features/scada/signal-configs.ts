@@ -72,3 +72,33 @@ export function getAccumNetRemoval(info: Record<string, unknown>): string | unde
   if (!r || r.value === null || r.value === undefined) return undefined;
   return `${r.value} ${r.unit ?? "ml"}`;
 }
+
+/** Human-readable labels for SCADA signals (fallback when the DB lacks a display_name). */
+const SCADA_DISPLAY_FALLBACK: Record<string, string> = {
+  ...Object.fromEntries(PRESSURE_GAUGES.map((g) => [g.key, g.label])),
+  ...Object.fromEntries(FLOW_INDICATORS.map((f) => [f.key, f.label])),
+};
+
+/**
+ * Builds an internal_name → display_name map from the server signal catalog,
+ * with the SCADA labels as fallback so every known signal stays readable.
+ */
+export function buildSignalDisplayMap(
+  signals: ReadonlyArray<{ internal_name: string; display_name?: string | null }>,
+): Record<string, string> {
+  const map: Record<string, string> = { ...SCADA_DISPLAY_FALLBACK };
+  for (const s of signals) {
+    if (s.internal_name && s.display_name) {
+      map[s.internal_name] = s.display_name;
+    }
+  }
+  return map;
+}
+
+/** Resolves a signal's human-readable name, falling back to the internal name. */
+export function signalDisplayName(
+  map: Record<string, string>,
+  internalName: string,
+): string {
+  return map[internalName] ?? internalName;
+}

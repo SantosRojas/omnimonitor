@@ -35,17 +35,19 @@ import {
   Trash2,
   Send,
 } from "lucide-react";
-import { PRESSURE_SERIES, FLOW_SERIES, type SeriesConfig } from "../../features/scada/signal-configs";
+import { PRESSURE_SERIES, FLOW_SERIES, buildSignalDisplayMap, signalDisplayName, type SeriesConfig } from "../../features/scada/signal-configs";
 import { ChartTooltip } from "../../features/scada/components/chart-tooltip";
 import { DataTable } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
+import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 
 const therapyRepo = new HttpTherapyRepo();
+const signalRepo = new HttpSignalRepo();
 
 const columnHelper = createColumnHelper<HistoryRow>();
 
-const HISTORY_COLUMNS = [
+const buildHistoryColumns = (signalDisplayMap: Record<string, string>) => [
   columnHelper.accessor("recorded_at", {
     header: "Time",
     cell: (i) => {
@@ -59,11 +61,14 @@ const HISTORY_COLUMNS = [
   }),
   columnHelper.accessor("internal_name", {
     header: "Signal",
-    cell: (i) => (
-      <span className="font-mono text-neutral-800 dark:text-neutral-200">
-        {i.getValue() ?? "—"}
-      </span>
-    ),
+    cell: (i) => {
+      const name = i.getValue();
+      return (
+        <span className="text-neutral-800 dark:text-neutral-200" title={name ?? undefined}>
+          {name ? signalDisplayName(signalDisplayMap, name) : "—"}
+        </span>
+      );
+    },
   }),
   columnHelper.accessor("value", {
     header: "Value",
@@ -132,14 +137,24 @@ export default function TherapyHistoryPage() {
     },
   });
 
-  // ── Unique signal names for filter dropdown ────────────────
-  const signalNames = useMemo(() => {
+  // ── Signal catalog for human-readable display names ─────────
+  const { data: signals = [] } = useQuery({
+    queryKey: ["signals"],
+    queryFn: () => signalRepo.list(),
+    staleTime: 60_000,
+  });
+  const signalDisplayMap = useMemo(() => buildSignalDisplayMap(signals), [signals]);
+
+  // ── Unique signal options for the filter dropdown ───────────
+  const signalOptions = useMemo(() => {
     const names = new Set<string>();
     for (const r of historyRows) {
       if (r.internal_name) names.add(r.internal_name);
     }
-    return [...names].sort();
-  }, [historyRows]);
+    return [...names]
+      .map((name) => ({ value: name, label: signalDisplayName(signalDisplayMap, name) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [historyRows, signalDisplayMap]);
 
   // ── Pivot readings into chart data ─────────────────────────
   const chartData = useMemo(() => {
@@ -196,9 +211,11 @@ export default function TherapyHistoryPage() {
     pageSize: 25,
   });
 
+  const columns = useMemo(() => buildHistoryColumns(signalDisplayMap), [signalDisplayMap]);
+
   const table = useReactTable({
     data: filteredRows,
-    columns: HISTORY_COLUMNS,
+    columns,
     state: { sorting, pagination },
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
@@ -428,9 +445,9 @@ export default function TherapyHistoryPage() {
                   className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-950"
                 >
                   <option value="all">All</option>
-                  {signalNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
+                  {signalOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
                     </option>
                   ))}
                 </select>
