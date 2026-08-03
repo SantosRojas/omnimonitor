@@ -145,6 +145,5 @@ pub struct Reading {
     pub raw_value: Option<i64>,
     pub value: Option<f64>,
     pub unit: Option<String>,
-    pub display_label: Option<String>,
     pub created_at: DateTime<Utc>,
 }

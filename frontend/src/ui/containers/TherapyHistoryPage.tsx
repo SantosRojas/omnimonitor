@@ -130,7 +130,6 @@ export default function TherapyHistoryPage() {
       const q = search.toLowerCase();
       list = list.filter(
         (r) =>
-          r.display_label?.toLowerCase().includes(q) ||
           r.internal_name?.toLowerCase().includes(q) ||
           r.unit?.toLowerCase().includes(q),
       );
@@ -383,7 +382,6 @@ export default function TherapyHistoryPage() {
                       <th className="px-3 py-2 text-left font-medium text-neutral-500">Time</th>
                       <th className="px-3 py-2 text-left font-medium text-neutral-500">Signal</th>
                       <th className="px-3 py-2 text-left font-medium text-neutral-500">Value</th>
-                      <th className="px-3 py-2 text-left font-medium text-neutral-500">Display</th>
                       <th className="px-3 py-2 text-left font-medium text-neutral-500">Unit</th>
                     </tr>
                   </thead>
@@ -394,13 +392,10 @@ export default function TherapyHistoryPage() {
                           {r.recorded_at ? new Date(r.recorded_at).toLocaleString() : "—"}
                         </td>
                         <td className="px-3 py-2 font-mono text-neutral-800 dark:text-neutral-200">
-                          {r.internal_name ?? r.display_label ?? "—"}
+                          {r.internal_name ?? "—"}
                         </td>
                         <td className="px-3 py-2 font-medium tabular-nums">
                           {r.value?.toFixed(2) ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 text-neutral-500">
-                          {r.display_label ?? "—"}
                         </td>
                         <td className="px-3 py-2 text-neutral-500">{r.unit ?? "—"}</td>
                       </tr>

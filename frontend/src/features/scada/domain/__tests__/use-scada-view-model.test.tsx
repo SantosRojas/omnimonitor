@@ -46,7 +46,6 @@ function reading(overrides: Partial<TelemetryReading> = {}): TelemetryReading {
     raw_value: 100,
     value: 100,
     unit: "mmHg",
-    display_label: null,
     phase: null,
     created_at: "2026-07-31T10:00:00Z",
     ...overrides,

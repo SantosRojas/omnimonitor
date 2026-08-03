@@ -8,7 +8,6 @@ export interface Reading {
   raw_value: number | null;
   value: number | null;
   unit: string | null;
-  display_label: string | null;
   phase: string | null;
   created_at: string;
 }

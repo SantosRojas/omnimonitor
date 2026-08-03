@@ -14,7 +14,6 @@ pub struct TherapyDetailReading {
     pub internal_name: String,
     pub value: Option<f64>,
     pub unit: Option<String>,
-    pub display_label: Option<String>,
     pub recorded_at: Option<DateTime<Utc>>,
 }
 
@@ -83,20 +82,20 @@ impl ReadingsRepo {
 
         let mut tx = self.pool.begin().await?;
 
-        // Build a single multi-row INSERT:  VALUES ($1,$2,...,$8), ($9,$10,...,$16), ...
-        let ncols = 8usize;
+        // Build a single multi-row INSERT:  VALUES ($1,$2,...,$7), ($8,$9,...,$14), ...
+        let ncols = 7usize;
         let rows: Vec<String> = (0..readings.len())
             .map(|i| {
                 let base = i * ncols + 1;
                 format!(
-                    "(${},${},${},${},${},${},${},${})",
-                    base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6, base + 7,
+                    "(${},${},${},${},${},${},${})",
+                    base, base + 1, base + 2, base + 3, base + 4, base + 5, base + 6,
                 )
             })
             .collect();
 
         let sql = format!(
-            "INSERT INTO readings (machine_id, therapy_id, signal_id, recorded_at, raw_value, value, unit, display_label) VALUES {}",
+            "INSERT INTO readings (machine_id, therapy_id, signal_id, recorded_at, raw_value, value, unit) VALUES {}",
             rows.join(","),
         );
 
@@ -109,8 +108,7 @@ impl ReadingsRepo {
                 .bind(r.recorded_at)
                 .bind(r.raw_value)
                 .bind(r.value)
-                .bind(&r.unit)
-                .bind(&r.display_label);
+                .bind(&r.unit);
         }
 
         q.execute(&mut *tx).await?;
@@ -170,7 +168,6 @@ impl ReadingsRepo {
                 s.internal_name,
                 r.value,
                 r.unit,
-                r.display_label,
                 r.recorded_at
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
@@ -334,7 +331,6 @@ impl ReadingsRepo {
                 s.internal_name,
                 r.value,
                 r.unit,
-                r.display_label,
                 r.recorded_at
             FROM readings r
             JOIN signals s ON r.signal_id = s.id
@@ -358,7 +354,6 @@ impl ReadingsRepo {
                 s.internal_name,
                 r.value,
                 r.unit,
-                r.display_label,
                 r.recorded_at
             FROM readings r
             JOIN signals s ON r.signal_id = s.id

@@ -119,11 +119,11 @@ async fn export_readings(
         "json" => Ok(Json(json!(readings)).into_response()),
         _ => {
             let mut csv = String::from(
-                "id,machine_id,signal_id,recorded_at,raw_value,value,unit,display_label,created_at\n",
+                "id,machine_id,signal_id,recorded_at,raw_value,value,unit,created_at\n",
             );
             for r in &readings {
                 csv.push_str(&format!(
-                    "{},{},{},{},{},{},{},{},{}\n",
+                    "{},{},{},{},{},{},{},{}\n",
                     r.id,
                     r.machine_id,
                     r.signal_id.map_or("".into(), |v: i64| v.to_string()),
@@ -131,7 +131,6 @@ async fn export_readings(
                     r.raw_value.map_or("".into(), |v: i64| v.to_string()),
                     r.value.map_or("".into(), |v: f64| v.to_string()),
                     r.unit.as_deref().unwrap_or(""),
-                    r.display_label.as_deref().unwrap_or(""),
                     r.created_at.to_rfc3339(),
                 ));
             }

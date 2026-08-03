@@ -56,7 +56,6 @@ pub struct HistoryReadingRow {
     pub raw_value: Option<i64>,
     pub value: Option<f64>,
     pub unit: Option<String>,
-    pub display_label: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Resolved via LEFT JOIN signals
     pub internal_name: Option<String>,
@@ -76,7 +75,7 @@ async fn therapy_history(
     let rows = sqlx::query_as::<_, HistoryReadingRow>(
         r#"SELECT r.id, r.machine_id, r.therapy_id, r.signal_id,
                   r.recorded_at, r.raw_value, r.value, r.unit,
-                  r.display_label, r.created_at,
+                  r.created_at,
                   s.internal_name
            FROM readings r
            LEFT JOIN signals s ON s.id = r.signal_id

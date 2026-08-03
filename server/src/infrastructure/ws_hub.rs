@@ -112,7 +112,6 @@ pub struct BridgeTelemetryReading {
     pub raw_value: i64,
     pub value: Option<f64>,
     pub unit: String,
-    pub display_value: Option<String>,
     pub phase: Option<String>,
 }
 
@@ -232,15 +231,11 @@ type BrowserSenders = Arc<RwLock<HashMap<i64, Vec<mpsc::Sender<String>>>>>;
 /// In-memory catalog for enriching incoming telemetry readings.
 ///
 /// Mirrors the original pdms-omni behavior: `signals.unit` is the fallback
-/// for a missing/empty unit from the bridge, and `value_mappings` maps a
-/// numeric value to its human-readable `display_label` (e.g. treatment
-/// sub-state codes → screen names).
+/// for a missing/empty unit from the bridge.
 #[derive(Debug, Clone, Default)]
 pub struct SignalCatalog {
     /// signal_id → canonical unit from the signals catalog.
     pub units: HashMap<i64, String>,
-    /// (signal_id, numeric_value as canonical f64 string) → display name.
-    pub display_labels: HashMap<(i64, String), String>,
 }
 
 /// Shared state for the WebSocket hub.
@@ -253,7 +248,7 @@ pub struct WsHubState {
     pub version_repo: VersionRepo,
     pub bridge_repo: BridgeRepo,
     pub signal_repo: SignalRepo,
-    /// Catalog used to resolve units and display labels for readings.
+    /// Catalog used to resolve units for readings.
     pub signal_catalog: Arc<RwLock<SignalCatalog>>,
     browser_subs: BrowserSenders,
     /// Latest serial status per bridge_id, stored in-memory.
@@ -292,10 +287,9 @@ impl WsHubState {
         }
     }
 
-    /// (Re)load the in-memory signal catalog (units + value mappings).
+    /// (Re)load the in-memory signal catalog (units).
     pub async fn load_signal_catalog(&self) -> Result<(), RepoError> {
         let signals = self.signal_repo.list().await?;
-        let mappings = self.signal_repo.list_all_mappings().await?;
 
         let mut units = HashMap::with_capacity(signals.len());
         for sig in &signals {
@@ -306,26 +300,17 @@ impl WsHubState {
             }
         }
 
-        let mut display_labels = HashMap::with_capacity(mappings.len());
-        for m in &mappings {
-            if let (Some(value), Some(label)) = (&m.numeric_value, &m.display_name) {
-                display_labels.insert((m.signal_id, value.clone()), label.clone());
-            }
-        }
-
         let mut catalog = self.signal_catalog.write().await;
-        *catalog = SignalCatalog { units, display_labels };
+        *catalog = SignalCatalog { units };
         info!(
-            "Signal catalog loaded: {} units, {} display labels",
-            catalog.units.len(),
-            catalog.display_labels.len()
+            "Signal catalog loaded: {} units",
+            catalog.units.len()
         );
         Ok(())
     }
 
     /// Enrich bridge readings with server-side catalog data:
     /// - `unit`: fallback to `signals.unit` when the bridge sent an empty value.
-    /// - `display_label`: resolve from `value_mappings` by (signal_id, value).
     pub async fn enrich_readings(&self, readings: &mut [BridgeTelemetryReading]) {
         let catalog = self.signal_catalog.read().await;
         enrich_readings_from_catalog(&catalog, readings);
@@ -424,7 +409,7 @@ impl WsHubState {
     }
 }
 
-/// Pure enrichment: applies the catalog to readings (unit fallback + display_label).
+/// Pure enrichment: applies the catalog to readings (unit fallback).
 pub fn enrich_readings_from_catalog(
     catalog: &SignalCatalog,
     readings: &mut [BridgeTelemetryReading],
@@ -433,14 +418,6 @@ pub fn enrich_readings_from_catalog(
         if r.unit.is_empty() {
             if let Some(unit) = catalog.units.get(&r.signal_id) {
                 r.unit = unit.clone();
-            }
-        }
-        if r.display_value.is_none() {
-            if let Some(value) = r.value {
-                let key = (r.signal_id, value.to_string());
-                if let Some(label) = catalog.display_labels.get(&key) {
-                    r.display_value = Some(label.clone());
-                }
             }
         }
     }
@@ -637,9 +614,8 @@ pub async fn handle_bridge_frame(
                 return Ok(Some(err_frame));
             }
 
-            // Enrich with the server-side catalog: unit fallback (signals.unit)
-            // and display_label (value_mappings). Both the persisted rows and the
-            // live broadcast consume the enriched readings.
+            // Enrich with the server-side catalog: unit fallback (signals.unit).
+            // Both the persisted rows and the live broadcast consume the enriched readings.
             let mut readings = readings.clone();
             state.enrich_readings(&mut readings).await;
 
@@ -656,7 +632,6 @@ pub async fn handle_bridge_frame(
                     raw_value: Some(r.raw_value),
                     value: r.value,
                     unit: Some(r.unit.clone()),
-                    display_label: r.display_value.clone(),
                     created_at: Utc::now(),
                 })
                 .collect();
@@ -1020,7 +995,6 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                                         raw_value: r.raw_value.unwrap_or(0),
                                         value: r.value,
                                         unit: r.unit.clone().unwrap_or_default(),
-                                        display_value: r.display_label.clone(),
                                         phase: None, // ya no se persiste en readings
                                     })
                                     .collect();
@@ -1115,18 +1089,14 @@ mod tests {
             raw_value: 0,
             value,
             unit: unit.to_string(),
-            display_value: None,
             phase: None,
         }
     }
 
     #[test]
-    fn enrich_applies_unit_fallback_and_display_label() {
+    fn enrich_applies_unit_fallback() {
         let catalog = SignalCatalog {
             units: HashMap::from([(1, "mmHg".to_string())]),
-            display_labels: HashMap::from([
-                ((2, "3".to_string()), "Therapy".to_string()),
-            ]),
         };
 
         let mut readings = vec![
@@ -1139,45 +1109,21 @@ mod tests {
 
         // unit fallback from signals catalog
         assert_eq!(readings[0].unit, "mmHg");
-        // display_label resolved from value_mappings
-        assert_eq!(readings[1].display_value.as_deref(), Some("Therapy"));
-        // untouched: unknown signal keeps bridge unit, no display label
+        // untouched: unknown signal keeps bridge unit
         assert_eq!(readings[2].unit, "x");
-        assert_eq!(readings[2].display_value, None);
     }
 
     #[test]
     fn enrich_preserves_bridge_values_when_present() {
         let catalog = SignalCatalog {
             units: HashMap::from([(1, "mmHg".to_string())]),
-            display_labels: HashMap::from([
-                ((1, "120".to_string()), "High".to_string()),
-            ]),
         };
 
         let mut readings = vec![reading(1, Some(120.0), "kPa")];
 
         enrich_readings_from_catalog(&catalog, &mut readings);
 
-        // bridge unit wins when non-empty; display label still resolved
+        // bridge unit wins when non-empty
         assert_eq!(readings[0].unit, "kPa");
-        assert_eq!(readings[0].display_value.as_deref(), Some("High"));
-    }
-
-    #[test]
-    fn enrich_skips_display_label_without_numeric_value() {
-        let catalog = SignalCatalog {
-            units: HashMap::new(),
-            display_labels: HashMap::from([
-                ((1, "3".to_string()), "Therapy".to_string()),
-            ]),
-        };
-
-        let mut readings = vec![reading(1, None, "")];
-
-        enrich_readings_from_catalog(&catalog, &mut readings);
-
-        assert_eq!(readings[0].display_value, None);
-        assert_eq!(readings[0].unit, "");
     }
 }
