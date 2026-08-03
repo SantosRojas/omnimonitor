@@ -936,6 +936,7 @@ async fn handle_bridge_serial_status_stores_in_memory(pool: PgPool) {
         repos.readings,
         repos.version,
         repos.bridge,
+        repos.signal,
         0, // persistence_interval_secs: 0 = inmediato
     );
 
@@ -985,6 +986,7 @@ async fn handle_bridge_serial_status_before_registration_logs_warning(pool: PgPo
         repos.readings,
         repos.version,
         repos.bridge,
+        repos.signal,
         0, // persistence_interval_secs: 0 = inmediato
     );
 

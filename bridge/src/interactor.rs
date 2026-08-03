@@ -595,6 +595,11 @@ fn read_cyclical_values(
             continue;
         }
 
+        let value = match &physical_value {
+            TelemetryValue::Number(n) => Some(*n),
+            TelemetryValue::String(_) => None,
+        };
+
         readings.push(TelemetryReading {
             id: None,
             timestamp: chrono::Utc::now().timestamp_millis(),
@@ -604,6 +609,7 @@ fn read_cyclical_values(
             internal_name: attr.internal_name.clone(),
             raw_value,
             physical_value,
+            value,
             unit,
             display_value: None,
             phase: None,

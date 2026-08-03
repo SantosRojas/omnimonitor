@@ -214,6 +214,21 @@ impl SignalRepo {
         Ok(rows)
     }
 
+    /// List ALL non-deleted value mappings across every signal.
+    ///
+    /// Used to build the in-memory resolution cache for `display_label`
+    /// (numeric value → display name) when enriching telemetry readings,
+    /// mirroring the `equiv_cache` used by the original pdms-omni.
+    pub async fn list_all_mappings(&self) -> Result<Vec<ValueMappingRow>, RepoError> {
+        let rows = sqlx::query_as::<_, ValueMappingRow>(
+            "SELECT * FROM value_mappings WHERE deleted_at IS NULL ORDER BY signal_id, id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows)
+    }
+
     /// Soft-delete a value mapping with audit log.
     pub async fn delete_mapping(&self, mapping_id: i64, deleted_by: i64) -> Result<(), RepoError> {
         // Soft-delete the mapping

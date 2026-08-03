@@ -168,6 +168,7 @@ mod tests {
             internal_name: "pressure".into(),
             raw_value: 12345,
             physical_value: crate::protocol::TelemetryValue::Number(12.345),
+            value: Some(12.345),
             unit: "mmHg".into(),
             display_value: Some("12.3".into()),
             phase: Some("dialyzing".into()),
@@ -178,6 +179,13 @@ mod tests {
             readings: vec![reading],
         };
         round_trip(&frame, "BridgeFrame::Readings");
+
+        // The server contract: `value` MUST be present in the serialized JSON
+        // (server's BridgeTelemetryReading reads `value`, not `physical_value`).
+        let json = serde_json::to_value(&frame).unwrap();
+        let reading_json = &json["readings"][0];
+        assert_eq!(reading_json["value"], 12.345);
+        assert_eq!(reading_json["physical_value"], 12.345);
     }
 
     #[test]

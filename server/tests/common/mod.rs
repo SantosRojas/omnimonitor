@@ -80,6 +80,7 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         repos.readings.clone(),
         repos.version.clone(),
         repos.bridge.clone(),
+        repos.signal.clone(),
         0, // persistence_interval_secs: 0 = inmediato (comportamiento original)
     ));
     let state = Arc::new(AppState {

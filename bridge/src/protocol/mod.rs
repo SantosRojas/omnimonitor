@@ -213,6 +213,9 @@ pub struct TelemetryReading {
     pub internal_name: String,
     pub raw_value: i64,
     pub physical_value: TelemetryValue,
+    /// Physical (converted) numeric value — the field the server persists
+    /// and broadcasts. Derived from `physical_value` when it is a number.
+    pub value: Option<f64>,
     pub unit: String,
     pub display_value: Option<String>,
     pub phase: Option<String>,

@@ -315,8 +315,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         readings_repo.clone(),
         version_repo.clone(),
         bridge_repo.clone(),
+        signal_repo.clone(),
         persistence_interval_secs,
     ));
+
+    // ── Load signal catalog (units + value mappings) for reading enrichment ──
+    if let Err(e) = ws_hub.load_signal_catalog().await {
+        error!("Failed to load signal catalog: {}", e);
+    }
 
     // ── Stale machine watchdog (every 30s, 60s timeout) ──
     let watchdog_machine_repo = machine_repo.clone();
