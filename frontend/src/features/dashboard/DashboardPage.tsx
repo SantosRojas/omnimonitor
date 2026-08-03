@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -11,6 +11,7 @@ import {
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { HttpPatientRepo } from "../../data/repos/http-patient-repo";
+import { wsManager } from "../../data/ws-manager";
 import { useLiveDataStore, type ReadingsBroadcast } from "../../store/live-data-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { DataTable } from "../../ui/components/DataTable";
@@ -110,6 +111,33 @@ export default function DashboardPage() {
     queryFn: () => therapyRepo.list({ status: "active" }),
     refetchInterval: 15_000,
   });
+
+  // Subscribe to live broadcasts for every machine with an active therapy so
+  // the pressure/flow columns are populated on first load (not only after
+  // visiting a SCADA view, which is the only place that subscribes today).
+  // The effect diffs against the previous set so 15s refetches don't churn
+  // Subscribe/Unsubscribe on unchanged machines.
+  useEffect(() => {
+    const prev = new Set<string>();
+    const sync = () => {
+      const current = new Set(
+        therapies.map((t) => String(t.machine_id)).filter(Boolean),
+      );
+      for (const id of current) {
+        if (!prev.has(id)) wsManager.subscribeMachine(id);
+      }
+      for (const id of prev) {
+        if (!current.has(id)) wsManager.unsubscribeMachine(id);
+      }
+      prev.clear();
+      for (const id of current) prev.add(id);
+    };
+    sync();
+    return () => {
+      for (const id of prev) wsManager.unsubscribeMachine(id);
+      prev.clear();
+    };
+  }, [therapies]);
 
   const { data: machines = [] } = useQuery<Machine[]>({
     queryKey: ["machines"],
