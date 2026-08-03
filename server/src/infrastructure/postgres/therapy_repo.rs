@@ -17,7 +17,8 @@ impl TherapyRepo {
         Self { pool }
     }
 
-    /// Create a new therapy with 'planned' status.
+    /// Create a new therapy with 'planned' status. The bridge sends TherapySetup
+    /// when a session starts, so the therapy is born already started.
     pub async fn create(
         &self,
         patient_id: i64,
@@ -28,8 +29,8 @@ impl TherapyRepo {
     ) -> Result<Therapy, RepoError> {
         let row = sqlx::query_as::<_, Therapy>(
             r#"
-            INSERT INTO therapies (patient_id, machine_id, status, therapy_type, kit, weight)
-            VALUES ($1, $2, 'planned', $3, $4, $5)
+            INSERT INTO therapies (patient_id, machine_id, status, therapy_type, kit, weight, started_at)
+            VALUES ($1, $2, 'planned', $3, $4, $5, NOW())
             RETURNING *
             "#,
         )
@@ -42,6 +43,22 @@ impl TherapyRepo {
         .await?;
 
         Ok(row)
+    }
+
+    /// Set started_at to NOW() when it is still NULL. Used to backfill sessions
+    /// created before the start-time fix (bridge re-sends TherapySetup for them).
+    pub async fn ensure_started(&self, id: i64) -> Result<(), RepoError> {
+        sqlx::query(
+            r#"
+            UPDATE therapies SET started_at = NOW()
+            WHERE id = $1 AND started_at IS NULL
+            "#,
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
     /// Find a therapy by its primary key.

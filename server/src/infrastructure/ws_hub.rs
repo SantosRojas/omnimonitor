@@ -891,10 +891,28 @@ async fn handle_therapy_setup(
     };
 
     match state.therapy_repo.find_active_by_machine(machine_id).await? {
-        Some(therapy) => {
+        Some(therapy) if therapy.patient_id == patient.id => {
+            // Same patient continues the session: refresh metadata only.
             state
                 .therapy_repo
                 .update_metadata(therapy.id, therapy_type, kit, weight, None)
+                .await?;
+            // Backfill start time for sessions created before the start-time fix.
+            if therapy.started_at.is_none() {
+                state.therapy_repo.ensure_started(therapy.id).await?;
+            }
+        }
+        Some(therapy) => {
+            // Different patient on this machine: close the previous session
+            // and start a new one, so each patient run gets its own therapy.
+            info!(
+                "TherapySetup: closing therapy {} for machine {} (patient {} -> {})",
+                therapy.id, machine_id, therapy.patient_id, patient.id
+            );
+            state.therapy_repo.update_status(therapy.id, "completed").await?;
+            state
+                .therapy_repo
+                .create(patient.id, machine_id, therapy_type, kit, weight)
                 .await?;
         }
         None => {
