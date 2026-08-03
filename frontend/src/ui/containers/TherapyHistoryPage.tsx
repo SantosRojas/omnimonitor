@@ -1,6 +1,15 @@
 import { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  createColumnHelper,
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  type SortingState,
+  type PaginationState,
+} from "@tanstack/react-table";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useAuthStore } from "../../store/auth-store";
 import { PageHeader } from "../layouts/PageHeader";
@@ -28,9 +37,47 @@ import {
 } from "lucide-react";
 import { PRESSURE_SERIES, FLOW_SERIES, type SeriesConfig } from "../../features/scada/signal-configs";
 import { ChartTooltip } from "../../features/scada/components/chart-tooltip";
+import { DataTable } from "../components/DataTable";
+import { Pagination } from "../components/Pagination";
 import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 
 const therapyRepo = new HttpTherapyRepo();
+
+const columnHelper = createColumnHelper<HistoryRow>();
+
+const HISTORY_COLUMNS = [
+  columnHelper.accessor("recorded_at", {
+    header: "Time",
+    cell: (i) => {
+      const ts = i.getValue();
+      return (
+        <span className="text-neutral-500">
+          {ts ? new Date(ts).toLocaleString() : "—"}
+        </span>
+      );
+    },
+  }),
+  columnHelper.accessor("internal_name", {
+    header: "Signal",
+    cell: (i) => (
+      <span className="font-mono text-neutral-800 dark:text-neutral-200">
+        {i.getValue() ?? "—"}
+      </span>
+    ),
+  }),
+  columnHelper.accessor("value", {
+    header: "Value",
+    cell: (i) => (
+      <span className="font-medium tabular-nums">
+        {i.getValue()?.toFixed(2) ?? "—"}
+      </span>
+    ),
+  }),
+  columnHelper.accessor("unit", {
+    header: "Unit",
+    cell: (i) => <span className="text-neutral-500">{i.getValue() ?? "—"}</span>,
+  }),
+];
 
 export default function TherapyHistoryPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,7 +106,7 @@ export default function TherapyHistoryPage() {
   // ── History readings ────────────────────────────────────────
   const { data: historyRows = [], isLoading: historyLoading } = useQuery<HistoryRow[]>({
     queryKey: ["therapy-history", therapyId],
-    queryFn: () => therapyRepo.getHistory(therapyId),
+    queryFn: () => therapyRepo.getHistory(therapyId, 10000),
     enabled: !isNaN(therapyId),
   });
 
@@ -136,6 +183,28 @@ export default function TherapyHistoryPage() {
     }
     return list;
   }, [historyRows, signalFilter, search]);
+
+  // ── TanStack table: sorting + client-side pagination ─────────
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 25,
+  });
+
+  const table = useReactTable({
+    data: filteredRows,
+    columns: HISTORY_COLUMNS,
+    state: { sorting, pagination },
+    onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+
+  const { pageIndex, pageSize } = table.getState().pagination;
+  const pageStart = filteredRows.length === 0 ? 0 : pageIndex * pageSize + 1;
+  const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredRows.length);
 
   // ── CSV export via existing backend endpoint ───────────────
   const handleExport = useCallback(() => {
@@ -265,7 +334,7 @@ export default function TherapyHistoryPage() {
           <span>Status: <Badge variant={statusVariant[therapy.status ?? ""] ?? "secondary"}>{therapy.status ?? "—"}</Badge></span>
           <span>Start: <strong>{therapy.started_at ? new Date(therapy.started_at).toLocaleString() : "—"}</strong></span>
           <span>End: <strong>{therapy.ended_at ? new Date(therapy.ended_at).toLocaleString() : "—"}</strong></span>
-          <span>Readings: <strong>{historyRows.length}</strong></span>
+          <span>Readings: <strong>{filteredRows.length}</strong></span>
         </div>
       )}
 
@@ -368,42 +437,37 @@ export default function TherapyHistoryPage() {
                 className="h-8 max-w-xs text-xs"
               />
               <span className="text-xs text-neutral-400">
-                {filteredRows.length} of {historyRows.length} readings
+                {filteredRows.length === 0
+                  ? "0 of 0 readings"
+                  : `${pageStart}–${pageEnd} of ${filteredRows.length} readings`}
               </span>
             </div>
 
-            {filteredRows.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-400">No readings found</p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-                <table className="w-full text-xs">
-                  <thead className="bg-neutral-50 dark:bg-neutral-900">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-neutral-500">Time</th>
-                      <th className="px-3 py-2 text-left font-medium text-neutral-500">Signal</th>
-                      <th className="px-3 py-2 text-left font-medium text-neutral-500">Value</th>
-                      <th className="px-3 py-2 text-left font-medium text-neutral-500">Unit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                    {filteredRows.map((r) => (
-                      <tr key={r.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                        <td className="whitespace-nowrap px-3 py-2 text-neutral-500">
-                          {r.recorded_at ? new Date(r.recorded_at).toLocaleString() : "—"}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-neutral-800 dark:text-neutral-200">
-                          {r.internal_name ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 font-medium tabular-nums">
-                          {r.value?.toFixed(2) ?? "—"}
-                        </td>
-                        <td className="px-3 py-2 text-neutral-500">{r.unit ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <DataTable table={table} emptyMessage="No readings found" />
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium text-neutral-500">
+                  Rows per page:
+                </label>
+                <select
+                  value={pageSize}
+                  onChange={(e) => table.setPageSize(Number(e.target.value))}
+                  className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-950"
+                >
+                  {[25, 50, 100, 250].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
+              <Pagination
+                currentPage={pageIndex + 1}
+                totalPages={table.getPageCount()}
+                onPageChange={(page) => table.setPageIndex(page - 1)}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
