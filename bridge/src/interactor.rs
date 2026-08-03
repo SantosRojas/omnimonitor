@@ -889,6 +889,17 @@ pub async fn run_bridge(
     const STATUS_INTERVAL_SECS: u64 = 5;
 
     loop {
+        // Process server commands (e.g. therapy closed from the UI).
+        while let Ok(cmd) = rx_commands.try_recv() {
+            match cmd {
+                ServerFrame::TherapyClosed { therapy_id } => {
+                    tracing::info!("[bridge] server closed therapy {therapy_id}, resetting for next setup");
+                    manager.request_therapy_close(therapy_id).await;
+                }
+                _ => {}
+            }
+        }
+
         // Check for pending therapy close
         if let Some(therapy_id) = manager.take_pending_therapy_close().await {
             tracing::info!("[bridge] pending therapy close: {therapy_id}");

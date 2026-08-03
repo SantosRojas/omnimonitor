@@ -87,6 +87,11 @@ pub enum ServerFrame {
     MachineIdentified {
         machine_id: i64,
     },
+    /// Server notifies the bridge that its active therapy was closed from the
+    /// UI. The bridge resets its metadata cache and re-sends `TherapySetup`.
+    TherapyClosed {
+        therapy_id: i64,
+    },
     Error {
         message: String,
     },
@@ -147,6 +152,15 @@ mod tests {
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["type"], "MachineIdentified");
         assert_eq!(json["machine_id"], 99);
+    }
+
+    #[test]
+    fn server_frame_therapy_closed() {
+        let frame = ServerFrame::TherapyClosed { therapy_id: 123 };
+        round_trip(&frame, "ServerFrame::TherapyClosed");
+        let json = serde_json::to_value(&frame).unwrap();
+        assert_eq!(json["type"], "TherapyClosed");
+        assert_eq!(json["therapy_id"], 123);
     }
 
     #[test]

@@ -173,6 +173,15 @@ async fn update_therapy_status(
             ),
         })?;
 
+    // Notify the bridge so it resets its metadata cache and re-sends
+    // TherapySetup, letting the server create the next session.
+    if req.status == "completed" || req.status == "cancelled" {
+        state
+            .ws_hub
+            .notify_therapy_closed(therapy.machine_id, therapy.id)
+            .await;
+    }
+
     Ok(Json(json!(therapy)))
 }
 

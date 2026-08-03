@@ -96,6 +96,11 @@ pub enum ServerFrame {
     MachineIdentified {
         machine_id: i64,
     },
+    /// Notifies the bridge that its active therapy was closed from the UI.
+    /// The bridge resets its metadata cache and re-sends `TherapySetup`.
+    TherapyClosed {
+        therapy_id: i64,
+    },
     Error {
         message: String,
     },
@@ -251,6 +256,9 @@ pub struct WsHubState {
     /// Catalog used to resolve units for readings.
     pub signal_catalog: Arc<RwLock<SignalCatalog>>,
     browser_subs: BrowserSenders,
+    /// Outbound push channels to bridges, keyed by machine_id. Used to send
+    /// server-initiated frames (e.g. `TherapyClosed`) to the connected bridge.
+    bridge_senders: Arc<RwLock<HashMap<i64, mpsc::Sender<String>>>>,
     /// Latest serial status per bridge_id, stored in-memory.
     pub bridge_statuses: Arc<RwLock<HashMap<i64, BridgeSerialStatusPayload>>>,
     /// Timestamp (epoch ms) del último snapshot por máquina.
@@ -281,6 +289,7 @@ impl WsHubState {
             signal_repo,
             signal_catalog: Arc::new(RwLock::new(SignalCatalog::default())),
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
+            bridge_senders: Arc::new(RwLock::new(HashMap::new())),
             bridge_statuses: Arc::new(RwLock::new(HashMap::new())),
             last_persist_per_machine: Arc::new(RwLock::new(HashMap::new())),
             persistence_interval_secs,
@@ -407,6 +416,17 @@ impl WsHubState {
             }
         }
     }
+
+    /// Notify the bridge of a machine that its active therapy was closed
+    /// (e.g. from the UI). The bridge resets its metadata cache and re-sends
+    /// TherapySetup so the server can create the next session.
+    pub async fn notify_therapy_closed(&self, machine_id: i64, therapy_id: i64) {
+        let payload = serde_json::to_string(&ServerFrame::TherapyClosed { therapy_id }).unwrap_or_default();
+        let senders = self.bridge_senders.read().await;
+        if let Some(tx) = senders.get(&machine_id) {
+            let _ = tx.try_send(payload);
+        }
+    }
 }
 
 /// Pure enrichment: applies the catalog to readings (unit fallback).
@@ -432,57 +452,90 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
     let mut current_machine_id: Option<i64> = None;
     let mut current_bridge_id: Option<i64> = None;
 
+    // Per-connection channel for server-initiated outbound pushes
+    // (e.g. TherapyClosed when a therapy is closed from the UI).
+    let (bridge_tx, mut bridge_rx) = mpsc::channel::<String>(16);
+
     loop {
-        let msg = match ws.recv().await {
-            Some(Ok(Message::Text(text))) => text,
-            Some(Ok(Message::Close(_))) => break,
-            Some(Ok(Message::Ping(payload))) => {
-                let _ = ws.send(Message::Pong(payload)).await;
-                continue;
-            }
-            Some(Ok(Message::Pong(_))) => continue,
-            Some(Err(e)) => {
-                error!("Bridge WS error: {}", e);
-                break;
-            }
-            None => break,
-            _ => continue,
-        };
-
-        let frame: BridgeFrame = match serde_json::from_str(&msg) {
-            Ok(f) => f,
-            Err(e) => {
-                warn!("Invalid bridge frame: {}", e);
-                let err = ServerFrame::Error {
-                    message: format!("Invalid frame: {}", e),
+        tokio::select! {
+            // Incoming frames from the bridge
+            msg = ws.recv() => {
+                let msg = match msg {
+                    Some(Ok(Message::Text(text))) => text,
+                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = ws.send(Message::Pong(payload)).await;
+                        continue;
+                    }
+                    Some(Ok(Message::Pong(_))) => continue,
+                    Some(Err(e)) => {
+                        error!("Bridge WS error: {}", e);
+                        break;
+                    }
+                    None => break,
+                    _ => continue,
                 };
-                let _ = ws
-                    .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                    .await;
-                continue;
-            }
-        };
 
-        let response = handle_bridge_frame(&state, &frame, &mut current_machine_id, &mut current_bridge_id).await;
-
-        match response {
-            Ok(Some(resp_frame)) => {
-                let json = serde_json::to_string(&resp_frame).unwrap();
-                let _ = ws.send(Message::Text(json)).await;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                let err = ServerFrame::Error {
-                    message: e.to_string(),
+                let frame: BridgeFrame = match serde_json::from_str(&msg) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        warn!("Invalid bridge frame: {}", e);
+                        let err = ServerFrame::Error {
+                            message: format!("Invalid frame: {}", e),
+                        };
+                        let _ = ws
+                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
+                            .await;
+                        continue;
+                    }
                 };
-                let _ = ws
-                    .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                    .await;
+
+                let is_machine_identify = matches!(frame, BridgeFrame::MachineIdentify { .. });
+                let response = handle_bridge_frame(&state, &frame, &mut current_machine_id, &mut current_bridge_id).await;
+
+                // Once the bridge identifies a machine, register its outbound
+                // sender so the server can push frames to it (TherapyClosed).
+                // Overwriting on re-identify is harmless.
+                if is_machine_identify {
+                    if let Some(mid) = current_machine_id {
+                        state.bridge_senders.write().await.insert(mid, bridge_tx.clone());
+                        info!("Registered bridge sender for machine {}", mid);
+                    }
+                }
+
+                match response {
+                    Ok(Some(resp_frame)) => {
+                        let json = serde_json::to_string(&resp_frame).unwrap();
+                        let _ = ws.send(Message::Text(json)).await;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        let err = ServerFrame::Error {
+                            message: e.to_string(),
+                        };
+                        let _ = ws
+                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
+                            .await;
+                    }
+                }
+            }
+
+            // Outbound push from the hub to this bridge
+            payload = bridge_rx.recv() => {
+                match payload {
+                    Some(json) => {
+                        if ws.send(Message::Text(json)).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break,
+                }
             }
         }
     }
 
     if let Some(machine_id) = current_machine_id {
+        state.bridge_senders.write().await.remove(&machine_id);
         if let Err(e) = state.machine_repo.set_offline(machine_id).await {
             error!("Failed to set machine {} offline on disconnect: {}", machine_id, e);
         }
