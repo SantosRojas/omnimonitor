@@ -901,6 +901,18 @@ async fn handle_therapy_setup(
             if therapy.started_at.is_none() {
                 state.therapy_repo.ensure_started(therapy.id).await?;
             }
+            // Close any OTHER open therapy of this patient (e.g. on another
+            // machine) so the continued session is the only open one.
+            let closed = state
+                .therapy_repo
+                .close_open_by_patient(patient.id, Some(therapy.id))
+                .await?;
+            if closed > 0 {
+                info!(
+                    "TherapySetup: auto-closed {} other open therapies for patient {} (continuing therapy {})",
+                    closed, patient.id, therapy.id
+                );
+            }
         }
         Some(therapy) => {
             // Different patient on this machine: close the previous session
@@ -910,12 +922,35 @@ async fn handle_therapy_setup(
                 therapy.id, machine_id, therapy.patient_id, patient.id
             );
             state.therapy_repo.update_status(therapy.id, "completed").await?;
+            // Close any open therapy the incoming patient may have elsewhere.
+            let closed = state
+                .therapy_repo
+                .close_open_by_patient(patient.id, None)
+                .await?;
+            if closed > 0 {
+                info!(
+                    "TherapySetup: auto-closed {} open therapies for patient {} before starting a new one",
+                    closed, patient.id
+                );
+            }
             state
                 .therapy_repo
                 .create(patient.id, machine_id, therapy_type, kit, weight)
                 .await?;
         }
         None => {
+            // Close any open therapy the patient may have on other machines
+            // before creating the new one.
+            let closed = state
+                .therapy_repo
+                .close_open_by_patient(patient.id, None)
+                .await?;
+            if closed > 0 {
+                info!(
+                    "TherapySetup: auto-closed {} open therapies for patient {} before starting a new one",
+                    closed, patient.id
+                );
+            }
             state
                 .therapy_repo
                 .create(patient.id, machine_id, therapy_type, kit, weight)

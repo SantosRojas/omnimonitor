@@ -163,6 +163,33 @@ impl TherapyRepo {
         Ok(row)
     }
 
+    /// Close every still-open (active/planned) therapy of a patient, optionally
+    /// excluding one therapy (e.g. the session that is about to be continued).
+    /// Used when a new therapy starts so a patient never keeps two open
+    /// therapies across machines.
+    pub async fn close_open_by_patient(
+        &self,
+        patient_id: i64,
+        exclude_id: Option<i64>,
+    ) -> Result<usize, RepoError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE therapies SET
+                status = 'completed',
+                ended_at = NOW()
+            WHERE patient_id = $1
+              AND status IN ('active', 'planned')
+              AND ($2::bigint IS NULL OR id <> $2)
+            "#,
+        )
+        .bind(patient_id)
+        .bind(exclude_id)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() as usize)
+    }
+
     /// Update therapy metadata (therapy_type, kit, weight, end_weight).
     /// Called from bridge TherapySetup or from the UI for end-of-therapy weight.
     pub async fn update_metadata(
