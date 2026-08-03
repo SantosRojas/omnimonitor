@@ -35,7 +35,7 @@ export function DataTable<T>({
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="h-12 animate-pulse rounded-md bg-gray-100"
+            className="h-12 animate-pulse rounded-md bg-neutral-100 dark:bg-neutral-800"
           />
         ))}
       </div>
@@ -45,16 +45,16 @@ export function DataTable<T>({
   const rows = table.getRowModel().rows;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <table className="min-w-full divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+        <thead className="bg-neutral-50 dark:bg-neutral-900">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((h) => (
                 <th
                   key={h.id}
                   onClick={h.column.getToggleSortingHandler()}
-                  className={`whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 select-none cursor-pointer ${hideSm?.(h.id) ?? ""}`}
+                  className={`whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400 select-none cursor-pointer ${hideSm?.(h.id) ?? ""}`}
                 >
                   <div className="flex items-center gap-1">
                     {h.column.columnDef.header as string}
@@ -69,16 +69,16 @@ export function DataTable<T>({
             </tr>
           ))}
         </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
+        <tbody className="divide-y divide-neutral-100 bg-white dark:divide-neutral-800 dark:bg-neutral-950">
           {rows.map((row) => (
             <tr
               key={row.id}
-              className="transition-colors hover:bg-gray-50/50"
+              className="transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-900/50"
             >
               {row.getVisibleCells().map((cell) => (
                 <td
                   key={cell.id}
-                  className={`whitespace-nowrap px-4 py-3 text-gray-600 ${hideSm?.(cell.column.id) ?? ""}`}
+                  className={`whitespace-nowrap px-4 py-3 text-neutral-600 dark:text-neutral-300 ${hideSm?.(cell.column.id) ?? ""}`}
                 >
                   {cell.column.columnDef.cell
                     ? (cell.column.columnDef.cell as (ctx: unknown) => ReactNode)(
@@ -92,7 +92,7 @@ export function DataTable<T>({
         </tbody>
       </table>
       {rows.length === 0 && emptyMessage && (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+        <div className="flex flex-col items-center justify-center py-16 text-neutral-400 dark:text-neutral-500">
           <Inbox className="mb-3 h-12 w-12" />
           <p className="text-sm font-medium">{emptyMessage}</p>
         </div>

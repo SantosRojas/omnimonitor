@@ -192,7 +192,7 @@ export default function DashboardPage() {
       columnHelper.accessor("patient_name", {
         header: "Patient",
         cell: (i) => (
-          <span className="font-medium text-gray-900">{i.getValue()}</span>
+          <span className="font-medium text-gray-900 dark:text-gray-100">{i.getValue()}</span>
         ),
       }),
       columnHelper.accessor("machine_label", {
@@ -243,7 +243,7 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => navigate(`/dashboard/${row.original.machine_id}/scada`)}
-            className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
+            className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900/70 dark:focus:ring-blue-400"
           >
             View SCADA
           </button>

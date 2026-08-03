@@ -78,7 +78,7 @@ export default function PatientList() {
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
             </div>
           ) : patients.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-neutral-400">
+            <div className="flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
               <User className="mb-2 h-10 w-10" />
               <p className="text-sm font-medium">No patients found</p>
               <p className="text-xs mt-1">
@@ -90,15 +90,15 @@ export default function PatientList() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="bg-neutral-50 dark:bg-neutral-900">
                   <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">DNI</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">Name</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">Age</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">Email</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">Address</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500">Registered</th>
-                    {canEdit && <th className="px-4 py-3 text-right font-medium text-neutral-500">Actions</th>}
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">DNI</th>
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">Name</th>
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">Age</th>
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">Email</th>
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">Address</th>
+                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">Registered</th>
+                    {canEdit && <th className="px-4 py-3 text-right font-medium text-neutral-500 dark:text-neutral-400">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -108,11 +108,11 @@ export default function PatientList() {
                       className="border-b border-neutral-100 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
                     >
                       <td className="px-4 py-3 font-mono text-sm">{patient.external_id}</td>
-                      <td className="px-4 py-3">{patient.name || <span className="text-neutral-400 italic">—</span>}</td>
-                      <td className="px-4 py-3">{patient.age ?? <span className="text-neutral-400">—</span>}</td>
-                      <td className="px-4 py-3">{patient.email || <span className="text-neutral-400">—</span>}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate">{patient.address || <span className="text-neutral-400">—</span>}</td>
-                      <td className="px-4 py-3 text-neutral-500">
+                      <td className="px-4 py-3">{patient.name || <span className="text-neutral-400 italic dark:text-neutral-500">—</span>}</td>
+                      <td className="px-4 py-3">{patient.age ?? <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
+                      <td className="px-4 py-3">{patient.email || <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
+                      <td className="px-4 py-3 max-w-[200px] truncate">{patient.address || <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
+                      <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
                         {new Date(patient.created_at).toLocaleDateString()}
                       </td>
                       {canEdit && (

@@ -139,9 +139,9 @@ export default function MachineHistory() {
       </div>
 
       {isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">Loading...</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">Loading...</CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">No therapies found</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">No therapies found</CardContent></Card>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
@@ -161,11 +161,11 @@ export default function MachineHistory() {
                 {pageData.map((t: any) => (
                   <tr key={t.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
                     <td className="px-4 py-3 font-medium">{t.patient_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500">{t.therapy_type ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500">{t.created_at ? new Date(t.created_at).toLocaleString() : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500">{t.ended_at ? new Date(t.ended_at).toLocaleString() : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500">{t.weight != null ? `${t.weight} kg` : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500">
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.therapy_type ?? "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.created_at ? new Date(t.created_at).toLocaleString() : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.ended_at ? new Date(t.ended_at).toLocaleString() : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.weight != null ? `${t.weight} kg` : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
                       {t.end_weight != null ? (
                         <span className="font-medium text-neutral-700 dark:text-neutral-300">{t.end_weight} kg</span>
                       ) : t.status === "completed" ? (
@@ -194,7 +194,7 @@ export default function MachineHistory() {
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-neutral-400">—</span>
+                        <span className="text-neutral-400 dark:text-neutral-500">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3"><Badge variant={statusVariant[t.status ?? ""] ?? "secondary"}>{t.status ?? "unknown"}</Badge></td>
@@ -205,7 +205,7 @@ export default function MachineHistory() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between text-sm text-neutral-500">
+          <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400">
             <span>{filtered.length} total therapies</span>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
