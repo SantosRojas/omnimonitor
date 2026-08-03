@@ -1,19 +1,70 @@
 import { useState } from "react";
-import { Sun, Moon, Palette, Bell, Globe, Info, Wifi } from "lucide-react";
+import { Sun, Moon, Palette, Bell, Globe, Info, Wifi, Gauge } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Switch } from "../../ui/primitives/switch";
+import { Input } from "../../ui/primitives/input";
+import { Button } from "../../ui/primitives/button";
 import { useThemeStore } from "../../store/theme-store";
 import { cn } from "../../ui/primitives";
+import { useCylinderConfigs } from "../../features/scada/domain/use-cylinder-config";
+import type {
+  CylinderConfig,
+  CylinderPressureType,
+} from "../../features/scada/domain/cylinder-config";
+
+const PRESSURE_LABELS: Record<CylinderPressureType, string> = {
+  arterial: "Arterial",
+  venous: "Venoso",
+  tmp: "TMP",
+  filter: "Filtro",
+  effluent: "Efluente",
+};
+
+const PRESSURE_TYPES = Object.keys(PRESSURE_LABELS) as CylinderPressureType[];
+
+const PRESSURE_FIELDS: (keyof CylinderConfig)[] = ["min", "max", "step"];
+const FIELD_LABELS: Record<string, string> = { min: "Mín", max: "Máx", step: "Paso" };
 
 export default function Settings() {
   const { theme, setTheme } = useThemeStore();
   const [alarmSound, setAlarmSound] = useState(() => localStorage.getItem("alarm-sound") !== "off");
   const [reconnectNotify, setReconnectNotify] = useState(() => localStorage.getItem("reconnect-notify") !== "off");
+  const { configs, updateConfig, resetConfigs } = useCylinderConfigs();
+  const [localValues, setLocalValues] = useState<Record<string, string>>({});
 
   const themes: { key: "light" | "dark"; label: string; icon: typeof Sun }[] = [
     { key: "light", label: "Light", icon: Sun },
     { key: "dark", label: "Dark", icon: Moon },
   ];
+
+  function handlePressureChange(type: CylinderPressureType, field: keyof CylinderConfig, raw: string) {
+    const key = `${type}.${field}`;
+    setLocalValues((prev) => ({ ...prev, [key]: raw }));
+    const num = Number.parseFloat(raw);
+    if (Number.isFinite(num)) {
+      updateConfig(type, field, num);
+    }
+  }
+
+  function handlePressureBlur(type: CylinderPressureType, field: keyof CylinderConfig) {
+    const key = `${type}.${field}`;
+    const raw = localValues[key];
+    if (raw !== undefined) {
+      const num = Number.parseFloat(raw);
+      if (!Number.isFinite(num)) {
+        setLocalValues((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+    }
+  }
+
+  function handleReset() {
+    resetConfigs();
+    setLocalValues({});
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -56,6 +107,66 @@ export default function Settings() {
                 );
               })}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Pressure limits */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gauge className="h-4 w-4" />
+            Límites de presión
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
+            Configurar los límites mínimo, máximo y paso de escala para cada tipo de presión
+            (utilizado en la vista de cilindro graduado). Estos valores se comparten entre
+            todos los clientes conectados.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {PRESSURE_TYPES.map((type) => {
+              const cfg = configs[type];
+              return (
+                <div
+                  key={type}
+                  className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
+                >
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                    {PRESSURE_LABELS[type]}
+                  </p>
+
+                  <div className="space-y-1.5">
+                    {PRESSURE_FIELDS.map((field) => {
+                      const inputKey = `${type}.${field}`;
+                      const displayValue =
+                        inputKey in localValues ? localValues[inputKey] : String(cfg[field]);
+                      return (
+                        <div key={field}>
+                          <label className="text-[10px] uppercase text-neutral-400 dark:text-neutral-500">
+                            {FIELD_LABELS[field]}
+                          </label>
+                          <Input
+                            value={displayValue}
+                            onChange={(e) => handlePressureChange(type, field, e.target.value)}
+                            onBlur={() => handlePressureBlur(type, field)}
+                            className="h-7 text-xs tabular-nums"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4">
+            <Button variant="outline" size="sm" onClick={handleReset}>
+              Restablecer valores predeterminados
+            </Button>
           </div>
         </CardContent>
       </Card>

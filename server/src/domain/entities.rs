@@ -82,6 +82,19 @@ pub struct TherapyListItem {
     pub patient_age: Option<i32>,
 }
 
+/// Cylinder/gauge scale configuration for a pressure type.
+///
+/// min/max/step define the graduated cylinder scale used in the SCADA view.
+/// Shared across all web clients via `cylinder_configs` in PostgreSQL.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct CylinderConfig {
+    pub pressure_type: String,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub step_value: f64,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// OMNI signal catalog entry.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Signal {

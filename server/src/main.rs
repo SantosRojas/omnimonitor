@@ -23,9 +23,10 @@ use tracing::{error, info, warn};
 
 use server::api::{self, AppState};
 use server::infrastructure::postgres::{
-    bridge_repo::BridgeRepo, equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo,
-    patient_repo::PatientRepo, readings_repo::ReadingsRepo, signal_repo::SignalRepo,
-    therapy_repo::TherapyRepo, user_repo::UserRepo, version_repo::VersionRepo,
+    bridge_repo::BridgeRepo, cylinder_config_repo::CylinderConfigRepo,
+    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
+    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
+    user_repo::UserRepo, version_repo::VersionRepo,
 };
 use server::infrastructure::{seed, ws_hub::WsHubState};
 
@@ -269,6 +270,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let therapy_repo = TherapyRepo::new(write_pool.clone());
     let readings_repo = ReadingsRepo::new_with_read_pool(write_pool.clone(), read_pool.clone());
     let signal_repo = SignalRepo::new(write_pool.clone());
+    let cylinder_config_repo = CylinderConfigRepo::new(write_pool.clone());
     let version_repo = VersionRepo::new(write_pool.clone());
     let user_repo = UserRepo::new(write_pool.clone());
 
@@ -365,6 +367,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         therapy_repo,
         readings_repo,
         signal_repo,
+        cylinder_config_repo,
         version_repo,
         user_repo,
         ws_hub,

@@ -1,6 +1,7 @@
 //! PostgreSQL repository implementations.
 
 pub mod bridge_repo;
+pub mod cylinder_config_repo;
 pub mod machine_repo;
 pub mod patient_repo;
 pub mod readings_repo;

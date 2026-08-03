@@ -6,4 +6,5 @@ export type { Reading, ReadingBroadcast, ReadingsReplay } from "./reading";
 export type { WsMessage } from "./ws-message";
 export type { Patient } from "./patient";
 export type { Bridge } from "./bridge";
+export type { CylinderConfig, CylinderPressureType } from "./cylinder-config";
 export type { PaginatedResponse, ApiError } from "./api";

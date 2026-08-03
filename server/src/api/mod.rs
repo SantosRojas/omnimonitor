@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod cylinder_configs;
 pub mod equivalences;
 pub mod dashboards;
 pub mod export;
@@ -25,9 +26,10 @@ use axum::{
 };
 
 use crate::infrastructure::postgres::{
-    bridge_repo::BridgeRepo, equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo,
-    patient_repo::PatientRepo, readings_repo::ReadingsRepo, signal_repo::SignalRepo,
-    therapy_repo::TherapyRepo, user_repo::UserRepo, version_repo::VersionRepo,
+    bridge_repo::BridgeRepo, cylinder_config_repo::CylinderConfigRepo,
+    equivalence_repo::EquivalenceRepo, machine_repo::MachineRepo, patient_repo::PatientRepo,
+    readings_repo::ReadingsRepo, signal_repo::SignalRepo, therapy_repo::TherapyRepo,
+    user_repo::UserRepo, version_repo::VersionRepo,
 };
 use crate::infrastructure::ws_hub::{self, WsHubState};
 
@@ -43,6 +45,7 @@ pub struct AppState {
     pub therapy_repo: TherapyRepo,
     pub readings_repo: ReadingsRepo,
     pub signal_repo: SignalRepo,
+    pub cylinder_config_repo: CylinderConfigRepo,
     pub version_repo: VersionRepo,
     pub user_repo: UserRepo,
     pub bridge_repo: BridgeRepo,
@@ -69,6 +72,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(therapies::detail::router(state.clone()))
         .merge(therapies::history::router(state.clone()))
         .merge(signals::router(state.clone()))
+        .merge(cylinder_configs::router(state.clone()))
         .merge(dashboards::router(state.clone()))
         .merge(export::router(state.clone()))
         .layer(middleware::from_fn_with_state(
