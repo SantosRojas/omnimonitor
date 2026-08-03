@@ -1,9 +1,12 @@
+import type { ReactNode } from "react";
 import { cn } from "../../../ui/primitives";
 import { Card } from "../../../ui/primitives/card";
 
 interface TherapyStateMachineTimelineProps {
   currentState: string;
   therapyActive: boolean;
+  /** Extra actions rendered inside the card below the timeline steps. */
+  footer?: ReactNode;
 }
 
 const states = [
@@ -34,6 +37,7 @@ export function getTherapyStepIndex(currentState: string): number {
 export function TherapyStateMachineTimeline({
   currentState,
   therapyActive,
+  footer,
 }: TherapyStateMachineTimelineProps) {
   const activeIdx = getTherapyStepIndex(currentState);
 
@@ -83,6 +87,8 @@ export function TherapyStateMachineTimeline({
           })}
         </div>
       </div>
+
+      {footer && <div className="mt-3 flex gap-2">{footer}</div>}
     </Card>
   );
 }

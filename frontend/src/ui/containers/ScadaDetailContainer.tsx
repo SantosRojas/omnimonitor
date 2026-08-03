@@ -9,27 +9,13 @@ import { useScadaViewModel } from "../../features/scada/domain/use-scada-view-mo
 import { PageHeader } from "../layouts/PageHeader";
 import { Button } from "../primitives/button";
 import { MachineStatusDot } from "../../features/scada/components/machine-status-dot";
-import { TherapyStateMachine } from "../../features/scada/components/therapy-state-machine";
 import { ScadaLayout } from "../../features/scada/components/scada-layout";
 import type { Machine } from "../../core/types";
 import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
-import type { TherapyState } from "../../features/scada/components/therapy-state-machine";
 import type { ConnectionStatus } from "../../features/scada/components/machine-status-dot";
 
 const machineRepo = new HttpMachineRepo();
 const therapyRepo = new HttpTherapyRepo();
-
-/** Maps the server therapy state name to the TherapyStateMachine union. */
-function toTherapyState(
-  stateName: string,
-  active: boolean,
-  connectionStatus: ConnectionStatus,
-): TherapyState {
-  const name = stateName.toLowerCase();
-  if (active) return name === "paused" ? "paused" : "running";
-  if (name === "completed") return "complete";
-  return connectionStatus === "online" ? "idle" : "error";
-}
 
 export default function ScadaDetailContainer() {
   const { id: machineIdParam } = useParams<{ id: string }>();
@@ -125,20 +111,6 @@ export default function ScadaDetailContainer() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <TherapyStateMachine
-            state={toTherapyState(vm.therapy.stateName, vm.therapy.active, connectionStatus)}
-            patientName={activeTherapy?.patient_name ?? activeTherapy?.patient_external_id ?? undefined}
-            startedAt={activeTherapy?.started_at ?? undefined}
-          />
-          {activeTherapyId && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`/history/${activeTherapyId}`)}
-            >
-              History
-            </Button>
-          )}
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>
             &larr; Back
           </Button>
@@ -151,6 +123,11 @@ export default function ScadaDetailContainer() {
         alarms={machineAlarms}
         onAcknowledge={handleAcknowledge}
         therapySummary={therapySummary}
+        onHistory={
+          activeTherapyId
+            ? () => navigate(`/history/${activeTherapyId}`)
+            : undefined
+        }
       />
     </div>
   );

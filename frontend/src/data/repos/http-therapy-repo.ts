@@ -41,8 +41,8 @@ export class HttpTherapyRepo implements TherapyRepo {
   }
 
   async updateStatus(id: number, status: string): Promise<Therapy> {
-    const { data } = await apiClient.patch<Therapy>(
-      `/therapies/${id}/status`,
+    const { data } = await apiClient.put<Therapy>(
+      `/therapies/${id}`,
       { status },
     );
     return data;

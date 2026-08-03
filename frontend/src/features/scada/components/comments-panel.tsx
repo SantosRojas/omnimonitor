@@ -6,12 +6,10 @@ import { useAuthStore } from "../../../store/auth-store";
 import { Card } from "../../../ui/primitives/card";
 import { Button } from "../../../ui/primitives/button";
 import { Input } from "../../../ui/primitives/input";
-import { ConfirmDialog } from "../../../ui/components/ConfirmDialog";
 import type { TherapyComment } from "../../../core/types";
 
 interface CommentsPanelProps {
   therapyId: number;
-  therapyActive?: boolean;
 }
 
 const therapyRepo = new HttpTherapyRepo();
@@ -22,17 +20,13 @@ const therapyRepo = new HttpTherapyRepo();
  * using omni's existing therapy-comments API client and react-query
  * conventions (see TherapyHistoryPage).
  */
-export function CommentsPanel({
-  therapyId,
-  therapyActive = false,
-}: CommentsPanelProps) {
+export function CommentsPanel({ therapyId }: CommentsPanelProps) {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const canComment = user?.role !== "viewer";
   const isAdmin = user?.role === "admin";
 
   const [commentText, setCommentText] = useState("");
-  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
 
   const { data: comments = [], isLoading } = useQuery<TherapyComment[]>({
     queryKey: ["therapy-comments", therapyId],
@@ -53,18 +47,6 @@ export function CommentsPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["therapy-comments", therapyId] });
       setCommentText("");
-      if (therapyActive) {
-        setCloseDialogOpen(true);
-      }
-    },
-  });
-
-  const closeTherapy = useMutation({
-    mutationFn: () => therapyRepo.updateStatus(therapyId, "completed"),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["therapies"] });
-      queryClient.invalidateQueries({ queryKey: ["therapy-comments", therapyId] });
-      setCloseDialogOpen(false);
     },
   });
 
@@ -75,7 +57,7 @@ export function CommentsPanel({
     },
   });
 
-  const sending = addComment.isPending || deleteComment.isPending || closeTherapy.isPending;
+  const sending = addComment.isPending || deleteComment.isPending;
 
   return (
     <Card className="rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
@@ -136,17 +118,6 @@ export function CommentsPanel({
             <Send className="h-3.5 w-3.5" />
           </Button>
         </div>
-      )}
-
-      {therapyActive && (
-        <ConfirmDialog
-          open={closeDialogOpen}
-          title="Close current therapy?"
-          message="Therapy is still active. Do you want to close it?"
-          onConfirm={() => closeTherapy.mutate()}
-          onCancel={() => setCloseDialogOpen(false)}
-          isLoading={closeTherapy.isPending}
-        />
       )}
     </Card>
   );
