@@ -157,7 +157,9 @@ export function ScadaLayout({
           </div>
         </Card>
 
-        {therapy.id != null && <CommentsPanel therapyId={therapy.id} />}
+        {therapy.id != null && (
+          <CommentsPanel therapyId={therapy.id} therapyActive={therapy.active} />
+        )}
       </div>
       {/* =================== SECOND COLUMN ========================== */}
 
