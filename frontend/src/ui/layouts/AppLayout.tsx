@@ -19,6 +19,7 @@ import {
   Cpu,
   Radio,
   Contact,
+  History,
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { useAuthStore } from "../../store/auth-store";
@@ -27,6 +28,7 @@ import { cn } from "../primitives";
 
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/history", icon: History, label: "History" },
   { to: "/patients", icon: Contact, label: "Patients" },
   { to: "/connections", icon: Cable, label: "Connections" },
   { to: "/profile", icon: User, label: "Profile" },

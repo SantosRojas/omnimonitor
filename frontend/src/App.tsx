@@ -10,11 +10,12 @@ import TherapyHistoryPage from "./ui/containers/TherapyHistoryPage";
 import { useAuthStore } from "./store/auth-store";
 import AdminPanelContainer from "./ui/containers/AdminPanelContainer";
 import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
-import NurseStation from "./features/nurse-station/NurseStation";
+import DashboardPage from "./features/dashboard/DashboardPage";
 import { startWsAdapter } from "./data/ws-adapter";
 import ConnectionMonitor from "./features/connections/ConnectionMonitor";
 import PatientList from "./features/patients/PatientList";
 import MachineHistory from "./features/history/MachineHistory";
+import TherapiesHistoryPage from "./features/history/TherapiesHistoryPage";
 import SignalConfig from "./features/signal-config/SignalConfig";
 import UserProfile from "./features/profile/UserProfile";
 import Settings from "./features/settings/Settings";
@@ -58,7 +59,7 @@ const router = createBrowserRouter([
         children: [
           // Dashboard
           { index: true, element: <Navigate to="/dashboard" replace /> },
-          { path: "dashboard", element: <NurseStation /> },
+          { path: "dashboard", element: <DashboardPage /> },
           { path: "dashboard/therapies", element: <MultiMachineDashboard /> },
           { path: "dashboard/:id/scada", element: <ScadaDetailContainer /> },
 
@@ -67,7 +68,8 @@ const router = createBrowserRouter([
           { path: "machines/:machineId/signals", element: <SignalConfig /> },
           { path: "machines/:machineId", element: <ScadaDetailContainer /> },
 
-          // Therapy history (per therapy ID)
+          // Therapy history (global list + per therapy ID)
+          { path: "history", element: <TherapiesHistoryPage /> },
           { path: "history/:id", element: <TherapyHistoryPage /> },
 
           // Global pages
