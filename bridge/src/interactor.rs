@@ -169,6 +169,7 @@ async fn send_init_query(
     }
 }
 
+#[derive(Debug)]
 enum InitQueryResult {
     Known {
         attributes: Vec<DataAttribute>,
@@ -1480,4 +1481,205 @@ mod tests {
         assert_eq!(read_raw_value(&bytes, 4, DataType::InputNumberSigned), -2147483648);
     }
 
+    // ──────────────────────────────────────────────────────────────
+    //  WS init protocol helpers (register / init_query / store_init)
+    // ──────────────────────────────────────────────────────────────
+
+    fn test_version() -> VersionInfo {
+        VersionInfo {
+            language_id: 1,
+            system_sw: "3.2.1".into(),
+            dss_fw: "1.0.0".into(),
+            dss_hw: "2.0.0".into(),
+            css_fw: "1.5.0".into(),
+            css_hw: "2.1.0".into(),
+            pss_fw: "1.2.3".into(),
+            pss_hw: "3.0.0".into(),
+            language1: "esp".into(),
+            language2: "eng".into(),
+            language3: "por".into(),
+        }
+    }
+
+    fn test_attr() -> DataAttribute {
+        DataAttribute {
+            handle: 1,
+            data_type: DataType::InputNumberUnsigned,
+            size: 2,
+            conversion_factor: 10,
+            label_did: 100,
+            unit_did: 200,
+            signal_id: 5,
+            internal_name: "pressure".into(),
+        }
+    }
+
+    /// send_register forwards the bridge IP and returns the server's bridge_id.
+    #[tokio::test]
+    async fn send_register_returns_bridge_id() {
+        let (tx_readings, mut rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move {
+            send_register("192.168.1.10", &tx_readings, &mut rx_commands).await
+        });
+
+        let frame = rx_frames.recv().await.expect("register frame");
+        match frame {
+            BridgeFrame::Register { ip_address } => assert_eq!(ip_address, "192.168.1.10"),
+            _ => panic!("expected Register frame"),
+        }
+
+        tx_responses
+            .send(ServerFrame::Registered { bridge_id: 42 })
+            .await
+            .unwrap();
+        assert_eq!(task.await.unwrap().unwrap(), 42);
+    }
+
+    /// send_register surfaces a server Error instead of hanging.
+    #[tokio::test]
+    async fn send_register_surfaces_server_error() {
+        let (tx_readings, _rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move {
+            send_register("192.168.1.10", &tx_readings, &mut rx_commands).await
+        });
+
+        tx_responses
+            .send(ServerFrame::Error { message: "boom".into() })
+            .await
+            .unwrap();
+        let err = task.await.unwrap().expect_err("server error must fail");
+        assert!(err.contains("boom"), "error should carry the server message: {err}");
+    }
+
+    /// send_init_query forwards the fingerprint and maps VersionConfig to Known.
+    #[tokio::test]
+    async fn send_init_query_known_version_returns_config() {
+        let (tx_readings, mut rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move {
+            send_init_query("abc123", &tx_readings, &mut rx_commands).await
+        });
+
+        let frame = rx_frames.recv().await.expect("init_query frame");
+        match frame {
+            BridgeFrame::InitQuery { fingerprint } => assert_eq!(fingerprint, "abc123"),
+            _ => panic!("expected InitQuery frame"),
+        }
+
+        let attr = test_attr();
+        tx_responses
+            .send(ServerFrame::VersionConfig {
+                attributes: vec![attr.clone()],
+                dictionary: vec![DictionaryEntry {
+                    dict_id: 200,
+                    text: "mmHg".into(),
+                }],
+            })
+            .await
+            .unwrap();
+
+        match task.await.unwrap().unwrap() {
+            InitQueryResult::Known {
+                attributes,
+                dictionary,
+            } => {
+                assert_eq!(attributes, vec![attr]);
+                assert_eq!(dictionary.len(), 1);
+            }
+            InitQueryResult::Unknown => panic!("expected Known for cached version"),
+        }
+    }
+
+    /// send_init_query maps UnknownVersion to Unknown → the bridge must run
+    /// the full serial init (the whole point of the fingerprint cache).
+    #[tokio::test]
+    async fn send_init_query_unknown_version() {
+        let (tx_readings, mut rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move {
+            send_init_query("def456", &tx_readings, &mut rx_commands).await
+        });
+
+        let frame = rx_frames.recv().await.expect("init_query frame");
+        assert!(matches!(frame, BridgeFrame::InitQuery { .. }));
+
+        tx_responses.send(ServerFrame::UnknownVersion).await.unwrap();
+        assert!(matches!(
+            task.await.unwrap().unwrap(),
+            InitQueryResult::Unknown
+        ));
+    }
+
+    /// send_init_query surfaces a server Error instead of hanging.
+    #[tokio::test]
+    async fn send_init_query_surfaces_server_error() {
+        let (tx_readings, _rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let task = tokio::spawn(async move {
+            send_init_query("ghi789", &tx_readings, &mut rx_commands).await
+        });
+
+        tx_responses
+            .send(ServerFrame::Error { message: "db down".into() })
+            .await
+            .unwrap();
+        let err = task.await.unwrap().expect_err("server error must fail");
+        assert!(err.contains("db down"), "error should carry the server message: {err}");
+    }
+
+    /// send_store_init forwards the full version bundle and returns on Ack.
+    #[tokio::test]
+    async fn send_store_init_returns_on_ack() {
+        let (tx_readings, mut rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let version = test_version();
+        let task = tokio::spawn(async move {
+            send_store_init(&version, &[], &[], &tx_readings, &mut rx_commands).await
+        });
+
+        let frame = rx_frames.recv().await.expect("store_init frame");
+        match frame {
+            BridgeFrame::StoreInit {
+                version: v,
+                attributes,
+                dictionary,
+            } => {
+                assert_eq!(v.system_sw, "3.2.1");
+                assert_eq!(v.fingerprint(), "e807d6c7b17587b8");
+                assert!(attributes.is_empty());
+                assert!(dictionary.is_empty());
+            }
+            _ => panic!("expected StoreInit frame"),
+        }
+
+        tx_responses.send(ServerFrame::Ack).await.unwrap();
+        task.await.unwrap().unwrap();
+    }
+
+    /// send_store_init surfaces a server Error instead of hanging.
+    #[tokio::test]
+    async fn send_store_init_surfaces_server_error() {
+        let (tx_readings, _rx_frames) = mpsc::channel(8);
+        let (tx_responses, mut rx_commands) = mpsc::channel(8);
+
+        let version = test_version();
+        let task = tokio::spawn(async move {
+            send_store_init(&version, &[], &[], &tx_readings, &mut rx_commands).await
+        });
+
+        tx_responses
+            .send(ServerFrame::Error { message: "constraint".into() })
+            .await
+            .unwrap();
+        let err = task.await.unwrap().expect_err("server error must fail");
+        assert!(err.contains("constraint"), "error should carry the server message: {err}");
+    }
 }

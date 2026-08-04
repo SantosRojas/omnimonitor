@@ -220,3 +220,119 @@ pub struct TelemetryReading {
     pub display_value: Option<String>,
     pub phase: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A canonical `VersionInfo` — the fingerprint golden value is tied to
+    /// these exact fields. Change them and `fingerprint_golden_value` must be
+    /// re-derived.
+    fn base_version() -> VersionInfo {
+        VersionInfo {
+            language_id: 1,
+            system_sw: "3.2.1".into(),
+            dss_fw: "1.0.0".into(),
+            dss_hw: "2.0.0".into(),
+            css_fw: "1.5.0".into(),
+            css_hw: "2.1.0".into(),
+            pss_fw: "1.2.3".into(),
+            pss_hw: "3.0.0".into(),
+            language1: "esp".into(),
+            language2: "eng".into(),
+            language3: "por".into(),
+        }
+    }
+
+    /// Same fields always produce the same fingerprint (server cache relies on
+    /// this determinism to skip re-initialization).
+    #[test]
+    fn fingerprint_is_deterministic() {
+        let a = base_version();
+        let b = base_version();
+        assert_eq!(a.fingerprint(), b.fingerprint());
+    }
+
+    /// Golden value: locks the FNV-1a 64-bit output for the canonical version.
+    /// Guards against accidental algorithm or field-order changes that would
+    /// silently invalidate every cached `software_versions` row.
+    #[test]
+    fn fingerprint_golden_value() {
+        assert_eq!(base_version().fingerprint(), "e807d6c7b17587b8");
+    }
+
+    /// Renders as 16 lowercase hex chars (FNV-1a 64-bit canonical form).
+    #[test]
+    fn fingerprint_is_16_lowercase_hex() {
+        let fp = base_version().fingerprint();
+        assert_eq!(fp.len(), 16);
+        assert!(fp.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(fp, fp.to_lowercase());
+    }
+
+    /// Every single field participates: mutating one must change the
+    /// fingerprint. If a field stops being part of the hash, two distinct
+    /// software versions would share a fingerprint and reuse a wrong cache.
+    #[test]
+    fn fingerprint_is_sensitive_to_every_version_field() {
+        let base_fp = base_version().fingerprint();
+
+        let mut language_id = base_version();
+        language_id.language_id = 2;
+        assert_ne!(base_fp, language_id.fingerprint(), "language_id");
+
+        let mut system_sw = base_version();
+        system_sw.system_sw = "3.2.2".into();
+        assert_ne!(base_fp, system_sw.fingerprint(), "system_sw");
+
+        let mut dss_fw = base_version();
+        dss_fw.dss_fw = "9.9.9".into();
+        assert_ne!(base_fp, dss_fw.fingerprint(), "dss_fw");
+
+        let mut dss_hw = base_version();
+        dss_hw.dss_hw = "9.9.9".into();
+        assert_ne!(base_fp, dss_hw.fingerprint(), "dss_hw");
+
+        let mut css_fw = base_version();
+        css_fw.css_fw = "9.9.9".into();
+        assert_ne!(base_fp, css_fw.fingerprint(), "css_fw");
+
+        let mut css_hw = base_version();
+        css_hw.css_hw = "9.9.9".into();
+        assert_ne!(base_fp, css_hw.fingerprint(), "css_hw");
+
+        let mut pss_fw = base_version();
+        pss_fw.pss_fw = "9.9.9".into();
+        assert_ne!(base_fp, pss_fw.fingerprint(), "pss_fw");
+
+        let mut pss_hw = base_version();
+        pss_hw.pss_hw = "9.9.9".into();
+        assert_ne!(base_fp, pss_hw.fingerprint(), "pss_hw");
+
+        let mut language1 = base_version();
+        language1.language1 = "deu".into();
+        assert_ne!(base_fp, language1.fingerprint(), "language1");
+
+        let mut language2 = base_version();
+        language2.language2 = "deu".into();
+        assert_ne!(base_fp, language2.fingerprint(), "language2");
+
+        let mut language3 = base_version();
+        language3.language3 = "deu".into();
+        assert_ne!(base_fp, language3.fingerprint(), "language3");
+    }
+
+    /// The canonical separator is `:` — a version that embeds colons in a
+    /// field must still hash uniquely (defensive; firmware strings are
+    /// currently version-like, but the fingerprint must not silently collide).
+    #[test]
+    fn fingerprint_canonical_representation_is_collision_safe_for_similar_fields() {
+        // "a:b" as system_sw must not hash the same as "a" with "b" shifted
+        // into another field position.
+        let mut v1 = base_version();
+        v1.system_sw = "a:b".into();
+        let mut v2 = base_version();
+        v2.dss_fw = "a:b".into();
+        assert_ne!(v1.fingerprint(), v2.fingerprint());
+    }
+}
