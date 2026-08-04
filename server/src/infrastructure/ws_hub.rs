@@ -1242,7 +1242,7 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                                     replay_window_secs: 60,
                                 };
                                 if let Ok(json) = serde_json::to_string(&replay_event) {
-                                    let _ = browser_tx.send(json);
+                                    let _ = browser_tx.send(json).await;
                                 }
                             }
                             Ok(_) => {
@@ -1269,7 +1269,7 @@ pub async fn handle_browser_connection(mut ws: WebSocket, state: Arc<WsHubState>
                                             ),
                                         };
                                         if let Ok(json) = serde_json::to_string(&fallback) {
-                                            let _ = browser_tx.send(json);
+                                            let _ = browser_tx.send(json).await;
                                         }
                                     }
                                 }
