@@ -60,6 +60,11 @@ struct CyclicalState {
     patient_id_str: String,
     /// Serial number extracted from the `d_serial_number_to_odi` signal.
     serial_number_str: Option<String>,
+    /// True once the bridge observed the previous therapy session end
+    /// (`c_trmt_main_state` == 3 End, or == 0 Preparation). The next
+    /// TherapySetup must signal a brand-new session to the server so stale
+    /// open therapies get closed instead of being continued.
+    pending_new_therapy: bool,
     cycle: u64,
 }
 
@@ -73,6 +78,7 @@ impl CyclicalState {
             control_cache: HashMap::new(),
             patient_id_str: String::new(),
             serial_number_str: None,
+            pending_new_therapy: false,
             cycle: 0,
         }
     }
@@ -620,7 +626,11 @@ fn read_cyclical_values(
 }
 
 /// Build a `TherapySetup` frame from the current metadata cache.
-fn build_therapy_setup(state: &CyclicalState, machine_id: i64) -> BridgeFrame {
+fn build_therapy_setup(
+    state: &CyclicalState,
+    machine_id: i64,
+    new_therapy: bool,
+) -> BridgeFrame {
     let therapy_type = state
         .metadata_cache
         .get("g_therapy_mode_set")
@@ -655,7 +665,21 @@ fn build_therapy_setup(state: &CyclicalState, machine_id: i64) -> BridgeFrame {
         therapy_type,
         kit,
         weight,
+        new_therapy,
     }
+}
+
+/// Returns true when `c_trmt_main_state` marks the previous session as over
+/// (3 = End of therapy) or no session running yet (0 = Preparation). Either
+/// means the next `TherapySetup` must start a brand-new session.
+fn control_state_signals_new_session(state: &CyclicalState) -> bool {
+    state
+        .control_cache
+        .get("c_trmt_main_state")
+        .and_then(|v| v.as_ref())
+        .and_then(|v| v.as_f64())
+        .map(|v| (v - 3.0).abs() < f64::EPSILON || (v - 0.0).abs() < f64::EPSILON)
+        .unwrap_or(false)
 }
 
 /// Tracks whether metadata has changed since the last `TherapySetup` was sent.
@@ -1004,26 +1028,43 @@ pub async fn run_bridge(
 
                 // ── Metadata change detection ──
                 if meta_tracker.has_changed(&state.metadata_cache) {
-                    let therapy_setup = build_therapy_setup(&state, current_machine_id);
+                    // A setup only counts as a genuinely NEW session when the
+                    // bridge observed the previous session end AND a patient is
+                    // identified. An empty patient (first cycle before patient
+                    // is read) must not consume the pending flag.
+                    let new_therapy = state.pending_new_therapy && !state.patient_id_str.is_empty();
+                    let therapy_setup = build_therapy_setup(&state, current_machine_id, new_therapy);
                     tracing::info!(
-                        "[bridge] metadata changed, sending TherapySetup"
+                        "[bridge] metadata changed, sending TherapySetup (new_therapy={new_therapy})"
                     );
                     if tx_readings.send(therapy_setup).await.is_err() {
                         tracing::error!("[bridge] tx_readings closed, stopping");
                         break;
+                    }
+                    if new_therapy {
+                        state.pending_new_therapy = false;
                     }
                     meta_tracker.snapshot(&state.metadata_cache);
                 }
 
                 // ── End-of-therapy detection from control state ──
                 if current_machine_id > 0 {
-                    let is_end_state = state
+                    let main_state = state
                         .control_cache
                         .get("c_trmt_main_state")
                         .and_then(|v| v.as_ref())
-                        .and_then(|v| v.as_f64())
+                        .and_then(|v| v.as_f64());
+                    let is_end_state = main_state
                         .map(|v| (v - 3.0).abs() < f64::EPSILON)
                         .unwrap_or(false);
+
+                    // State 0 (Preparación) or 3 (End) means the previous
+                    // session is over / none running: the next TherapySetup
+                    // must start a brand-new session. Idempotent — repeated
+                    // cycles keep the flag set until a setup consumes it.
+                    if control_state_signals_new_session(&state) {
+                        state.pending_new_therapy = true;
+                    }
 
                     if is_end_state && !therapy_end_sent {
                         tracing::info!(
@@ -1039,6 +1080,10 @@ pub async fn run_bridge(
                             tracing::error!("[bridge] tx_readings closed, stopping");
                             break;
                         }
+                        // The session ended: the next TherapySetup must start a
+                        // brand-new one (this also covers the case where the
+                        // software crashes before the patient disconnects).
+                        state.pending_new_therapy = true;
                         // Resetear metadata cache para forzar un nuevo TherapySetup
                         // cuando el próximo paciente se conecte, aunque tenga los
                         // mismos valores (mismo patient_id, modo, kit, peso).
@@ -1254,7 +1299,7 @@ mod tests {
             Some(Value::Number(serde_json::Number::from_f64(70.5).unwrap())),
         );
 
-        let frame = build_therapy_setup(&state, 1);
+        let frame = build_therapy_setup(&state, 1, true);
         match frame {
             BridgeFrame::TherapySetup {
                 machine_id,
@@ -1262,12 +1307,14 @@ mod tests {
                 therapy_type,
                 kit,
                 weight,
+                new_therapy,
             } => {
                 assert_eq!(machine_id, 1);
                 assert_eq!(patient_id_str, "PAT-001");
                 assert_eq!(therapy_type, Some("HD".to_owned()));
                 assert_eq!(kit, Some("FX100".to_owned()));
                 assert!((weight.unwrap() - 70.5).abs() < f64::EPSILON);
+                assert!(new_therapy);
             }
             _ => panic!("Expected TherapySetup frame"),
         }
@@ -1285,7 +1332,7 @@ mod tests {
             Some(Value::Number(serde_json::Number::from_f64(2.0).unwrap())),
         );
 
-        let frame = build_therapy_setup(&state, 7);
+        let frame = build_therapy_setup(&state, 7, false);
         match frame {
             BridgeFrame::TherapySetup {
                 machine_id,
@@ -1293,12 +1340,14 @@ mod tests {
                 therapy_type,
                 kit,
                 weight,
+                new_therapy,
             } => {
                 assert_eq!(machine_id, 7);
                 assert_eq!(patient_id_str, "PAT-002");
                 assert_eq!(therapy_type, Some("2".to_owned()));
                 assert_eq!(kit, None);
                 assert_eq!(weight, None);
+                assert!(!new_therapy);
             }
             _ => panic!("Expected TherapySetup frame"),
         }
@@ -1308,7 +1357,7 @@ mod tests {
     #[test]
     fn build_therapy_setup_minimal() {
         let state = CyclicalState::new();
-        let frame = build_therapy_setup(&state, 42);
+        let frame = build_therapy_setup(&state, 42, false);
         match frame {
             BridgeFrame::TherapySetup {
                 machine_id,
@@ -1316,18 +1365,67 @@ mod tests {
                 therapy_type,
                 kit,
                 weight,
+                new_therapy,
             } => {
                 assert_eq!(machine_id, 42);
                 assert_eq!(patient_id_str, "");
                 assert_eq!(therapy_type, None);
                 assert_eq!(kit, None);
                 assert_eq!(weight, None);
+                assert!(!new_therapy);
             }
             _ => panic!("Expected TherapySetup frame"),
         }
     }
 
-    /// CyclicalState::load_from_version_config populates caches correctly.
+    /// `pending_new_therapy` lifecycle: starts false; observing `c_trmt_main_state`
+    /// == 3 (End) or == 0 (Preparation) sets it true; an empty patient keeps it
+    /// pending; a setup with a patient consumes it and the frame carries
+    /// `new_therapy: true`.
+    #[test]
+    fn pending_new_therapy_lifecycle() {
+        let mut state = CyclicalState::new();
+        assert!(!state.pending_new_therapy, "starts false");
+
+        // Observing state 3 (End of therapy) signals a new session.
+        state.control_cache.insert(
+            "c_trmt_main_state".to_owned(),
+            Some(Value::Number(serde_json::Number::from_f64(3.0).unwrap())),
+        );
+        assert!(control_state_signals_new_session(&state));
+        if control_state_signals_new_session(&state) {
+            state.pending_new_therapy = true;
+        }
+        assert!(state.pending_new_therapy);
+
+        // Observing state 0 (Preparation) also signals a new session (idempotent).
+        state.control_cache.insert(
+            "c_trmt_main_state".to_owned(),
+            Some(Value::Number(serde_json::Number::from_f64(0.0).unwrap())),
+        );
+        assert!(control_state_signals_new_session(&state));
+
+        // Empty patient: the flag stays pending and a setup must NOT carry
+        // new_therapy=true (guard `pending && !patient_id_str.is_empty()`).
+        let empty_new_therapy = state.pending_new_therapy && !state.patient_id_str.is_empty();
+        assert!(!empty_new_therapy);
+        assert!(state.pending_new_therapy, "empty patient keeps the flag pending");
+
+        // A setup with a patient consumes the flag and carries new_therapy: true.
+        state.patient_id_str = "PAT-REAL".to_owned();
+        let new_therapy = state.pending_new_therapy && !state.patient_id_str.is_empty();
+        assert!(new_therapy);
+        if new_therapy {
+            state.pending_new_therapy = false;
+        }
+        assert!(!state.pending_new_therapy, "flag consumed after a setup with patient");
+
+        let frame = build_therapy_setup(&state, 9, new_therapy);
+        match frame {
+            BridgeFrame::TherapySetup { new_therapy, .. } => assert!(new_therapy),
+            _ => panic!("Expected TherapySetup frame"),
+        }
+    }
     #[test]
     fn load_from_version_config_populates_cache() {
         let mut state = CyclicalState::new();

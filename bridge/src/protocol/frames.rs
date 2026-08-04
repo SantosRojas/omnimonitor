@@ -63,6 +63,10 @@ pub enum BridgeFrame {
         kit: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         weight: Option<f64>,
+        /// True when the bridge observed the previous session end (state 0 or 3)
+        /// before this setup, so the server must close stale therapies and start
+        /// a brand-new one instead of continuing an existing session.
+        new_therapy: bool,
     },
     /// Sent when `c_trmt_main_state == 3` (End of therapy) is detected.
     /// Server closes the active therapy for this machine.
@@ -312,11 +316,13 @@ mod tests {
             therapy_type: Some("HD".into()),
             kit: Some("FX100".into()),
             weight: Some(70.5),
+            new_therapy: true,
         };
         round_trip(&frame, "BridgeFrame::TherapySetup");
         let json = serde_json::to_value(&frame).unwrap();
         assert_eq!(json["type"], "TherapySetup");
         assert_eq!(json["therapy_type"], "HD");
+        assert_eq!(json["new_therapy"], true);
     }
 
     #[test]
@@ -328,10 +334,12 @@ mod tests {
             therapy_type: None,
             kit: None,
             weight: None,
+            new_therapy: false,
         };
         round_trip(&frame, "BridgeFrame::TherapySetup (minimal)");
         let json = serde_json::to_string(&frame).unwrap();
         assert!(!json.contains("therapy_type"), "None fields should be skipped");
+        assert!(json.contains("\"new_therapy\":false"), "new_therapy should be present");
     }
 
     #[test]
