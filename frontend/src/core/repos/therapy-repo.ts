@@ -46,4 +46,7 @@ export interface TherapyRepo {
 
   /** DELETE /therapies/comments/:comment_id */
   deleteComment(commentId: number): Promise<void>;
+
+  /** DELETE /therapies/:id — soft-delete a closed therapy with an audit reason. */
+  deleteTherapy(id: number, reason: string): Promise<void>;
 }

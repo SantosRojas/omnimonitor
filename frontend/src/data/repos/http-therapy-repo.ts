@@ -100,4 +100,8 @@ export class HttpTherapyRepo implements TherapyRepo {
   async deleteComment(commentId: number): Promise<void> {
     await apiClient.delete(`/therapies/comments/${commentId}`);
   }
+
+  async deleteTherapy(id: number, reason: string): Promise<void> {
+    await apiClient.delete(`/therapies/${id}`, { data: { reason } });
+  }
 }

@@ -327,6 +327,71 @@ async fn therapy_update_status_not_found(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn therapy_soft_delete_records_audit_and_hides_from_list(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let (pid, mid) = seed_patient_and_machine(&pool).await;
+    let repo = TherapyRepo::new(pool.clone());
+    let user = UserRepo::new(pool)
+        .create("therapy-del-user", "hash", "admin")
+        .await
+        .unwrap();
+
+    let t = repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    repo.update_status(t.id, "completed").await.unwrap();
+
+    repo.soft_delete(t.id, user.id, "Duplicate entry")
+        .await
+        .unwrap();
+
+    // Hidden from every list surface.
+    assert!(repo.list(None, None, None, None, None).await.unwrap().is_empty());
+    assert!(repo
+        .list_with_patient(None, None, None, None, None)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(repo.list_by_patient(pid).await.unwrap().is_empty());
+    assert!(repo.list_by_machine(mid).await.unwrap().is_empty());
+
+    // Still readable by id with the audit trail intact.
+    let deleted = repo.find_by_id(t.id).await.unwrap().unwrap();
+    assert!(deleted.deleted_at.is_some());
+    assert_eq!(deleted.deleted_by, Some(user.id));
+    assert_eq!(deleted.delete_reason.as_deref(), Some("Duplicate entry"));
+}
+
+#[sqlx::test]
+async fn therapy_soft_delete_rejects_open_therapy(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let (pid, mid) = seed_patient_and_machine(&pool).await;
+    let repo = TherapyRepo::new(pool.clone());
+    let user = UserRepo::new(pool)
+        .create("therapy-del-user2", "hash", "admin")
+        .await
+        .unwrap();
+
+    let t = repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    let err = repo
+        .soft_delete(t.id, user.id, "accidental")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RepoError::Conflict(_)));
+    // Still open and visible.
+    assert_eq!(repo.list(None, None, None, None, None).await.unwrap().len(), 1);
+}
+
+#[sqlx::test]
+async fn therapy_soft_delete_not_found(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = TherapyRepo::new(pool);
+    let err = repo
+        .soft_delete(999_999, 1, "cleanup")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RepoError::NotFound(_)));
+}
+
+#[sqlx::test]
 async fn therapy_update_metadata(pool: PgPool) {
     common::setup_db(&pool).await;
     let (pid, mid) = seed_patient_and_machine(&pool).await;

@@ -83,7 +83,57 @@ impl TherapyRepo {
         Ok(row)
     }
 
-    /// List therapies with optional filters.
+    /// Soft-delete a closed therapy with audit trail.
+    ///
+    /// Only completed/cancelled therapies can be deleted; open therapies are
+    /// refused with `RepoError::Conflict` because deleting them would break
+    /// the one-open-therapy-per-patient invariant.
+    pub async fn soft_delete(
+        &self,
+        id: i64,
+        deleted_by: i64,
+        reason: &str,
+    ) -> Result<(), RepoError> {
+        let deleted = sqlx::query_scalar::<_, bool>(
+            r#"
+            UPDATE therapies SET
+                deleted_at = NOW(),
+                deleted_by = $2,
+                delete_reason = $3
+            WHERE id = $1
+              AND deleted_at IS NULL
+              AND status IN ('completed', 'cancelled')
+            RETURNING true
+            "#,
+        )
+        .bind(id)
+        .bind(deleted_by)
+        .bind(reason)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match deleted {
+            Some(_) => Ok(()),
+            None => {
+                let exists = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM therapies WHERE id = $1)",
+                )
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?;
+
+                if exists {
+                    Err(RepoError::Conflict(
+                        "Cannot delete an open therapy".to_string(),
+                    ))
+                } else {
+                    Err(RepoError::NotFound(format!("Therapy {} not found", id)))
+                }
+            }
+        }
+    }
+
+    /// List therapies with optional filters (excluding soft-deleted).
     pub async fn list(
         &self,
         patient_id: Option<i64>,
@@ -95,7 +145,8 @@ impl TherapyRepo {
         let rows = sqlx::query_as::<_, Therapy>(
             r#"
             SELECT * FROM therapies
-            WHERE ($1::bigint IS NULL OR patient_id = $1)
+            WHERE deleted_at IS NULL
+              AND ($1::bigint IS NULL OR patient_id = $1)
               AND ($2::bigint IS NULL OR machine_id = $2)
               AND ($3::text IS NULL OR status = $3)
               AND ($4::timestamptz IS NULL OR started_at >= $4)
@@ -132,7 +183,8 @@ impl TherapyRepo {
                    p.age AS patient_age
             FROM therapies t
             LEFT JOIN patients p ON p.id = t.patient_id
-            WHERE ($1::bigint IS NULL OR t.patient_id = $1)
+            WHERE t.deleted_at IS NULL
+              AND ($1::bigint IS NULL OR t.patient_id = $1)
               AND ($2::bigint IS NULL OR t.machine_id = $2)
               AND (
                 $3::text IS NULL OR t.status = $3
@@ -239,7 +291,7 @@ impl TherapyRepo {
     /// Used by the TherapySetup handler to find an existing session.
     pub async fn find_active_by_machine(&self, machine_id: i64) -> Result<Option<Therapy>, RepoError> {
         let row = sqlx::query_as::<_, Therapy>(
-            "SELECT * FROM therapies WHERE machine_id = $1 AND status IN ('active', 'planned') ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM therapies WHERE machine_id = $1 AND status IN ('active', 'planned') AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
         )
         .bind(machine_id)
         .fetch_optional(&self.pool)
@@ -251,7 +303,7 @@ impl TherapyRepo {
     /// List therapies for a patient.
     pub async fn list_by_patient(&self, patient_id: i64) -> Result<Vec<Therapy>, RepoError> {
         let rows = sqlx::query_as::<_, Therapy>(
-            "SELECT * FROM therapies WHERE patient_id = $1 ORDER BY created_at DESC",
+            "SELECT * FROM therapies WHERE patient_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
         )
         .bind(patient_id)
         .fetch_all(&self.pool)
@@ -263,7 +315,7 @@ impl TherapyRepo {
     /// List therapies for a machine.
     pub async fn list_by_machine(&self, machine_id: i64) -> Result<Vec<Therapy>, RepoError> {
         let rows = sqlx::query_as::<_, Therapy>(
-            "SELECT * FROM therapies WHERE machine_id = $1 ORDER BY created_at DESC",
+            "SELECT * FROM therapies WHERE machine_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
         )
         .bind(machine_id)
         .fetch_all(&self.pool)

@@ -61,6 +61,9 @@ pub struct Therapy {
     pub weight: Option<f64>,
     pub end_weight: Option<f64>,
     pub created_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub deleted_by: Option<i64>,
+    pub delete_reason: Option<String>,
 }
 
 /// Therapy row enriched for list responses with the patient's external identifier.

@@ -9,13 +9,14 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post, put},
-    Json, Router,
+    routing::{delete, get, post, put},
+    Extension, Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::api::auth::Claims;
 use crate::api::AppState;
 use crate::infrastructure::postgres::RepoError;
 
@@ -25,6 +26,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/therapies", post(create_therapy))
         .route("/therapies/:id", get(get_therapy))
         .route("/therapies/:id", put(update_therapy_status))
+        .route("/therapies/:id", delete(delete_therapy))
         .route("/therapies/:id/metadata", put(update_therapy_metadata))
         .with_state(state)
 }
@@ -58,6 +60,11 @@ pub struct UpdateMetadataRequest {
     pub kit: Option<String>,
     pub weight: Option<f64>,
     pub end_weight: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteTherapyRequest {
+    pub reason: String,
 }
 
 /// GET /therapies
@@ -187,7 +194,47 @@ async fn update_therapy_status(
     Ok(Json(json!(therapy)))
 }
 
-/// PUT /therapies/:id/metadata — update therapy_type, kit, weight.
+/// DELETE /therapies/:id
+///
+/// Soft-deletes a closed therapy with an audit trail (who deleted it and why).
+/// Admin-only: the frontend hides the action for non-admins, but the role is
+/// enforced here too so a crafted request cannot bypass the guard.
+async fn delete_therapy(
+    Extension(claims): Extension<Claims>,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<DeleteTherapyRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    if claims.role != "admin" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({"error": "Insufficient permissions. Required role: admin"})),
+        ));
+    }
+
+    let reason = req.reason.trim();
+    if reason.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Deletion reason is required"})),
+        ));
+    }
+
+    state
+        .therapy_repo
+        .soft_delete(id, claims.sub, reason)
+        .await
+        .map_err(|e| match e {
+            RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),
+            RepoError::Conflict(msg) => (StatusCode::CONFLICT, Json(json!({"error": msg}))),
+            other => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": other.to_string()})),
+            ),
+        })?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
 async fn update_therapy_metadata(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
