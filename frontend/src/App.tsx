@@ -9,7 +9,6 @@ import ScadaDetailContainer from "./ui/containers/ScadaDetailContainer";
 import TherapyHistoryPage from "./ui/containers/TherapyHistoryPage";
 import { useAuthStore } from "./store/auth-store";
 import AdminPanelContainer from "./ui/containers/AdminPanelContainer";
-import MultiMachineDashboard from "./features/dashboard/MultiMachineDashboard";
 import DashboardPage from "./features/dashboard/DashboardPage";
 import { startWsAdapter } from "./data/ws-adapter";
 import ConnectionMonitor from "./features/connections/ConnectionMonitor";
@@ -60,7 +59,6 @@ const router = createBrowserRouter([
           // Dashboard
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: "dashboard", element: <DashboardPage /> },
-          { path: "dashboard/therapies", element: <MultiMachineDashboard /> },
           { path: "dashboard/:id/scada", element: <ScadaDetailContainer /> },
 
           // Machine detail routes
