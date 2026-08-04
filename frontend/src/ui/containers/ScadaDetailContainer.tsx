@@ -9,7 +9,9 @@ import { useScadaViewModel } from "../../features/scada/domain/use-scada-view-mo
 import { PageHeader } from "../layouts/PageHeader";
 import { Button } from "../primitives/button";
 import { MachineStatusDot } from "../../features/scada/components/machine-status-dot";
+import { CloseTherapyButton } from "../../features/scada/components/close-therapy-button";
 import { ScadaLayout } from "../../features/scada/components/scada-layout";
+import { History } from "lucide-react";
 import type { Machine } from "../../core/types";
 import type { ScadaAlarm } from "../../features/scada/components/alarm-panel";
 import type { ConnectionStatus } from "../../features/scada/components/machine-status-dot";
@@ -76,6 +78,12 @@ export default function ScadaDetailContainer() {
       }
     : undefined;
 
+  /* ── Final weight default: serial frame wins, DB therapy weight falls back ─ */
+  const serialWeight =
+    vm.telemetry.info["g_patient_data_weight_set"]?.value ?? null;
+  const defaultEndWeight =
+    serialWeight != null ? Number(serialWeight) : activeTherapy?.weight ?? null;
+
   /* ── Loading state ────────────────────────────────────────── */
   if (machineLoading) {
     return (
@@ -111,6 +119,22 @@ export default function ScadaDetailContainer() {
           />
         </div>
         <div className="flex items-center gap-2">
+          {activeTherapyId != null && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/history/${activeTherapyId}`)}
+              >
+                <History className="h-3.5 w-3.5" />
+                History
+              </Button>
+              <CloseTherapyButton
+                therapyId={activeTherapyId}
+                defaultWeight={defaultEndWeight}
+              />
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>
             &larr; Back
           </Button>
@@ -123,11 +147,6 @@ export default function ScadaDetailContainer() {
         alarms={machineAlarms}
         onAcknowledge={handleAcknowledge}
         therapySummary={therapySummary}
-        onHistory={
-          activeTherapyId
-            ? () => navigate(`/history/${activeTherapyId}`)
-            : undefined
-        }
       />
     </div>
   );

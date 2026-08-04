@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, lazy, Suspense, type ReactNode } from "react";
 import { Card } from "../../../ui/primitives/card";
 import { cn } from "../../../ui/primitives";
-import { Button } from "../../../ui/primitives/button";
 import { RadialGauge } from "./radial-gauge";
 import { PressureCylinder } from "./pressure-cylinder";
 import { FlowIndicator } from "./flow-indicator";
@@ -10,7 +9,6 @@ import { TherapyStateMachineTimeline } from "./therapy-state-machine-timeline";
 import { PatientInfoCard } from "./patient-info-card";
 import { AlarmPanel, type ScadaAlarm } from "./alarm-panel";
 import { CommentsPanel } from "./comments-panel";
-import { CloseTherapyButton } from "./close-therapy-button";
 import {
   PRESSURE_GAUGES,
   FLOW_INDICATORS,
@@ -20,7 +18,7 @@ import {
 import { getNum, getUnit, hasSignal } from "../domain/signal-classifier";
 import { useCylinderConfigs } from "../domain/use-cylinder-config";
 import { preferencesStorage } from "../infrastructure/preferences";
-import { ToggleLeft, ToggleRight, Maximize, Minimize, History } from "lucide-react";
+import { ToggleLeft, ToggleRight, Maximize, Minimize } from "lucide-react";
 import type { ScadaViewModel } from "../domain/scada-view-model";
 
 const ScadaTrendChart = lazy(() =>
@@ -47,8 +45,6 @@ interface ScadaLayoutProps {
   alarms?: ScadaAlarm[];
   onAcknowledge?: (alarmId: string) => void;
   therapySummary?: TherapySummary;
-  /** Navigates to the active therapy history (rendered inside Therapy State). */
-  onHistory?: () => void;
   children?: ReactNode;
 }
 
@@ -68,7 +64,6 @@ export function ScadaLayout({
   alarms = [],
   onAcknowledge,
   therapySummary,
-  onHistory,
   children,
 }: ScadaLayoutProps) {
   const { telemetry, therapy, presentation } = vm;
@@ -376,24 +371,6 @@ export function ScadaLayout({
           <TherapyStateMachineTimeline
             currentState={therapy.stateName}
             therapyActive={therapy.active}
-            footer={
-              <>
-                {therapy.id != null && onHistory && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={onHistory}
-                  >
-                    <History className="h-3.5 w-3.5" />
-                    History
-                  </Button>
-                )}
-                {therapy.id != null && therapy.active && (
-                  <CloseTherapyButton therapyId={therapy.id} className="flex-1" />
-                )}
-              </>
-            }
           />
           <ProcessDiagram pressures={pressures} flows={flows} />
         </div>

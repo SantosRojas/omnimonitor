@@ -1,5 +1,7 @@
 /* ── Public types ─────────────────────────────────────────────── */
 
+import type { ReactNode } from "react";
+
 export interface ConfirmDialogProps {
   /** Whether the dialog is visible. */
   open: boolean;
@@ -7,6 +9,8 @@ export interface ConfirmDialogProps {
   title: string;
   /** Dialog body / description text. */
   message: string;
+  /** Optional extra content rendered between the message and the actions. */
+  children?: ReactNode;
   /** Called when the user confirms the action. */
   onConfirm: () => void;
   /** Called when the user dismisses the dialog. */
@@ -28,6 +32,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
+  children,
   onConfirm,
   onCancel,
   isLoading = false,
@@ -59,6 +64,8 @@ export function ConfirmDialog({
           {title}
         </h2>
         <p className="mt-2 text-sm text-gray-600">{message}</p>
+
+        {children}
 
         <div className="mt-6 flex justify-end gap-3">
           <button
