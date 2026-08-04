@@ -15,22 +15,19 @@ import { wsManager } from "../../data/ws-manager";
 import { useLiveDataStore, type ReadingsBroadcast } from "../../store/live-data-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { DataTable } from "../../ui/components/DataTable";
-import { StatusBadge } from "../../ui/components/StatusBadge";
 import { formatDuration } from "../../core/utils/time";
+import {
+  PRESSURE_GAUGES,
+  FLOW_INDICATORS,
+  PRESSURE_SERIES,
+  FLOW_SERIES,
+} from "../scada/signal-configs";
 import type { Therapy, Machine, Patient } from "../../core/types";
+import type { Reading } from "../../core/types/reading";
 
 const machineRepo = new HttpMachineRepo();
 const therapyRepo = new HttpTherapyRepo();
 const patientRepo = new HttpPatientRepo();
-
-/** Live signal internal_name for each dashboard metric (matches TherapyTable mapping). */
-const SIGNAL_INTERNAL_NAMES = {
-  filter_pressure: "c_press_fp_act",
-  tmp_pressure: "c_press_tmp_act",
-  effluent_pressure: "c_press_ep_act",
-  net_rem_flow: "c_net_rem_flow_act",
-  fs_mid_flow: "c_pump_fs_mid_flow_act",
-} as const;
 
 /** A therapy row enriched with patient/machine info and live readings. */
 interface DashboardTherapyRow {
@@ -38,15 +35,18 @@ interface DashboardTherapyRow {
   machine_id: number;
   patient_name: string;
   machine_label: string;
-  filter_pressure: number | null;
-  tmp_pressure: number | null;
-  effluent_pressure: number | null;
-  net_rem_flow: number | null;
-  fs_mid_flow: number | null;
+  /** All live readings for the machine, resolved by internal_name. */
+  live: Reading[];
+  therapy_type: string | null;
   started_at: string | null;
   elapsed_seconds: number;
-  status: string;
 }
+
+/** Fallback units for the live pressure/flow rows (used when a reading lacks one). */
+const SIGNAL_UNITS: Record<string, string> = {
+  ...Object.fromEntries(PRESSURE_SERIES.map((s) => [s.key, s.unit ?? ""])),
+  ...Object.fromEntries(FLOW_SERIES.map((s) => [s.key, s.unit ?? ""])),
+};
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
@@ -66,11 +66,6 @@ function formatStartTime(iso: string | null | undefined): string {
   }
 }
 
-/** Renders a live reading value, or "—" when absent. */
-function readValue(v: number | null): string {
-  return v != null && Number.isFinite(v) ? v.toFixed(1) : "—";
-}
-
 /** Seconds elapsed since `startedAt`, clamped to zero. */
 function computeElapsedSeconds(startedAt: string | null | undefined): number {
   if (!startedAt) return 0;
@@ -79,16 +74,15 @@ function computeElapsedSeconds(startedAt: string | null | undefined): number {
   return Math.max(0, Math.floor((Date.now() - ms) / 1000));
 }
 
-/** Reads a named live reading for a machine, or null when absent. */
-function liveReading(
-  broadcast: ReadingsBroadcast | undefined,
-  internalName: string,
-): number | null {
-  const reading = broadcast?.readings?.find(
-    (r) => r.internal_name === internalName,
-  );
-  const v = reading?.value;
-  return v != null && Number.isFinite(v) ? v : null;
+/**
+ * Reads a live signal by internal name and formats it as `value unit`,
+ * or "—" when the reading is absent.
+ */
+function formatSignal(readings: Reading[], key: string): string {
+  const r = readings.find((x) => x.internal_name === key);
+  if (!r || r.value === null || r.value === undefined) return "—";
+  const unit = r.unit ?? SIGNAL_UNITS[key] ?? "";
+  return unit ? `${r.value} ${unit}` : String(r.value);
 }
 
 /** Hide the pressure/flow/time columns on narrow viewports. */
@@ -163,7 +157,7 @@ export default function DashboardPage() {
   const rows = useMemo<DashboardTherapyRow[]>(() => {
     return therapies.map((t) => {
       const mid = String(t.machine_id);
-      const live = readings[mid];
+      const live: ReadingsBroadcast | undefined = readings[mid];
       const machine = machineById.get(t.machine_id);
       const patient = patientById.get(t.patient_id);
       return {
@@ -175,14 +169,10 @@ export default function DashboardPage() {
           machine?.label ??
           machine?.serial_number ??
           `Machine ${t.machine_id}`,
-        filter_pressure: liveReading(live, SIGNAL_INTERNAL_NAMES.filter_pressure),
-        tmp_pressure: liveReading(live, SIGNAL_INTERNAL_NAMES.tmp_pressure),
-        effluent_pressure: liveReading(live, SIGNAL_INTERNAL_NAMES.effluent_pressure),
-        net_rem_flow: liveReading(live, SIGNAL_INTERNAL_NAMES.net_rem_flow),
-        fs_mid_flow: liveReading(live, SIGNAL_INTERNAL_NAMES.fs_mid_flow),
+        live: live?.readings ?? [],
+        therapy_type: t.therapy_type ?? null,
         started_at: t.started_at,
         elapsed_seconds: computeElapsedSeconds(t.started_at),
-        status: t.status ?? "unknown",
       };
     });
   }, [therapies, readings, machineById, patientById]);
@@ -198,26 +188,35 @@ export default function DashboardPage() {
       columnHelper.accessor("machine_label", {
         header: "Machine",
       }),
+      columnHelper.accessor("therapy_type", {
+        header: "Therapy Mode",
+        cell: (i) => i.getValue() ?? "—",
+      }),
       columnHelper.display({
         id: "pressures",
-        header: "Pressures (mmHg)",
+        header: "Pressures",
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
-            <span className="block">F: {readValue(row.original.filter_pressure)}</span>
-            <span className="block">TMP: {readValue(row.original.tmp_pressure)}</span>
-            <span className="block">Eff: {readValue(row.original.effluent_pressure)}</span>
+            {PRESSURE_GAUGES.map((g) => (
+              <span key={g.key} className="block whitespace-nowrap">
+                {g.label}: {formatSignal(row.original.live, g.key)}
+              </span>
+            ))}
           </div>
         ),
       }),
       columnHelper.display({
         id: "flows",
-        header: "Flows (mL/min)",
+        header: "Flows",
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
-            <span className="block">Net: {readValue(row.original.net_rem_flow)}</span>
-            <span className="block">FS: {readValue(row.original.fs_mid_flow)}</span>
+            {FLOW_INDICATORS.map((f) => (
+              <span key={f.key} className="block whitespace-nowrap">
+                {f.label}: {formatSignal(row.original.live, f.key)}
+              </span>
+            ))}
           </div>
         ),
       }),
@@ -230,10 +229,6 @@ export default function DashboardPage() {
         cell: ({ row }) => (
           <span className="tabular-nums">{formatDuration(row.original.started_at)}</span>
         ),
-      }),
-      columnHelper.accessor("status", {
-        header: "Status",
-        cell: (i) => <StatusBadge status={i.getValue()} size="sm" />,
       }),
       columnHelper.display({
         id: "actions",
