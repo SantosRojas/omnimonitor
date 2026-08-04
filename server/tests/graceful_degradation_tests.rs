@@ -16,6 +16,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tower::ServiceExt;
 
 use server::infrastructure::postgres::bridge_repo::BridgeRepo;
+use server::infrastructure::postgres::patient_repo::PatientRepo;
+use server::infrastructure::postgres::therapy_repo::TherapyRepo;
 
 mod common;
 
@@ -28,6 +30,22 @@ async fn body_bytes(response: axum::response::Response) -> Vec<u8> {
 /// Deserialize response body as JSON value.
 async fn body_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body_bytes(response).await).unwrap()
+}
+
+/// Create a patient + therapy so the server persists Readings frames.
+/// The server only persists readings while a therapy is active for the
+/// machine (the real bridge sends TherapySetup before Readings).
+async fn seed_active_therapy(pool: &PgPool, machine_id: i64, patient_label: &str) {
+    let patient_repo = PatientRepo::new(pool.clone());
+    let therapy_repo = TherapyRepo::new(pool.clone());
+    let patient = patient_repo
+        .create(patient_label, None, None, None, None)
+        .await
+        .unwrap();
+    therapy_repo
+        .create(patient.id, machine_id, None, None, None)
+        .await
+        .unwrap();
 }
 
 /// Create a test server on a random port + a REST app for queries.
@@ -56,7 +74,7 @@ async fn get_auth_token(app: &axum::Router, username: &str) -> String {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/auth/register")
+                .uri("/api/auth/register")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -76,7 +94,7 @@ async fn get_auth_token(app: &axum::Router, username: &str) -> String {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/auth/login")
+                .uri("/api/auth/login")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -143,11 +161,13 @@ async fn send_machine_identify(
     read: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin),
     bridge_id: i64,
     serial: &str,
+    ip: &str,
 ) -> i64 {
     let identify = serde_json::json!({
         "type": "MachineIdentify",
         "bridge_id": bridge_id,
         "serial_number": serial,
+        "ip_address": ip,
     });
     write
         .send(Message::Text(identify.to_string()))
@@ -175,7 +195,7 @@ async fn create_signal(app: &axum::Router, token: &str, internal_name: &str) -> 
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/signals")
+                .uri("/api/signals")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .header("Authorization", format!("Bearer {}", token))
@@ -203,10 +223,13 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
     // ── Session 1: Connect, identify, send readings ──
     preregister_bridge(&pool, "10.0.0.80").await;
     let (mut write1, mut read1, bridge_id) = bridge_connect_full(&ws_url, "10.0.0.80").await;
-    let machine_id = send_machine_identify(&mut write1, &mut read1, bridge_id, "GD-SN-001").await;
+    let machine_id = send_machine_identify(&mut write1, &mut read1, bridge_id, "GD-SN-001", "10.0.0.80").await;
 
     // Create the signal in the DB (needed for readings FK)
     let signal_id = create_signal(&rest_app, &token, "sig_a").await;
+
+    // Seed an active therapy so readings get persisted
+    seed_active_therapy(&pool, machine_id, "GD-PATIENT").await;
 
     // Send first batch of readings
     let batch1 = serde_json::json!({
@@ -216,7 +239,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T10:00:00Z",
+                "timestamp": 1784541600000_i64,
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "sig_a",
@@ -240,7 +263,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
 
     // ── Session 2: Reconnect, re-identify (same IP, bridge exists), send more readings ──
     let (mut write2, mut read2, _) = bridge_connect_full(&ws_url, "10.0.0.80").await;
-    let machine_id2 = send_machine_identify(&mut write2, &mut read2, bridge_id, "GD-SN-001").await;
+    let machine_id2 = send_machine_identify(&mut write2, &mut read2, bridge_id, "GD-SN-001", "10.0.0.80").await;
     assert_eq!(machine_id2, machine_id, "Same serial should yield same machine_id");
 
     let batch2 = serde_json::json!({
@@ -250,7 +273,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T10:01:00Z",
+                "timestamp": 1784541660000_i64,
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "sig_a",
@@ -274,7 +297,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -321,10 +344,13 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
     // Session 1 — register bridge + identify machine
     preregister_bridge(&pool, "10.0.0.81").await;
     let (mut write, mut read, bridge_id) = bridge_connect_full(&ws_url, "10.0.0.81").await;
-    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "RESTART-SN-001").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "RESTART-SN-001", "10.0.0.81").await;
 
     // Create the signal in the DB
     let signal_id = create_signal(&rest_app, &token, "restart_sig").await;
+
+    // Seed an active therapy so readings get persisted
+    seed_active_therapy(&pool, machine_id, "RESTART-PATIENT").await;
 
     let batch = serde_json::json!({
         "type": "Readings",
@@ -333,7 +359,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T10:00:00Z",
+                "timestamp": 1784541600000_i64,
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "restart_sig",
@@ -354,7 +380,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -388,7 +414,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -422,13 +448,17 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
 
     // Bridge A — connect, register, identify
     let (mut write_a, mut read_a, bridge_a) = bridge_connect_full(&ws_url, "10.0.0.90").await;
-    let machine_a = send_machine_identify(&mut write_a, &mut read_a, bridge_a, "MULTI-SN-A").await;
+    let machine_a = send_machine_identify(&mut write_a, &mut read_a, bridge_a, "MULTI-SN-A", "10.0.0.90").await;
 
     // Bridge B — connect, register, identify
     let (mut write_b, mut read_b, bridge_b) = bridge_connect_full(&ws_url, "10.0.0.91").await;
-    let machine_b = send_machine_identify(&mut write_b, &mut read_b, bridge_b, "MULTI-SN-B").await;
+    let machine_b = send_machine_identify(&mut write_b, &mut read_b, bridge_b, "MULTI-SN-B", "10.0.0.91").await;
 
     assert_ne!(machine_a, machine_b, "Two machines must have different IDs");
+
+    // Seed an active therapy per machine so readings get persisted (isolated)
+    seed_active_therapy(&pool, machine_a, "MULTI-PATIENT-A").await;
+    seed_active_therapy(&pool, machine_b, "MULTI-PATIENT-B").await;
 
     // Send readings for machine A
     let readings_a = serde_json::json!({
@@ -438,7 +468,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T10:00:00Z",
+                "timestamp": 1784541600000_i64,
                 "therapy_id": null,
                 "signal_id": a_sig_id,
                 "internal_name": "a_sig",
@@ -462,7 +492,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T10:00:00Z",
+                "timestamp": 1784541600000_i64,
                 "therapy_id": null,
                 "signal_id": b_sig_id,
                 "internal_name": "b_sig",
@@ -485,7 +515,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_a))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_a))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -512,7 +542,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_b))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_b))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),

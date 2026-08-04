@@ -15,6 +15,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tower::ServiceExt;
 
 use server::infrastructure::postgres::bridge_repo::BridgeRepo;
+use server::infrastructure::postgres::patient_repo::PatientRepo;
+use server::infrastructure::postgres::therapy_repo::TherapyRepo;
 
 mod common;
 
@@ -27,6 +29,22 @@ async fn body_bytes(response: axum::response::Response) -> Vec<u8> {
 /// Deserialize response body as JSON value.
 async fn body_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&body_bytes(response).await).unwrap()
+}
+
+/// Create a patient + therapy so the server persists Readings frames.
+/// The server only persists readings while a therapy is active for the
+/// machine (the real bridge sends TherapySetup before Readings).
+async fn seed_active_therapy(pool: &PgPool, machine_id: i64, patient_label: &str) {
+    let patient_repo = PatientRepo::new(pool.clone());
+    let therapy_repo = TherapyRepo::new(pool.clone());
+    let patient = patient_repo
+        .create(patient_label, None, None, None, None)
+        .await
+        .unwrap();
+    therapy_repo
+        .create(patient.id, machine_id, None, None, None)
+        .await
+        .unwrap();
 }
 
 /// Create a test app and a separate server on a random port.
@@ -60,7 +78,7 @@ async fn get_auth_token(app: &axum::Router, username: &str) -> String {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/auth/register")
+                .uri("/api/auth/register")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -81,7 +99,7 @@ async fn get_auth_token(app: &axum::Router, username: &str) -> String {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/auth/login")
+                .uri("/api/auth/login")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .body(Body::from(
@@ -151,11 +169,13 @@ async fn send_machine_identify(
     read: &mut (impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin),
     bridge_id: i64,
     serial: &str,
+    ip: &str,
 ) -> i64 {
     let identify = serde_json::json!({
         "type": "MachineIdentify",
         "bridge_id": bridge_id,
         "serial_number": serial,
+        "ip_address": ip,
     });
     write
         .send(Message::Text(identify.to_string()))
@@ -183,7 +203,7 @@ async fn create_signal(app: &axum::Router, token: &str, internal_name: &str) -> 
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/signals")
+                .uri("/api/signals")
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .header("Authorization", format!("Bearer {}", token))
@@ -213,10 +233,13 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
     let (mut write, mut read, bridge_id) = bridge_connect_and_register(&ws_url, "10.0.0.50").await;
 
     // ── Step 2: Identify machine to get real machine_id ──
-    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "E2E-SN-001").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "E2E-SN-001", "10.0.0.50").await;
 
     // ── Step 2b: Create a signal in the DB ──
     let signal_id = create_signal(&rest_app, &token, "pressure").await;
+
+    // ── Step 2c: Seed an active therapy so readings get persisted ──
+    seed_active_therapy(&pool, machine_id, "E2E-PATIENT-1").await;
 
     // ── Step 3: Send readings ──
     let readings_frame = serde_json::json!({
@@ -226,7 +249,7 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T12:00:00Z",
+                "timestamp": 1784548800000_i64,
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "pressure",
@@ -250,7 +273,7 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -294,7 +317,7 @@ async fn e2e_heartbeat_keeps_machine_online(pool: PgPool) {
     // Register bridge + identify machine
     preregister_bridge(&pool, "10.0.0.60").await;
     let (mut write, mut read, bridge_id) = bridge_connect_and_register(&ws_url, "10.0.0.60").await;
-    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "HB-SN-001").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "HB-SN-001", "10.0.0.60").await;
 
     // Send a Heartbeat frame with real machine_id
     let heartbeat = serde_json::json!({
@@ -314,7 +337,7 @@ async fn e2e_heartbeat_keeps_machine_online(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/machines/{}", machine_id))
+                .uri(&format!("/api/machines/{}", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -342,10 +365,13 @@ async fn e2e_browser_receives_readings_replay_on_subscribe(pool: PgPool) {
     // Register bridge + identify machine
     preregister_bridge(&pool, "10.0.0.70").await;
     let (mut write, mut read, bridge_id) = bridge_connect_and_register(&ws_url, "10.0.0.70").await;
-    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "REPLAY-SN-001").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "REPLAY-SN-001", "10.0.0.70").await;
 
     // Create a signal in the DB (needed for readings FK and replay query)
     let signal_id = create_signal(&rest_app, &token, "replay_signal").await;
+
+    // Seed an active therapy so readings get persisted (and replayed)
+    seed_active_therapy(&pool, machine_id, "REPLAY-PATIENT").await;
 
     // Send readings
     let readings_frame = serde_json::json!({
@@ -355,7 +381,7 @@ async fn e2e_browser_receives_readings_replay_on_subscribe(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "timestamp": chrono::Utc::now().timestamp_millis(),
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "replay_signal",
@@ -441,11 +467,14 @@ async fn e2e_ip_auth_registered_ip_full_flow(pool: PgPool) {
     let (mut write, mut read, bridge_id) = bridge_connect_and_register(&ws_url, "10.10.10.10").await;
 
     // ── Step 3: Identify machine ──
-    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "IP-AUTH-SN-001").await;
+    let machine_id = send_machine_identify(&mut write, &mut read, bridge_id, "IP-AUTH-SN-001", "10.10.10.10").await;
     assert!(machine_id > 0, "Should get a valid machine_id");
 
     // ── Step 4: Create a signal ──
     let signal_id = create_signal(&rest_app, &token, "ip_auth_signal").await;
+
+    // ── Step 4b: Seed an active therapy so readings get persisted ──
+    seed_active_therapy(&pool, machine_id, "IP-AUTH-PATIENT").await;
 
     // ── Step 5: Send readings with real machine_id ──
     let readings_frame = serde_json::json!({
@@ -455,7 +484,7 @@ async fn e2e_ip_auth_registered_ip_full_flow(pool: PgPool) {
         "readings": [
             {
                 "id": null,
-                "timestamp": "2026-07-20T12:00:00Z",
+                "timestamp": 1784548800000_i64,
                 "therapy_id": null,
                 "signal_id": signal_id,
                 "internal_name": "ip_auth_signal",
@@ -478,7 +507,7 @@ async fn e2e_ip_auth_registered_ip_full_flow(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/dashboards/machine/{}/summary", machine_id))
+                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
