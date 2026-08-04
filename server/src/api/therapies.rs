@@ -112,11 +112,12 @@ async fn create_therapy(
             req.weight,
         )
         .await
-        .map_err(|e| {
-            (
+        .map_err(|e| match e {
+            RepoError::Conflict(msg) => (StatusCode::CONFLICT, Json(json!({"error": msg}))),
+            other => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
+                Json(json!({"error": other.to_string()})),
+            ),
         })?;
 
     Ok((StatusCode::CREATED, Json(json!(therapy))))
@@ -167,6 +168,7 @@ async fn update_therapy_status(
         .await
         .map_err(|e| match e {
             RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),
+            RepoError::Conflict(msg) => (StatusCode::CONFLICT, Json(json!({"error": msg}))),
             other => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": other.to_string()})),

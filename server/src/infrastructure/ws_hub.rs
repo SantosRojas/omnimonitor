@@ -69,6 +69,12 @@ pub enum BridgeFrame {
         kit: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         weight: Option<f64>,
+        /// True when the bridge observed the previous session end before this
+        /// setup: close every still-open therapy of the patient and start a
+        /// brand-new one instead of continuing a stale session. Defaults to
+        /// false so older bridges that omit the field keep the old behavior.
+        #[serde(default)]
+        new_therapy: bool,
     },
     SerialStatus {
         state: String,
@@ -905,6 +911,7 @@ pub async fn handle_bridge_frame(
             therapy_type,
             kit,
             weight,
+            new_therapy,
         } => {
             if let Err(err_frame) = validate_identified_machine(*current_machine_id, *machine_id, "TherapySetup") {
                 return Ok(Some(err_frame));
@@ -917,6 +924,7 @@ pub async fn handle_bridge_frame(
                 therapy_type.as_deref(),
                 kit.as_deref(),
                 *weight,
+                *new_therapy,
             )
             .await?;
 
@@ -977,6 +985,7 @@ async fn handle_therapy_setup(
     therapy_type: Option<&str>,
     kit: Option<&str>,
     weight: Option<f64>,
+    new_therapy: bool,
 ) -> Result<(), RepoError> {
     let patient = match state.patient_repo.find_by_external_id(patient_id_str).await? {
         Some(p) => p,
@@ -996,6 +1005,33 @@ async fn handle_therapy_setup(
         },
         None => None,
     };
+
+    // The bridge observed the previous session end (state 0 or 3): this setup
+    // is a genuinely NEW session. Close every still-open therapy of the patient
+    // (including a stale one left open on this same machine after a crash) and
+    // start fresh, so the new session never continues a stale one.
+    if new_therapy {
+        let closed = state
+            .therapy_repo
+            .close_open_by_patient(patient.id, None)
+            .await?;
+        if closed > 0 {
+            info!(
+                "TherapySetup: auto-closed {} open therapies for patient {} before starting a new one",
+                closed, patient.id
+            );
+        }
+        create_new_therapy(
+            state,
+            patient.id,
+            machine_id,
+            therapy_type.as_deref(),
+            kit,
+            weight,
+        )
+        .await?;
+        return Ok(());
+    }
 
     match state.therapy_repo.find_active_by_machine(machine_id).await? {
         Some(therapy) if therapy.patient_id == patient.id => {
@@ -1040,10 +1076,15 @@ async fn handle_therapy_setup(
                     closed, patient.id
                 );
             }
-            state
-                .therapy_repo
-                .create(patient.id, machine_id, therapy_type.as_deref(), kit, weight)
-                .await?;
+            create_new_therapy(
+                state,
+                patient.id,
+                machine_id,
+                therapy_type.as_deref(),
+                kit,
+                weight,
+            )
+            .await?;
         }
         None => {
             // Close any open therapy the patient may have on other machines
@@ -1058,14 +1099,50 @@ async fn handle_therapy_setup(
                     closed, patient.id
                 );
             }
-            state
-                .therapy_repo
-                .create(patient.id, machine_id, therapy_type.as_deref(), kit, weight)
-                .await?;
+            create_new_therapy(
+                state,
+                patient.id,
+                machine_id,
+                therapy_type.as_deref(),
+                kit,
+                weight,
+            )
+            .await?;
         }
     }
 
     Ok(())
+}
+
+/// Create a new therapy for the patient, closing any open therapy first so
+/// the one-open-therapy-per-patient invariant always holds. Retries once on a
+/// unique-violation race (two setups creating concurrently): the conflicting
+/// open therapy is closed and the create is retried.
+async fn create_new_therapy(
+    state: &WsHubState,
+    patient_id: i64,
+    machine_id: i64,
+    therapy_type: Option<&str>,
+    kit: Option<&str>,
+    weight: Option<f64>,
+) -> Result<(), RepoError> {
+    let mut attempt = 0;
+    loop {
+        match state.therapy_repo.create(patient_id, machine_id, therapy_type, kit, weight).await {
+            Ok(_) => return Ok(()),
+            Err(RepoError::Conflict(_msg)) if attempt == 0 => {
+                attempt += 1;
+                let closed = state.therapy_repo.close_open_by_patient(patient_id, None).await?;
+                if closed > 0 {
+                    info!(
+                        "TherapySetup: race resolved, auto-closed {} open therapies for patient {} before retrying create",
+                        closed, patient_id
+                    );
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 /// Compute deterministic fingerprint (mirrors bridge).

@@ -11,11 +11,14 @@
 use axum::Router;
 use axum::routing::get;
 use sqlx::PgPool;
+use sqlx::migrate::Migrator;
+use std::path::Path;
 use std::sync::Arc;
 
 use server::api::{AppState, build_router};
 use server::infrastructure::postgres::{
     bridge_repo::BridgeRepo,
+    cylinder_config_repo::CylinderConfigRepo,
     equivalence_repo::EquivalenceRepo,
     machine_repo::MachineRepo,
     patient_repo::PatientRepo,
@@ -26,17 +29,19 @@ use server::infrastructure::postgres::{
     version_repo::VersionRepo,
 };
 use server::infrastructure::ws_hub::WsHubState;
-use server::schema::ALL_MIGRATIONS;
 
-/// Apply all embedded migrations to the test database.
-/// Uses the same runner as `server/src/main.rs`.
+/// Apply all migrations to the test database.
+/// Uses the same runner as `server/src/main.rs` (sqlx::Migrator on the
+/// `migrations/` directory).
 pub async fn setup_db(pool: &PgPool) {
-    for migration in ALL_MIGRATIONS {
-        sqlx::raw_sql(migration)
-            .execute(pool)
-            .await
-            .expect("Failed to apply migration in test setup");
-    }
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    let migrator = Migrator::new(dir)
+        .await
+        .expect("Failed to load migrations in test setup");
+    migrator
+        .run(pool)
+        .await
+        .expect("Failed to apply migration in test setup");
 }
 
 /// Create repositories for a test database pool.
@@ -51,6 +56,7 @@ pub fn create_repos(pool: &PgPool) -> RepoBundle {
         user: UserRepo::new(pool.clone()),
         bridge: BridgeRepo::new(pool.clone()),
         equivalence: EquivalenceRepo::new(pool.clone()),
+        cylinder_config: CylinderConfigRepo::new(pool.clone()),
     }
 }
 
@@ -65,6 +71,7 @@ pub struct RepoBundle {
     pub user: UserRepo,
     pub bridge: BridgeRepo,
     pub equivalence: EquivalenceRepo,
+    pub cylinder_config: CylinderConfigRepo,
 }
 
 /// Build a fully-wired Axum router with a test JWT secret.
@@ -81,6 +88,7 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         repos.version.clone(),
         repos.bridge.clone(),
         repos.signal.clone(),
+        repos.equivalence.clone(),
         0, // persistence_interval_secs: 0 = inmediato (comportamiento original)
     ));
     let state = Arc::new(AppState {
@@ -93,6 +101,7 @@ pub async fn build_test_app(pool: PgPool) -> axum::Router {
         therapy_repo: repos.therapy,
         readings_repo: repos.readings,
         signal_repo: repos.signal,
+        cylinder_config_repo: repos.cylinder_config,
         version_repo: repos.version,
         user_repo: repos.user,
         bridge_repo: repos.bridge,

@@ -241,7 +241,9 @@ async fn patient_therapy_count(pool: PgPool) {
     let therapy_repo = TherapyRepo::new(pool.clone());
     let patient = patient_repo.create("COUNT-TEST", None, None, None, None).await.unwrap();
     let machine = machine_repo.upsert_by_serial("SN-COUNT", None, None, None).await.unwrap();
-    therapy_repo.create(patient.id, machine.id, None, None, None).await.unwrap();
+    let first = therapy_repo.create(patient.id, machine.id, None, None, None).await.unwrap();
+    // A patient can only have one open therapy: close the first before a second one.
+    therapy_repo.update_status(first.id, "completed").await.unwrap();
     therapy_repo.create(patient.id, machine.id, Some("HD"), None, None).await.unwrap();
     assert_eq!(patient_repo.therapy_count(patient.id).await.unwrap(), 2);
     assert_eq!(patient_repo.therapy_count(999_999).await.unwrap(), 0);
@@ -285,8 +287,9 @@ async fn therapy_list_filters(pool: PgPool) {
     common::setup_db(&pool).await;
     let (pid, mid) = seed_patient_and_machine(&pool).await;
     let repo = TherapyRepo::new(pool);
-    // Create two therapies
-    repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    // Create two therapies (the first is closed so the patient has only one open).
+    let t1 = repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    repo.update_status(t1.id, "completed").await.unwrap();
     repo.create(pid, mid, Some("PD"), None, None).await.unwrap();
     // List all
     assert_eq!(repo.list(None, None, None, None, None).await.unwrap().len(), 2);
@@ -362,12 +365,51 @@ async fn therapy_list_by_patient_and_machine(pool: PgPool) {
     common::setup_db(&pool).await;
     let (pid, mid) = seed_patient_and_machine(&pool).await;
     let repo = TherapyRepo::new(pool);
-    repo.create(pid, mid, None, None, None).await.unwrap();
+    let t1 = repo.create(pid, mid, None, None, None).await.unwrap();
+    repo.update_status(t1.id, "completed").await.unwrap();
     repo.create(pid, mid, None, None, None).await.unwrap();
     assert_eq!(repo.list_by_patient(pid).await.unwrap().len(), 2);
     assert_eq!(repo.list_by_machine(mid).await.unwrap().len(), 2);
     assert!(repo.list_by_patient(999_999).await.unwrap().is_empty());
     assert!(repo.list_by_machine(999_999).await.unwrap().is_empty());
+}
+
+/// The DB-level invariant (uq_therapies_one_open_per_patient): a patient can
+/// never have two open therapies at once. The second `create` for the same
+/// patient must fail with a Conflict, even on a different machine.
+#[sqlx::test]
+async fn therapy_create_rejects_second_open_for_patient(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let (pid, mid) = seed_patient_and_machine(&pool).await;
+    let repo = TherapyRepo::new(pool);
+    repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    let err = repo.create(pid, mid, Some("PD"), None, None).await.unwrap_err();
+    assert!(matches!(err, RepoError::Conflict(_)));
+    // Still exactly one open therapy for the patient.
+    let all = repo.list_by_patient(pid).await.unwrap();
+    assert_eq!(all.len(), 1);
+    let open: Vec<_> = all
+        .iter()
+        .filter(|t| matches!(t.status.as_deref(), Some("active") | Some("planned")))
+        .collect();
+    assert_eq!(open.len(), 1, "exactly one open therapy must remain");
+}
+
+/// The invariant only restricts OPEN therapies: once the open therapy is
+/// closed (completed), a new one can be created for the same patient.
+#[sqlx::test]
+async fn therapy_open_promotion_still_allows_same_patient_after_close(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let (pid, mid) = seed_patient_and_machine(&pool).await;
+    let repo = TherapyRepo::new(pool);
+    let t = repo.create(pid, mid, Some("HD"), None, None).await.unwrap();
+    // Close it (simulating TherapyEnd or a manual close).
+    let done = repo.update_status(t.id, "completed").await.unwrap();
+    assert_eq!(done.status.as_deref(), Some("completed"));
+    // A new therapy for the same patient is now allowed.
+    let second = repo.create(pid, mid, Some("PD"), None, None).await.unwrap();
+    assert_eq!(second.status.as_deref(), Some("planned"));
+    assert_eq!(repo.list_by_patient(pid).await.unwrap().len(), 2);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -518,7 +560,6 @@ fn make_reading(
         raw_value: Some(value as i64),
         value: Some(value),
         unit: Some("mmHg".into()),
-        display_label: None,
         created_at: chrono::Utc::now(),
     }
 }
@@ -937,6 +978,7 @@ async fn handle_bridge_serial_status_stores_in_memory(pool: PgPool) {
         repos.version,
         repos.bridge,
         repos.signal,
+        repos.equivalence,
         0, // persistence_interval_secs: 0 = inmediato
     );
 
@@ -987,6 +1029,7 @@ async fn handle_bridge_serial_status_before_registration_logs_warning(pool: PgPo
         repos.version,
         repos.bridge,
         repos.signal,
+        repos.equivalence,
         0, // persistence_interval_secs: 0 = inmediato
     );
 
@@ -1012,4 +1055,159 @@ async fn handle_bridge_serial_status_before_registration_logs_warning(pool: PgPo
     // No bridge status should be stored
     let statuses = ws_hub.bridge_statuses.read().await;
     assert!(statuses.is_empty(), "no statuses should be stored without registration");
+}
+
+/// `new_therapy: true` must close a stale open therapy of the same
+/// patient/machine (left 'active' by a crash before TherapyEnd) and start a
+/// brand-new one.
+#[sqlx::test]
+async fn handle_bridge_therapy_setup_new_therapy_closes_stale(pool: PgPool) {
+    use server::infrastructure::ws_hub::{
+        BridgeFrame, WsHubState, handle_bridge_frame,
+    };
+
+    common::setup_db(&pool).await;
+    let repos = common::create_repos(&pool);
+
+    // Seed patient + machine + an ACTIVE therapy (as if a previous session
+    // never received TherapyEnd).
+    let patient = repos
+        .patient
+        .create("NEW-THERAPY-PATIENT", None, None, None, None)
+        .await
+        .unwrap();
+    let machine = repos
+        .machine
+        .upsert_by_serial("NEW-THERAPY-MACHINE", None, None, None)
+        .await
+        .unwrap();
+    let stale = repos
+        .therapy
+        .create(patient.id, machine.id, Some("HD"), None, None)
+        .await
+        .unwrap();
+    let stale = repos.therapy.update_status(stale.id, "active").await.unwrap();
+    assert_eq!(stale.status.as_deref(), Some("active"));
+
+    let ws_hub = WsHubState::new(
+        repos.machine.clone(),
+        repos.patient.clone(),
+        repos.therapy.clone(),
+        repos.readings,
+        repos.version,
+        repos.bridge,
+        repos.signal,
+        repos.equivalence,
+        0, // persistence_interval_secs: 0 = inmediato
+    );
+
+    let frame = BridgeFrame::TherapySetup {
+        machine_id: machine.id,
+        patient_id_str: patient.external_id.clone(),
+        therapy_type: Some("HD".into()),
+        kit: None,
+        weight: None,
+        new_therapy: true,
+    };
+
+    let mut current_machine_id: Option<i64> = Some(machine.id);
+    let mut current_bridge_id: Option<i64> = None;
+
+    let result = handle_bridge_frame(
+        &ws_hub,
+        &frame,
+        &mut current_machine_id,
+        &mut current_bridge_id,
+    )
+    .await;
+
+    assert!(result.is_ok(), "handle_bridge_frame should succeed: {:?}", result);
+
+    // Stale therapy must be closed (completed).
+    let closed = repos.therapy.find_by_id(stale.id).await.unwrap().unwrap();
+    assert_eq!(closed.status.as_deref(), Some("completed"));
+
+    // A new therapy must exist for the patient/machine (and only one open).
+    let all = repos.therapy.list_by_patient(patient.id).await.unwrap();
+    let open: Vec<_> = all
+        .iter()
+        .filter(|t| matches!(t.status.as_deref(), Some("active") | Some("planned")))
+        .collect();
+    assert_eq!(open.len(), 1, "exactly one open therapy should remain");
+    let fresh = &open[0];
+    assert_ne!(fresh.id, stale.id, "the new therapy must differ from the stale one");
+    assert_eq!(fresh.machine_id, machine.id);
+    assert_eq!(fresh.patient_id, patient.id);
+}
+
+/// `new_therapy: false` (bridge restarted mid-session) must keep the existing
+/// same-patient/machine therapy: refresh metadata, do NOT create a duplicate.
+#[sqlx::test]
+async fn handle_bridge_therapy_setup_continuation_no_duplicate(pool: PgPool) {
+    use server::infrastructure::ws_hub::{
+        BridgeFrame, WsHubState, handle_bridge_frame,
+    };
+
+    common::setup_db(&pool).await;
+    let repos = common::create_repos(&pool);
+
+    let patient = repos
+        .patient
+        .create("CONT-PATIENT", None, None, None, None)
+        .await
+        .unwrap();
+    let machine = repos
+        .machine
+        .upsert_by_serial("CONT-MACHINE", None, None, None)
+        .await
+        .unwrap();
+    let existing = repos
+        .therapy
+        .create(patient.id, machine.id, Some("HD"), None, None)
+        .await
+        .unwrap();
+
+    let ws_hub = WsHubState::new(
+        repos.machine.clone(),
+        repos.patient.clone(),
+        repos.therapy.clone(),
+        repos.readings,
+        repos.version,
+        repos.bridge,
+        repos.signal,
+        repos.equivalence,
+        0, // persistence_interval_secs: 0 = inmediato
+    );
+
+    let frame = BridgeFrame::TherapySetup {
+        machine_id: machine.id,
+        patient_id_str: patient.external_id.clone(),
+        therapy_type: Some("HD".into()),
+        kit: Some("FX100".into()),
+        weight: Some(72.0),
+        new_therapy: false,
+    };
+
+    let mut current_machine_id: Option<i64> = Some(machine.id);
+    let mut current_bridge_id: Option<i64> = None;
+
+    let result = handle_bridge_frame(
+        &ws_hub,
+        &frame,
+        &mut current_machine_id,
+        &mut current_bridge_id,
+    )
+    .await;
+
+    assert!(result.is_ok(), "handle_bridge_frame should succeed: {:?}", result);
+
+    // No duplicate: exactly one therapy for the patient, still the same row.
+    let all = repos.therapy.list_by_patient(patient.id).await.unwrap();
+    assert_eq!(all.len(), 1, "continuation must not create a duplicate therapy");
+    assert_eq!(all[0].id, existing.id);
+
+    // Metadata was refreshed on the continued session.
+    let continued = repos.therapy.find_by_id(existing.id).await.unwrap().unwrap();
+    assert_eq!(continued.kit.as_deref(), Some("FX100"));
+    assert_eq!(continued.weight, Some(72.0));
 }
