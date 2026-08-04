@@ -10,9 +10,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/ca
 import { Badge } from "../../ui/primitives/badge";
 import { Input } from "../../ui/primitives/input";
 import { MachineStatusDot } from "../scada/components/machine-status-dot";
-import { TherapyStateMachine } from "../scada/components/therapy-state-machine";
+import {
+  PRESSURE_GAUGES,
+  FLOW_INDICATORS,
+  PRESSURE_SERIES,
+  FLOW_SERIES,
+} from "../scada/signal-configs";
 import { Clock, Timer, User } from "lucide-react";
 import type { Therapy } from "../../core/types/therapy";
+import type { Reading } from "../../core/types/reading";
 import { relativeTime, formatDuration } from "../../core/utils/time";
 
 const therapyRepo = new HttpTherapyRepo();
@@ -20,10 +26,27 @@ const therapyRepo = new HttpTherapyRepo();
 type TherapyWithMeta = Therapy & {
   machine_label: string;
   connection_status: string;
-  pressure: number;
+  liveReadings: Reading[];
   unacked_alarms: number;
   patient_external_id?: string | null;
 };
+
+/** Fallback units for the live pressure/flow rows (used when a reading lacks one). */
+const SIGNAL_UNITS: Record<string, string> = {
+  ...Object.fromEntries(PRESSURE_SERIES.map((s) => [s.key, s.unit ?? ""])),
+  ...Object.fromEntries(FLOW_SERIES.map((s) => [s.key, s.unit ?? ""])),
+};
+
+/**
+ * Reads a live signal by internal name and formats it as `value unit`,
+ * or "—" when the reading is absent.
+ */
+function formatSignal(readings: Reading[], key: string): string {
+  const r = readings.find((x) => x.internal_name === key);
+  if (!r || r.value === null || r.value === undefined) return "—";
+  const unit = r.unit ?? SIGNAL_UNITS[key] ?? "";
+  return unit ? `${r.value} ${unit}` : String(r.value);
+}
 
 const connectionStatuses = ["all", "online", "offline", "error", "unknown"] as const;
 
@@ -46,15 +69,12 @@ export default function MultiMachineDashboard() {
       const mid = String(t.machine_id ?? t.id);
       const status = machineStatuses[mid];
       const machineReadings = readings[mid];
-      const pressure = machineReadings?.readings?.find(
-        (r: any) => r.internal_name?.toLowerCase().includes("press"),
-      )?.value ?? 0;
       return {
         ...t,
         machine_label: t.machine_label ?? `Machine ${mid}`,
         patient_external_id: t.patient_external_id,
         connection_status: status?.status?.status ?? "unknown",
-        pressure,
+        liveReadings: machineReadings?.readings ?? [],
         unacked_alarms: alarms.filter((a) => a.machineId === mid && !a.acknowledged).length,
       };
     });
@@ -136,7 +156,13 @@ export default function MultiMachineDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <TherapyStateMachine state={t.status as any ?? "idle"} patientName={t.patient_external_id ?? undefined} therapyType={t.therapy_type ?? undefined} />
+                {t.therapy_type ? (
+                  <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300">
+                    {t.therapy_type}
+                  </span>
+                ) : (
+                  <span className="text-xs text-neutral-400">Sin modo de terapia</span>
+                )}
                 <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
                   <span className="flex min-w-0 items-center gap-1">
                     <User className="h-3.5 w-3.5 shrink-0" />
@@ -153,8 +179,25 @@ export default function MultiMachineDashboard() {
                     {formatDuration(t.started_at, t.ended_at)}
                   </span>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-sm text-neutral-500">
-                  <span>{t.pressure.toFixed(1)} cmH₂O</span>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  {PRESSURE_GAUGES.map((g) => (
+                    <div key={g.key} className="flex items-baseline justify-between gap-2">
+                      <span className="text-neutral-500 dark:text-neutral-400">{g.label}</span>
+                      <span className="font-mono tabular-nums font-medium text-neutral-800 dark:text-neutral-200">
+                        {formatSignal(t.liveReadings, g.key)}
+                      </span>
+                    </div>
+                  ))}
+                  {FLOW_INDICATORS.map((f) => (
+                    <div key={f.key} className="flex items-baseline justify-between gap-2">
+                      <span className="text-neutral-500 dark:text-neutral-400">{f.label}</span>
+                      <span className="font-mono tabular-nums font-medium text-neutral-800 dark:text-neutral-200">
+                        {formatSignal(t.liveReadings, f.key)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
                   {t.unacked_alarms > 0 && (
                     <Badge variant="danger">{t.unacked_alarms} alarm{t.unacked_alarms > 1 ? "s" : ""}</Badge>
                   )}
