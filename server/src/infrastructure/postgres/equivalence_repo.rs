@@ -87,4 +87,30 @@ impl EquivalenceRepo {
         }
         Ok(())
     }
+
+    /// Resolve a numeric code to its human-readable name via the equivalences
+    /// table (input_value = "signal:code"). Numeric codes are normalized the same
+    /// way the seed writes them (Rust f64 Display), so "4.0" and "4" both resolve.
+    pub async fn resolve_display_name(
+        &self,
+        signal_name: &str,
+        numeric_code: &str,
+    ) -> Result<Option<String>, RepoError> {
+        let normalized = numeric_code
+            .parse::<f64>()
+            .ok()
+            .map(|f| f.to_string())
+            .unwrap_or_else(|| numeric_code.to_owned());
+
+        let input_value = format!("{}:{}", signal_name, normalized);
+
+        let output: Option<String> = sqlx::query_scalar(
+            "SELECT output_value FROM equivalences WHERE input_value = $1",
+        )
+        .bind(&input_value)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(output)
+    }
 }

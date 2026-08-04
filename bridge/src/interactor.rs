@@ -625,7 +625,17 @@ fn build_therapy_setup(state: &CyclicalState, machine_id: i64) -> BridgeFrame {
         .metadata_cache
         .get("g_therapy_mode_set")
         .and_then(|v| v.as_ref())
-        .and_then(|v| v.as_str().map(|s| s.to_owned()));
+        .and_then(|v| match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            // Format numerics like Rust f64 Display ("4.0" → "4") to match the
+            // seed format in server/src/infrastructure/seed.rs, so the server
+            // can resolve the code against the equivalences table.
+            serde_json::Value::Number(n) => n
+                .as_f64()
+                .map(|f| f.to_string())
+                .or_else(|| Some(n.to_string())),
+            _ => None,
+        });
 
     let kit = state
         .metadata_cache
@@ -1258,6 +1268,37 @@ mod tests {
                 assert_eq!(therapy_type, Some("HD".to_owned()));
                 assert_eq!(kit, Some("FX100".to_owned()));
                 assert!((weight.unwrap() - 70.5).abs() < f64::EPSILON);
+            }
+            _ => panic!("Expected TherapySetup frame"),
+        }
+    }
+
+    /// Build TherapySetup when g_therapy_mode_set arrives as a numeric code
+    /// (the device sends 0-12, e.g. 2 = CVVH): the code must be formatted as
+    /// a string instead of being dropped.
+    #[test]
+    fn build_therapy_setup_numeric_mode() {
+        let mut state = CyclicalState::new();
+        state.patient_id_str = "PAT-002".to_owned();
+        state.metadata_cache.insert(
+            "g_therapy_mode_set".to_owned(),
+            Some(Value::Number(serde_json::Number::from_f64(2.0).unwrap())),
+        );
+
+        let frame = build_therapy_setup(&state, 7);
+        match frame {
+            BridgeFrame::TherapySetup {
+                machine_id,
+                patient_id_str,
+                therapy_type,
+                kit,
+                weight,
+            } => {
+                assert_eq!(machine_id, 7);
+                assert_eq!(patient_id_str, "PAT-002");
+                assert_eq!(therapy_type, Some("2".to_owned()));
+                assert_eq!(kit, None);
+                assert_eq!(weight, None);
             }
             _ => panic!("Expected TherapySetup frame"),
         }

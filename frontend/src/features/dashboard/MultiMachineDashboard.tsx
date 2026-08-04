@@ -136,7 +136,7 @@ export default function MultiMachineDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <TherapyStateMachine state={t.status as any ?? "idle"} patientName={t.patient_external_id ?? undefined} />
+                <TherapyStateMachine state={t.status as any ?? "idle"} patientName={t.patient_external_id ?? undefined} therapyType={t.therapy_type ?? undefined} />
                 <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
                   <span className="flex min-w-0 items-center gap-1">
                     <User className="h-3.5 w-3.5 shrink-0" />

@@ -18,6 +18,7 @@ use tracing::{debug, error, info, warn};
 use crate::domain::entities::{Reading, Therapy};
 use crate::infrastructure::postgres::{
     bridge_repo::BridgeRepo,
+    equivalence_repo::EquivalenceRepo,
     machine_repo::MachineRepo,
     patient_repo::PatientRepo,
     readings_repo::ReadingsRepo,
@@ -253,6 +254,7 @@ pub struct WsHubState {
     pub version_repo: VersionRepo,
     pub bridge_repo: BridgeRepo,
     pub signal_repo: SignalRepo,
+    pub equivalence_repo: EquivalenceRepo,
     /// Catalog used to resolve units for readings.
     pub signal_catalog: Arc<RwLock<SignalCatalog>>,
     browser_subs: BrowserSenders,
@@ -277,6 +279,7 @@ impl WsHubState {
         version_repo: VersionRepo,
         bridge_repo: BridgeRepo,
         signal_repo: SignalRepo,
+        equivalence_repo: EquivalenceRepo,
         persistence_interval_secs: u64,
     ) -> Self {
         Self {
@@ -287,6 +290,7 @@ impl WsHubState {
             version_repo,
             bridge_repo,
             signal_repo,
+            equivalence_repo,
             signal_catalog: Arc::new(RwLock::new(SignalCatalog::default())),
             browser_subs: Arc::new(RwLock::new(HashMap::new())),
             bridge_senders: Arc::new(RwLock::new(HashMap::new())),
@@ -979,12 +983,26 @@ async fn handle_therapy_setup(
         None => state.patient_repo.create(patient_id_str, None, None, None, None).await?,
     };
 
+    // The bridge sends g_therapy_mode_set as a numeric code; resolve it to a
+    // human-readable name via the equivalences table before persisting.
+    let therapy_type = match therapy_type {
+        Some(code) => match state
+            .equivalence_repo
+            .resolve_display_name("g_therapy_mode_set", code)
+            .await?
+        {
+            Some(name) => Some(name),
+            None => Some(code.to_owned()),
+        },
+        None => None,
+    };
+
     match state.therapy_repo.find_active_by_machine(machine_id).await? {
         Some(therapy) if therapy.patient_id == patient.id => {
             // Same patient continues the session: refresh metadata only.
             state
                 .therapy_repo
-                .update_metadata(therapy.id, therapy_type, kit, weight, None)
+                .update_metadata(therapy.id, therapy_type.as_deref(), kit, weight, None)
                 .await?;
             // Backfill start time for sessions created before the start-time fix.
             if therapy.started_at.is_none() {
@@ -1024,7 +1042,7 @@ async fn handle_therapy_setup(
             }
             state
                 .therapy_repo
-                .create(patient.id, machine_id, therapy_type, kit, weight)
+                .create(patient.id, machine_id, therapy_type.as_deref(), kit, weight)
                 .await?;
         }
         None => {
@@ -1042,7 +1060,7 @@ async fn handle_therapy_setup(
             }
             state
                 .therapy_repo
-                .create(patient.id, machine_id, therapy_type, kit, weight)
+                .create(patient.id, machine_id, therapy_type.as_deref(), kit, weight)
                 .await?;
         }
     }

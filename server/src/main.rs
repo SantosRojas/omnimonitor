@@ -318,6 +318,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         version_repo.clone(),
         bridge_repo.clone(),
         signal_repo.clone(),
+        equivalence_repo.clone(),
         persistence_interval_secs,
     ));
 
