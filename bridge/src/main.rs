@@ -455,6 +455,17 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serializes tests that read or mutate process-global env vars.
+    /// `std::env::set_var`/`remove_var` affect the whole process, so env-based
+    /// tests must never run concurrently or they corrupt each other.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Guards an env-dependent test body against concurrent env mutation.
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap()
+    }
 
     // ── CLI-only tests (deterministic, no env interference) ──
 
@@ -483,13 +494,8 @@ mod tests {
 
     #[test]
     fn load_config_defaults_with_minimal_cli() {
-        // Sanitize env vars that may leak from parallel env tests
-        for var in ["BRIDGE_BAUD", "BRIDGE_PORT", "SERIAL_MAX_FAILURES",
-                     "BRIDGE_TIMEOUT_SECS", "BRIDGE_WS_URL", "BRIDGE_SRC_ADDR", "BRIDGE_DST_ADDR",
-                     "BRIDGE_CYCLE_INTERVAL"]
-        {
-            unsafe { std::env::remove_var(var); }
-        }
+        // Env tests are serialized via ENV_LOCK, so no env var can leak here.
+        let _guard = lock_env();
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -528,6 +534,7 @@ mod tests {
 
     #[test]
     fn load_config_missing_port_returns_empty() {
+        let _guard = lock_env();
         let args = vec![
             "bridge".to_string(),
             "--ws".to_string(),
@@ -540,6 +547,7 @@ mod tests {
 
     #[test]
     fn load_config_invalid_baud_cli_keeps_current() {
+        let _guard = lock_env();
         let args = vec![
             "bridge".to_string(),
             "--port".to_string(),
@@ -561,7 +569,8 @@ mod tests {
 
     #[test]
     fn load_config_env_overrides_defaults() {
-        // SAFETY: single-threaded test — no concurrent env access
+        let _guard = lock_env();
+        // SAFETY: serialized by ENV_LOCK — no concurrent env access
         unsafe { std::env::set_var("BRIDGE_BAUD", "19200"); }
 
         let args = vec![
@@ -579,6 +588,7 @@ mod tests {
 
     #[test]
     fn load_config_cli_overrides_env() {
+        let _guard = lock_env();
         unsafe { std::env::set_var("BRIDGE_BAUD", "9600"); }
         unsafe { std::env::set_var("BRIDGE_PORT", "COM3"); }
 
@@ -601,6 +611,7 @@ mod tests {
 
     #[test]
     fn load_config_invalid_env_value_ignored() {
+        let _guard = lock_env();
         unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "not-a-number"); }
 
         let args = vec![
@@ -618,6 +629,7 @@ mod tests {
 
     #[test]
     fn load_config_cycle_interval_env_var() {
+        let _guard = lock_env();
         unsafe { std::env::set_var("BRIDGE_CYCLE_INTERVAL", "2000"); }
 
         let args = vec![
@@ -672,6 +684,7 @@ mod tests {
 
     #[test]
     fn load_config_env_and_cli_combined() {
+        let _guard = lock_env();
         unsafe { std::env::set_var("SERIAL_MAX_FAILURES", "3"); }
         unsafe { std::env::set_var("BRIDGE_TIMEOUT_SECS", "5"); }
 
