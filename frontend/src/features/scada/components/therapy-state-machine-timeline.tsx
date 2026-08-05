@@ -17,9 +17,18 @@ const states = [
 ];
 
 /**
- * Maps a server therapy state name to its timeline step index.
- * Same substring mapping as pdms-omni: "prepara" → 0, "conectar" → 1,
- * "terapia" → 2, "fin"/"final" → 3, anything else → -1 (no active step).
+ * Maps a therapy-state value to its timeline step index.
+ *
+ * Two contracts are supported:
+ * 1. Machine-level state names (the bridge's `c_trmt_main_state` vocabulary,
+ *    same substring mapping as pdms-omni): "prepara" → 0, "conectar" → 1,
+ *    "terapia" → 2, "fin"/"final" → 3.
+ * 2. Database-level therapy statuses (what the server currently sends as
+ *    `therapy_state_name` on ReadingsBroadcast): "planned" → 0 (setup done,
+ *    first telemetry not yet seen), "active"/"paused" → 2 (session running),
+ *    "completed"/"cancelled" → 3 (session over).
+ *
+ * Anything else → -1 (no active step).
  */
 export function getTherapyStepIndex(currentState: string): number {
   const stateLower = currentState.toLowerCase();
@@ -27,6 +36,9 @@ export function getTherapyStepIndex(currentState: string): number {
   if (stateLower.includes("prepara")) return 0;
   if (stateLower.includes("conectar")) return 1;
   if (stateLower.includes("fin") || stateLower.includes("final")) return 3;
+  if (stateLower === "planned") return 0;
+  if (stateLower === "active" || stateLower === "paused") return 2;
+  if (stateLower === "completed" || stateLower === "cancelled") return 3;
   return -1;
 }
 

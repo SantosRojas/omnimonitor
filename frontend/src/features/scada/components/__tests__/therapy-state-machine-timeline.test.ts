@@ -24,6 +24,14 @@ describe("getTherapyStepIndex", () => {
     expect(getTherapyStepIndex("finalizado")).toBe(3);
   });
 
+  it("maps database-level therapy statuses to timeline steps", () => {
+    expect(getTherapyStepIndex("planned")).toBe(0);
+    expect(getTherapyStepIndex("active")).toBe(2);
+    expect(getTherapyStepIndex("paused")).toBe(2);
+    expect(getTherapyStepIndex("completed")).toBe(3);
+    expect(getTherapyStepIndex("cancelled")).toBe(3);
+  });
+
   it("returns -1 for states that match no step substring", () => {
     expect(getTherapyStepIndex("")).toBe(-1);
     expect(getTherapyStepIndex("unknown-state")).toBe(-1);

@@ -13,3 +13,7 @@ node_modules/
 # CodeGraph local index
 .codegraph/
 
+# Bridge build artifacts (Windows)
+bridge/*.exe
+bridge/*.zip
+
