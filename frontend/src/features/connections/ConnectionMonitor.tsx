@@ -1,12 +1,16 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
+import { wsManager } from "../../data/ws-manager";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useBridgeStatusStore } from "../../store/bridge-status-store";
+import { useScadaStore, type TelemetryReading } from "../scada/domain/scada-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Badge } from "../../ui/primitives/badge";
 import { cn } from "../../ui/primitives";
 import { MachineStatusDot } from "../scada/components/machine-status-dot";
+import { PRESSURE_GAUGES, FLOW_INDICATORS } from "../scada/signal-configs";
 import type { Machine } from "../../core/types/machine";
 
 const machineRepo = new HttpMachineRepo();
@@ -38,20 +42,52 @@ const wsStateBadge: Record<string, "success" | "secondary" | "warning"> = {
   reconnecting: "warning",
 };
 
+/** Formats a live reading as `value unit`, or "—" when absent. */
+function formatReading(r: TelemetryReading | undefined): string {
+  if (!r || r.value === null || r.value === undefined) return "—";
+  return r.unit ? `${r.value} ${r.unit}` : String(r.value);
+}
+
 export default function ConnectionMonitor() {
   const machineStatuses = useMachineStatusStore((s) => s.machines);
   const bridgeStatuses = useBridgeStatusStore((s) => s.bridges);
+  // Classified per-machine telemetry (pressures/flows) fed by the WS adapter.
+  const scadaMachines = useScadaStore((s) => s.machines);
 
   const { data: machines, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["machines"],
     queryFn: () => machineRepo.list(),
   });
 
+  // Subscribe to live broadcasts for every registered machine — not just the
+  // ones with an active therapy — so pre/post-therapy phases are observable.
+  // The effect diffs against the previous set so refetches don't churn
+  // Subscribe/Unsubscribe on unchanged machines (same pattern as DashboardPage).
+  useEffect(() => {
+    const prev = new Set<string>();
+    const sync = () => {
+      const current = new Set((machines ?? []).map((m) => String(m.id)));
+      for (const id of current) {
+        if (!prev.has(id)) wsManager.subscribeMachine(id);
+      }
+      for (const id of prev) {
+        if (!current.has(id)) wsManager.unsubscribeMachine(id);
+      }
+      prev.clear();
+      for (const id of current) prev.add(id);
+    };
+    sync();
+    return () => {
+      for (const id of prev) wsManager.unsubscribeMachine(id);
+      prev.clear();
+    };
+  }, [machines]);
+
   const rows = (machines ?? []).map((m: Machine) => {
     const live = machineStatuses[String(m.id)];
     const status = live?.status?.status ?? m.status ?? "unknown";
     const lastSeen = live?.status?.last_seen_at ?? m.last_seen_at;
-    return { ...m, liveStatus: status, lastSeen };
+    return { ...m, liveStatus: status, lastSeen, telemetry: scadaMachines[String(m.id)] };
   });
 
   const bridgeEntries = Object.entries(bridgeStatuses);
@@ -136,6 +172,8 @@ export default function ConnectionMonitor() {
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Machine</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Serial</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Status</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">Pressures</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">Flows</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Last Seen</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500">Bridge Version</th>
               </tr>
@@ -149,6 +187,24 @@ export default function ConnectionMonitor() {
                     <div className="flex items-center gap-2">
                       <MachineStatusDot status={m.liveStatus as any} />
                       <Badge variant={statusBadgeVariant[m.liveStatus] ?? "secondary"}>{m.liveStatus}</Badge>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-0.5 whitespace-nowrap">
+                      {PRESSURE_GAUGES.map((g) => (
+                        <span key={g.key} className="block">
+                          {g.label}: {formatReading(m.telemetry?.pressures[g.key])}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="space-y-0.5 whitespace-nowrap">
+                      {FLOW_INDICATORS.map((f) => (
+                        <span key={f.key} className="block">
+                          {f.label}: {formatReading(m.telemetry?.flows[f.key])}
+                        </span>
+                      ))}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-neutral-500">
