@@ -1,0 +1,11 @@
+{
+  "relative": {
+    "now": "just now",
+    "minute_one": "{{count}}m ago",
+    "minute_other": "{{count}}m ago",
+    "hour_one": "{{count}}h ago",
+    "hour_other": "{{count}}h ago",
+    "day_one": "{{count}}d ago",
+    "day_other": "{{count}}d ago"
+  }
+}
