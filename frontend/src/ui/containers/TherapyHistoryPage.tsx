@@ -18,16 +18,6 @@ import { Button } from "../primitives/button";
 import { Input } from "../primitives/input";
 import { Badge } from "../primitives/badge";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
-import {
   BarChart3,
   Table2,
   MessageSquare,
@@ -35,8 +25,8 @@ import {
   Trash2,
   Send,
 } from "lucide-react";
-import { PRESSURE_SERIES, FLOW_SERIES, buildSignalDisplayMap, signalDisplayName, type SeriesConfig } from "../../features/scada/signal-configs";
-import { ChartTooltip } from "../../features/scada/components/chart-tooltip";
+import { PRESSURE_SERIES, FLOW_SERIES, buildSignalDisplayMap, signalDisplayName } from "../../features/scada/signal-configs";
+import { HistoryChart } from "../../features/history/HistoryChart";
 import { DataTable } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
@@ -144,6 +134,13 @@ export default function TherapyHistoryPage() {
     staleTime: 60_000,
   });
   const signalDisplayMap = useMemo(() => buildSignalDisplayMap(signals), [signals]);
+  const signalUnitMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of signals) {
+      if (s.internal_name && s.unit) m[s.internal_name] = s.unit;
+    }
+    return m;
+  }, [signals]);
 
   // ── Unique signal options for the filter dropdown ───────────
   const signalOptions = useMemo(() => {
@@ -233,56 +230,6 @@ export default function TherapyHistoryPage() {
     const url = `/api/export/readings?therapy_id=${therapyId}&format=csv`;
     window.open(url, "_blank");
   }, [therapyId]);
-
-  // ── Chart rendering helper ────────────────────────────────
-  const renderChart = (title: string, series: SeriesConfig[], data: Record<string, unknown>[]) => {
-    if (data.length === 0) {
-      return (
-        <Card>
-          <CardContent className="flex flex-col items-center py-12 text-neutral-400">
-            <BarChart3 className="mb-2 h-8 w-8" />
-            <p className="text-sm">No data for {title.toLowerCase()}</p>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    const unitMap = Object.fromEntries(series.map((s) => [s.key, s.unit ?? ""]));
-
-    return (
-      <Card>
-        <CardContent className="p-4">
-          <h3 className="mb-3 text-sm font-medium text-neutral-700 dark:text-neutral-300">
-            {title}
-          </h3>
-          <div style={{ width: "100%", height: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} vertical={false} />
-                <XAxis dataKey="timeOnly" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} domain={["auto", "auto"]} />
-                <Tooltip
-                  content={<ChartTooltip unitMap={unitMap} labelClassName="font-bold" />}
-                />
-                <Legend />
-                {series.map((s) => (
-                  <Line
-                    key={s.key}
-                    type="monotone"
-                    dataKey={s.key}
-                    stroke={s.color}
-                    name={s.name}
-                    dot={false}
-                    strokeWidth={2}
-                  />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
 
   // ── Loading ────────────────────────────────────────────────
   if (historyLoading && historyRows.length === 0) {
@@ -427,8 +374,20 @@ export default function TherapyHistoryPage() {
       {/* ── Charts ───────────────────────────────────── */}
       {showCharts && (
         <div className="grid gap-4 md:grid-cols-2">
-          {renderChart("Pressures", PRESSURE_SERIES, chartData)}
-          {renderChart("Flows", FLOW_SERIES, chartData)}
+          <HistoryChart
+            title="Pressures"
+            data={chartData}
+            series={PRESSURE_SERIES}
+            displayNameMap={signalDisplayMap}
+            unitMap={signalUnitMap}
+          />
+          <HistoryChart
+            title="Flows"
+            data={chartData}
+            series={FLOW_SERIES}
+            displayNameMap={signalDisplayMap}
+            unitMap={signalUnitMap}
+          />
         </div>
       )}
 

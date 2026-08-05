@@ -15,6 +15,10 @@
   --color-scada-danger: #ef4444;
   --color-scada-info: #3b82f6;
 
+  /* Generic UI colors */
+  --color-primary: #2563eb;
+  --color-muted: #e5e7eb;
+
   /* Signal-specific colors */
   --color-press-ap: #ef4444;
   --color-press-vp: #3b82f6;
@@ -54,6 +58,8 @@
 
 .dark {
   /* Same dark palette as @theme */
+  --color-primary: #60a5fa;
+  --color-muted: #334155;
   --color-scada-bg: #0a0e14;
   --color-scada-surface: #131820;
   --color-scada-card: #1a212c;
