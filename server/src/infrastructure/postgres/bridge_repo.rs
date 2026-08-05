@@ -69,6 +69,9 @@ impl BridgeRepo {
 
     /// Create a new bridge with the given IP address and optional label.
     /// Returns the created bridge.
+    ///
+    /// Returns `RepoError::Conflict` if the ip_address already exists
+    /// (UNIQUE constraint `bridges_ip_address_key`).
     pub async fn create(
         &self,
         ip: &str,
@@ -84,7 +87,15 @@ impl BridgeRepo {
         .bind(ip)
         .bind(label)
         .fetch_one(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::Database(db_err)
+                if db_err.constraint() == Some("bridges_ip_address_key") =>
+            {
+                RepoError::Conflict(format!("Bridge with IP {ip} already exists"))
+            }
+            other => RepoError::from(other),
+        })?;
 
         Ok(row)
     }

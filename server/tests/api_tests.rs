@@ -982,6 +982,119 @@ async fn export_readings_json_empty(pool: PgPool) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+//  Bridges admin API tests
+// ════════════════════════════════════════════════════════════════════════
+
+#[sqlx::test]
+async fn bridges_admin_create_duplicate_ip_returns_conflict(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+    let payload = serde_json::json!({"ip_address": "10.0.0.50", "label": "RPi-ICU-3"}).to_string();
+
+    let create = |app: axum::Router| {
+        app.oneshot(
+            Request::builder()
+                .uri("/api/admin/bridges")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(payload.clone()))
+                .unwrap(),
+        )
+    };
+
+    // First creation succeeds
+    let res1 = create(app.clone()).await.unwrap();
+    assert_eq!(res1.status(), StatusCode::CREATED);
+    let body: Value = body_json(res1).await;
+    assert_eq!(body["ip_address"], "10.0.0.50");
+    assert_eq!(body["authorized"], true);
+
+    // Duplicate IP → 409 Conflict
+    let res2 = create(app).await.unwrap();
+    assert_eq!(res2.status(), StatusCode::CONFLICT);
+    let err: Value = body_json(res2).await;
+    assert!(err["error"].as_str().unwrap().contains("already exists"));
+}
+
+#[sqlx::test]
+async fn bridges_admin_update_and_delete(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+
+    // Create
+    let create_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/bridges")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"ip_address": "10.0.0.60", "label": "RPi-ER"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(create_res.status(), StatusCode::CREATED);
+    let created: Value = body_json(create_res).await;
+    let id = created["id"].as_i64().unwrap();
+
+    // PATCH label + deauthorize
+    let patch_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/api/admin/bridges/{}", id))
+                .method(Method::PATCH)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"label": "RPi-ER-2", "authorized": false}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(patch_res.status(), StatusCode::OK);
+    let patched: Value = body_json(patch_res).await;
+    assert_eq!(patched["label"], "RPi-ER-2");
+    assert_eq!(patched["authorized"], false);
+
+    // DELETE
+    let delete_res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/api/admin/bridges/{}", id))
+                .method(Method::DELETE)
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(delete_res.status(), StatusCode::NO_CONTENT);
+
+    // GET list no longer contains it
+    let list_res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/bridges")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list: Value = body_json(list_res).await;
+    assert!(list.as_array().unwrap().is_empty());
+}
+
+// ════════════════════════════════════════════════════════════════════════
 //  Health check makes sure basic routing works
 // ════════════════════════════════════════════════════════════════════════
 

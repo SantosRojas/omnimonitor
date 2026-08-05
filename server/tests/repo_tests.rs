@@ -946,9 +946,9 @@ async fn bridge_create_duplicate_ip(pool: PgPool) {
     let repo = BridgeRepo::new(pool);
     repo.create("10.0.0.50", None).await.unwrap();
     let err = repo.create("10.0.0.50", None).await.unwrap_err();
-    // BridgeRepo::create doesn't catch unique violations explicitly,
-    // so sqlx errors surface as RepoError::Database
-    assert!(matches!(err, RepoError::Database(_)));
+    // BridgeRepo::create maps the UNIQUE violation (bridges_ip_address_key)
+    // to RepoError::Conflict so the API can return HTTP 409.
+    assert!(matches!(err, RepoError::Conflict(_)));
 }
 
 #[sqlx::test]
