@@ -1,5 +1,12 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { relativeTime, formatDuration } from "../time";
+import { initI18n } from "../../../i18n";
+
+beforeAll(() => {
+  // relativeTime now resolves the en catalog ("just now", "5m ago", ...).
+  // test-setup.ts also inits i18n globally; this call is idempotent.
+  initI18n({ lng: "en" });
+});
 
 const NOW = new Date("2026-01-01T12:00:00Z");
 

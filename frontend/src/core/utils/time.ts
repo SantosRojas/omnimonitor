@@ -1,3 +1,5 @@
+import { i18n } from "../../i18n";
+
 /** Human-friendly relative time for a timestamp: "just now", "5m ago", "2h ago", "3d ago". */
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -5,16 +7,16 @@ export function relativeTime(iso: string | null | undefined): string {
   if (Number.isNaN(ms)) return "—";
 
   const diffSeconds = Math.max(0, Math.floor((Date.now() - ms) / 1000));
-  if (diffSeconds < 60) return "just now";
+  if (diffSeconds < 60) return i18n.t("relative.now");
 
   const minutes = Math.floor(diffSeconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return i18n.t("relative.minute", { count: minutes });
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return i18n.t("relative.hour", { count: hours });
 
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return i18n.t("relative.day", { count: days });
 }
 
 /**
