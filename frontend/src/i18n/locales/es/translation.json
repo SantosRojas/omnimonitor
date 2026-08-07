@@ -71,6 +71,8 @@
     "somethingWentWrong": "Algo salió mal",
     "unexpectedMessage": "Ocurrió un error inesperado. Por favor intenta de nuevo.",
     "details": "Detalles del error",
+    "loadMachineFailed": "No se pudo cargar la máquina",
+    "machineUnreachable": "La máquina \"{{id}}\" no se pudo encontrar o no está disponible.",
     "retry": "Reintentar"
   },
   "status": {
@@ -139,6 +141,11 @@
   "admin": {
     "title": "Panel de administración",
     "description": "Gestiona usuarios, señales, equivalencias, puentes y máquinas.",
+    "users": "Usuarios",
+    "signals": "Señales",
+    "equivalences": "Equivalencias",
+    "bridges": "Puentes",
+    "machines": "Máquinas",
     "username": "Usuario",
     "password": "Contraseña",
     "role": "Rol",
@@ -150,6 +157,9 @@
     "deleteUser": "Eliminar usuario",
     "deleteUserMessage": "¿Está seguro de que desea eliminar al usuario \"{{username}}\"? Esta acción no se puede deshacer.",
     "noUsers": "No se encontraron usuarios.",
+    "id": "ID",
+    "created": "Creado",
+    "unit": "Unidad",
     "internalName": "Nombre interno",
     "displayName": "Nombre para mostrar",
     "noSignals": "No se encontraron señales.",
@@ -315,7 +325,12 @@
     "namePlaceholder": "Nombre del paciente",
     "agePlaceholder": "Edad",
     "emailPlaceholder": "email@example.com",
-    "addressPlaceholder": "Calle, ciudad, etc."
+    "addressPlaceholder": "Calle, ciudad, etc.",
+    "title": "Pacientes",
+    "actions": "Acciones",
+    "editInfo": "Editar información del paciente",
+    "dniReadOnly": "DNI (solo lectura)",
+    "saving": "Guardando..."
   },
   "settings": {
     "description": "Personalice su experiencia de aplicación",

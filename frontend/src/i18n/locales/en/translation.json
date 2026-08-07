@@ -71,6 +71,8 @@
     "somethingWentWrong": "Something went wrong",
     "unexpectedMessage": "An unexpected error occurred. Please try again.",
     "details": "Error details",
+    "loadMachineFailed": "Failed to load machine",
+    "machineUnreachable": "Machine \"{{id}}\" could not be found or is unreachable.",
     "retry": "Retry"
   },
   "status": {
@@ -139,6 +141,11 @@
   "admin": {
     "title": "Admin Panel",
     "description": "Manage users, signals, equivalences, bridges, and machines.",
+    "users": "Users",
+    "signals": "Signals",
+    "equivalences": "Equivalences",
+    "bridges": "Bridges",
+    "machines": "Machines",
     "username": "Username",
     "password": "Password",
     "role": "Role",
@@ -150,6 +157,9 @@
     "deleteUser": "Delete User",
     "deleteUserMessage": "Are you sure you want to delete user \"{{username}}\"? This action cannot be undone.",
     "noUsers": "No users found.",
+    "id": "ID",
+    "created": "Created",
+    "unit": "Unit",
     "internalName": "Internal Name",
     "displayName": "Display Name",
     "noSignals": "No signals found.",
@@ -315,7 +325,12 @@
     "namePlaceholder": "Patient name",
     "agePlaceholder": "Age",
     "emailPlaceholder": "email@example.com",
-    "addressPlaceholder": "Street, city, etc."
+    "addressPlaceholder": "Street, city, etc.",
+    "title": "Patients",
+    "actions": "Actions",
+    "editInfo": "Edit patient info",
+    "dniReadOnly": "DNI (read-only)",
+    "saving": "Saving..."
   },
   "settings": {
     "description": "Customize your application experience",
