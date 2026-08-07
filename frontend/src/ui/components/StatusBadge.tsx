@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { TherapyStatus } from "../../core/types";
 
 interface StatusBadgeProps {
@@ -39,9 +40,11 @@ function badgeColour(status: string): string {
  * Presentational status badge.
  *
  * Renders a small coloured pill that visually conveys the therapy status.
- * No data dependencies — all behaviour is provided via props.
+ * The label resolves through the catalog (`status.{value}`); unknown values
+ * fall back to the raw status string (design D5).
  */
 export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
+  const { t } = useTranslation();
   const colour = badgeColour(status);
 
   const sizeClasses = size === "sm"
@@ -52,7 +55,7 @@ export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
     <span
       className={`inline-flex items-center rounded-full font-medium ring-1 ring-inset ${colour} ${sizeClasses}`}
     >
-      {status}
+      {t(`status.${status}`, { defaultValue: status })}
     </span>
   );
 }

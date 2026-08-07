@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../../ui/primitives";
 
 export type ConnectionStatus = "online" | "offline" | "error" | "unknown";
@@ -23,22 +24,25 @@ const MachineStatusDot: FC<MachineStatusDotProps> = ({
   size = "md",
   label,
   className,
-}) => (
-  <span
-    className={cn("inline-flex items-center gap-1.5", className)}
-    title={status}
-  >
+}) => {
+  const { t } = useTranslation();
+  return (
     <span
-      className={cn(
-        "rounded-full",
-        sizeMap[size],
-        colorMap[status],
-        status === "online" && "animate-pulse",
-      )}
-    />
-    {label && <span className="text-xs text-neutral-600 dark:text-neutral-400">{label}</span>}
-  </span>
-);
+      className={cn("inline-flex items-center gap-1.5", className)}
+      title={t(`state.${status}`, { defaultValue: status })}
+    >
+      <span
+        className={cn(
+          "rounded-full",
+          sizeMap[size],
+          colorMap[status],
+          status === "online" && "animate-pulse",
+        )}
+      />
+      {label && <span className="text-xs text-neutral-600 dark:text-neutral-400">{label}</span>}
+    </span>
+  );
+};
 MachineStatusDot.displayName = "MachineStatusDot";
 
 export { MachineStatusDot };

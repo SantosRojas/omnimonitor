@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
@@ -98,18 +99,19 @@ function TherapyBadge({
   hasTherapy: boolean;
   connectionStatus: ConnectionStatus;
 }) {
+  const { t } = useTranslation();
   if (connectionStatus === "offline" || connectionStatus === "unknown") {
     return (
-      <span className="text-xs text-neutral-400">Disconnected</span>
+      <span className="text-xs text-neutral-400">{t("state.disconnected")}</span>
     );
   }
   if (connectionStatus === "error") {
-    return <Badge variant="danger">Error</Badge>;
+    return <Badge variant="danger">{t("state.error")}</Badge>;
   }
   if (hasTherapy) {
-    return <Badge variant="success">Running</Badge>;
+    return <Badge variant="success">{t("state.running")}</Badge>;
   }
-  return <Badge variant="outline">Idle</Badge>;
+  return <Badge variant="outline">{t("state.idle")}</Badge>;
 }
 
 /* ── Main component ──────────────────────────────────────── */

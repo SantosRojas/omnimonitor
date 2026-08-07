@@ -1,4 +1,5 @@
 import type { FC } from "react";
+import { useTranslation } from "react-i18next";
 import { cn, Badge } from "../../../ui/primitives";
 
 export type TherapyState =
@@ -38,6 +39,7 @@ const TherapyStateMachine: FC<TherapyStateMachineProps> = ({
   startedAt,
   className,
 }) => {
+  const { t } = useTranslation();
   const cfg = stateConfig[state];
 
   return (
@@ -70,7 +72,9 @@ const TherapyStateMachine: FC<TherapyStateMachineProps> = ({
             />
           </div>
           <div>
-            <Badge variant={cfg.variant}>{cfg.label}</Badge>
+            <Badge variant={cfg.variant}>
+              {t(`state.${state}`, { defaultValue: cfg.label })}
+            </Badge>
             {therapyType && (
               <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
                 {therapyType}

@@ -1,4 +1,5 @@
 import { useState, type FC } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { Badge } from "../../../ui/primitives/badge";
 import { Button } from "../../../ui/primitives/button";
@@ -47,6 +48,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
   maxVisible = 5,
   className,
 }) => {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const sorted = [...alarms].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
@@ -92,7 +94,11 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
                 <Icon className={cn("mt-0.5 h-3 w-3 shrink-0", cfg.color)} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                    <Badge variant={cfg.variant}>
+                      {t(`alarm.severity.${alarm.severity}`, {
+                        defaultValue: cfg.label,
+                      })}
+                    </Badge>
                     {!alarm.acknowledged && (
                       <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
                     )}
