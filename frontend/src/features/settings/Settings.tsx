@@ -5,6 +5,7 @@ import { Switch } from "../../ui/primitives/switch";
 import { Input } from "../../ui/primitives/input";
 import { Button } from "../../ui/primitives/button";
 import { useThemeStore } from "../../store/theme-store";
+import { LanguageSelector } from "../../ui/components/LanguageSelector";
 import { cn } from "../../ui/primitives";
 import { useCylinderConfigs } from "../../features/scada/domain/use-cylinder-config";
 import type {
@@ -240,9 +241,7 @@ export default function Settings() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-neutral-400 dark:text-neutral-500">
-            Language selection will be available in a future update.
-          </p>
+          <LanguageSelector variant="settings" />
         </CardContent>
       </Card>
 

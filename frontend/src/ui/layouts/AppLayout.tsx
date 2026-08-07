@@ -22,6 +22,7 @@ import {
   History,
 } from "lucide-react";
 import { Button } from "../primitives/button";
+import { LanguageSelector } from "../components/LanguageSelector";
 import { useAuthStore } from "../../store/auth-store";
 import { useThemeStore } from "../../store/theme-store";
 import { cn } from "../primitives";
@@ -181,11 +182,15 @@ export function AppLayout() {
           </div>
         )}
 
+        {/* Language selector (expanded) */}
+        {!collapsed && <LanguageSelector variant="expanded" className="mb-2 mt-3" />}
+
         {collapsed && (
-          <div className="mt-3 flex justify-center">
+          <div className="mt-3 flex flex-col items-center gap-2">
             <Button variant="ghost" size="icon" onClick={toggle} title={theme === "light" ? "Dark" : "Light"}>
               {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
+            <LanguageSelector variant="collapsed" />
           </div>
         )}
 
