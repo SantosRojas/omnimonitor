@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 /* ── Public types ─────────────────────────────────────────────── */
 
@@ -24,8 +25,9 @@ export interface ExportButtonProps {
 export function ExportButton({
   onExport,
   isLoading,
-  label = "Export",
+  label,
 }: ExportButtonProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +82,7 @@ export function ExportButton({
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
               />
             </svg>
-            Exporting…
+            {t("common.exporting")}
           </>
         ) : (
           <>
@@ -97,7 +99,7 @@ export function ExportButton({
                 d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
               />
             </svg>
-            {label}
+            {label ?? t("common.export")}
           </>
         )}
       </button>
@@ -110,14 +112,14 @@ export function ExportButton({
             onClick={() => handleSelect("csv")}
             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            Export as CSV
+            {t("common.exportCsv")}
           </button>
           <button
             type="button"
             onClick={() => handleSelect("json")}
             className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
           >
-            Export as JSON
+            {t("common.exportJson")}
           </button>
         </div>
       )}

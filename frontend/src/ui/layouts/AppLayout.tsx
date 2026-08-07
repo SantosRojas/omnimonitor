@@ -25,26 +25,28 @@ import { Button } from "../primitives/button";
 import { LanguageSelector } from "../components/LanguageSelector";
 import { useAuthStore } from "../../store/auth-store";
 import { useThemeStore } from "../../store/theme-store";
+import { useTranslation } from "react-i18next";
 import { cn } from "../primitives";
 
 const navItems = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/history", icon: History, label: "History" },
-  { to: "/patients", icon: Contact, label: "Patients" },
-  { to: "/connections", icon: Cable, label: "Connections" },
-  { to: "/profile", icon: User, label: "Profile" },
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/dashboard", icon: LayoutDashboard, key: "dashboard" },
+  { to: "/history", icon: History, key: "history" },
+  { to: "/patients", icon: Contact, key: "patients" },
+  { to: "/connections", icon: Cable, key: "connections" },
+  { to: "/profile", icon: User, key: "profile" },
+  { to: "/settings", icon: Settings, key: "settings" },
 ];
 
 const adminNavItems = [
-  { to: "/admin/users", icon: Users, label: "Users" },
-  { to: "/admin/signals", icon: Cpu, label: "Signals" },
-  { to: "/admin/equivalences", icon: GitCompareArrows, label: "Equivalences" },
-  { to: "/admin/bridges", icon: Radio, label: "Bridges" },
-  { to: "/admin/machines", icon: Network, label: "Machines" },
+  { to: "/admin/users", icon: Users, key: "users" },
+  { to: "/admin/signals", icon: Cpu, key: "signals" },
+  { to: "/admin/equivalences", icon: GitCompareArrows, key: "equivalences" },
+  { to: "/admin/bridges", icon: Radio, key: "bridges" },
+  { to: "/admin/machines", icon: Network, key: "machines" },
 ];
 
 export function AppLayout() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
@@ -97,39 +99,45 @@ export function AppLayout() {
 
       {/* Nav */}
       <nav className={cn("flex-1 space-y-1", collapsed ? "px-2" : "px-3")}>
-        {navItems.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            className={linkClass(item.to)}
-            onClick={() => setSidebarOpen(false)}
-            title={collapsed ? item.label : undefined}
-          >
-            <item.icon className="h-4 w-4 shrink-0" />
-            {!collapsed && item.label}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const label = t(`nav.${item.key}`);
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={linkClass(item.to)}
+              onClick={() => setSidebarOpen(false)}
+              title={collapsed ? label : undefined}
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && label}
+            </Link>
+          );
+        })}
 
         {isAdmin && (
           <>
             <div className="my-2 border-t border-neutral-200 dark:border-neutral-700" />
             {!collapsed && (
               <p className="px-3 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-                Administration
+                {t("nav.administration")}
               </p>
             )}
-            {adminNavItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={linkClass(item.to)}
-                onClick={() => setSidebarOpen(false)}
-                title={collapsed ? item.label : undefined}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                {!collapsed && item.label}
-              </Link>
-            ))}
+            {adminNavItems.map((item) => {
+              const label = t(`admin.${item.key}`);
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={linkClass(item.to)}
+                  onClick={() => setSidebarOpen(false)}
+                  title={collapsed ? label : undefined}
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  {!collapsed && label}
+                </Link>
+              );
+            })}
           </>
         )}
       </nav>
@@ -143,7 +151,7 @@ export function AppLayout() {
           {!collapsed && (
             <div className="flex-1 truncate">
               <p className="text-sm font-medium text-neutral-900 dark:text-white">
-                {user?.username || "User"}
+                {user?.username || t("nav.user")}
               </p>
               <p className="text-xs capitalize text-neutral-500 dark:text-neutral-400">
                 {user?.role}
@@ -163,7 +171,7 @@ export function AppLayout() {
                   ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
-              title="Light mode"
+              title={t("nav.lightMode")}
             >
               <Sun className="h-3.5 w-3.5" />
             </button>
@@ -175,7 +183,7 @@ export function AppLayout() {
                   ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
               )}
-              title="Dark mode"
+              title={t("nav.darkMode")}
             >
               <Moon className="h-3.5 w-3.5" />
             </button>
@@ -187,7 +195,7 @@ export function AppLayout() {
 
         {collapsed && (
           <div className="mt-3 flex flex-col items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={toggle} title={theme === "light" ? "Dark" : "Light"}>
+            <Button variant="ghost" size="icon" onClick={toggle} title={theme === "light" ? t("nav.dark") : t("nav.light")}>
               {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
             <LanguageSelector variant="collapsed" />
@@ -201,10 +209,10 @@ export function AppLayout() {
             collapsed ? "flex w-full justify-center px-0" : "w-full justify-start gap-3",
           )}
           onClick={handleLogout}
-          title={collapsed ? "Logout" : undefined}
+          title={collapsed ? t("nav.logout") : undefined}
         >
           <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && "Logout"}
+          {!collapsed && t("nav.logout")}
         </Button>
       </div>
     </div>
@@ -232,7 +240,7 @@ export function AppLayout() {
         <button
           onClick={toggleCollapsed}
           className="absolute -right-3 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:text-white"
-          title={collapsed ? "Expand" : "Collapse"}
+          title={collapsed ? t("nav.expand") : t("nav.collapse")}
         >
           {collapsed ? (
             <ChevronsRight className="h-3.5 w-3.5" />

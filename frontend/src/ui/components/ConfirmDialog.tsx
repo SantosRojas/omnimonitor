@@ -1,6 +1,7 @@
 /* ── Public types ─────────────────────────────────────────────── */
 
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 export interface ConfirmDialogProps {
   /** Whether the dialog is visible. */
@@ -37,6 +38,7 @@ export function ConfirmDialog({
   onCancel,
   isLoading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   if (!open) return null;
 
   return (
@@ -74,7 +76,7 @@ export function ConfirmDialog({
             disabled={isLoading}
             className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
           >
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -82,7 +84,7 @@ export function ConfirmDialog({
             disabled={isLoading}
             className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
           >
-            {isLoading ? "Deleting…" : "Confirm"}
+            {isLoading ? t("common.deleting") : t("common.confirm")}
           </button>
         </div>
       </div>

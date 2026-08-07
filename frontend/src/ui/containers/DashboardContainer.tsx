@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { TherapyTable } from "../components/TherapyTable";
 import type { ActiveTherapyRow } from "../../core/types";
@@ -36,6 +37,7 @@ function computeElapsedSeconds(startedAt: string, now: number): number {
  * - SCADA navigation on button click
  */
 export default function DashboardContainer() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   /* ── Clock tick for auto‑updating elapsed time ────────────────── */
@@ -80,16 +82,16 @@ export default function DashboardContainer() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-red-600">
-        <p className="text-lg font-semibold">Failed to load therapies</p>
+        <p className="text-lg font-semibold">{t("dashboard.loadError")}</p>
         <p className="mt-1 text-sm text-red-400">
-          {(error as Error)?.message ?? "An unexpected error occurred."}
+          {(error as Error)?.message ?? t("errors.unexpected")}
         </p>
         <button
           type="button"
           onClick={() => window.location.reload()}
           className="mt-4 rounded-md bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
         >
-          Retry
+          {t("dashboard.retry")}
         </button>
       </div>
     );
@@ -101,10 +103,10 @@ export default function DashboardContainer() {
       {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
-          Active Therapies
+          {t("dashboard.title")}
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Live view of all currently active therapies across all machines.
+          {t("dashboard.description")}
         </p>
       </div>
 

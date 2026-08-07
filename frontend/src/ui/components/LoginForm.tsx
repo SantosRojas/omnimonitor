@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface LoginFormProps {
   /** Called when the user submits the form with username + password. */
@@ -21,6 +22,7 @@ export function LoginForm({
   isLoading,
   errorMessage,
 }: LoginFormProps) {
+  const { t } = useTranslation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
@@ -34,7 +36,7 @@ export function LoginForm({
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="text-center">
         <h1 className="text-2xl font-bold text-gray-900">OMNI PDMS</h1>
-        <p className="mt-1 text-sm text-gray-500">Sign in to your account</p>
+        <p className="mt-1 text-sm text-gray-500">{t("login.subtitle")}</p>
       </div>
 
       {errorMessage && (
@@ -48,7 +50,7 @@ export function LoginForm({
           htmlFor="login-username"
           className="block text-sm font-medium text-gray-700"
         >
-          Username
+          {t("login.username")}
         </label>
         <input
           id="login-username"
@@ -58,7 +60,7 @@ export function LoginForm({
           onChange={(e) => setUsername(e.target.value)}
           required
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          placeholder="Enter your username"
+          placeholder={t("login.usernamePlaceholder")}
         />
       </div>
 
@@ -67,7 +69,7 @@ export function LoginForm({
           htmlFor="login-password"
           className="block text-sm font-medium text-gray-700"
         >
-          Password
+          {t("login.password")}
         </label>
         <input
           id="login-password"
@@ -77,7 +79,7 @@ export function LoginForm({
           onChange={(e) => setPassword(e.target.value)}
           required
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          placeholder="Enter your password"
+          placeholder={t("login.passwordPlaceholder")}
         />
       </div>
 
@@ -86,7 +88,7 @@ export function LoginForm({
         disabled={isLoading}
         className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {isLoading ? "Signing in…" : "Sign in"}
+        {isLoading ? t("login.signingIn") : t("login.submit")}
       </button>
     </form>
   );

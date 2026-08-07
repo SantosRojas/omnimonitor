@@ -1,4 +1,6 @@
 import { StatusBadge } from "./StatusBadge";
+import { useTranslation } from "react-i18next";
+import { formatDateTime } from "../../core/utils/format";
 import type { ActiveTherapyRow } from "../../core/types";
 
 interface TherapyTableProps {
@@ -21,23 +23,6 @@ function formatElapsed(totalSeconds: number): string {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = Math.floor(totalSeconds % 60);
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-/**
- * Formats an ISO date string into a locale-friendly date/time display.
- */
-function formatStartTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
 }
 
 /**
@@ -75,6 +60,8 @@ export function TherapyTable({
   onSelectTherapy,
   isLoading,
 }: TherapyTableProps) {
+  const { t } = useTranslation();
+
   /* ── Loading skeleton ─────────────────────────────────────── */
   if (isLoading) {
     return (
@@ -107,9 +94,9 @@ export function TherapyTable({
             d="M9 12h6m-3-3v6m-7 4h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
           />
         </svg>
-        <p className="text-sm font-medium">No active therapies</p>
+        <p className="text-sm font-medium">{t("dashboard.emptyTitle")}</p>
         <p className="mt-1 text-xs">
-          Active therapies will appear here once started.
+          {t("dashboard.emptyDescription")}
         </p>
       </div>
     );
@@ -123,13 +110,13 @@ export function TherapyTable({
         <thead className="bg-gray-50">
           <tr>
             {[
-              "Patient",
-              "Machine",
-              "Pressures (mmHg)",
-              "Flows (mL/min)",
-              "Start Time",
-              "Elapsed",
-              "Status",
+              t("dashboard.patient"),
+              t("dashboard.machine"),
+              `${t("dashboard.pressures")} (mmHg)`,
+              `${t("dashboard.flows")} (mL/min)`,
+              t("dashboard.startTime"),
+              t("dashboard.elapsed"),
+              t("dashboard.status"),
               "",
             ].map((heading) => (
               <th
@@ -163,13 +150,13 @@ export function TherapyTable({
               <td className="whitespace-nowrap px-4 py-3 text-gray-600">
                 <div className="space-y-0.5">
                   <span className="block">
-                    F: {pressureValue(row.pressures, "filter_pressure")}
+                    {t("scada.signal.c_press_fp_act")}: {pressureValue(row.pressures, "filter_pressure")}
                   </span>
                   <span className="block">
-                    TMP: {pressureValue(row.pressures, "tmp_pressure")}
+                    {t("scada.signal.c_press_tmp_act")}: {pressureValue(row.pressures, "tmp_pressure")}
                   </span>
                   <span className="block">
-                    Eff: {pressureValue(row.pressures, "effluent_pressure")}
+                    {t("scada.signal.c_press_ep_act")}: {pressureValue(row.pressures, "effluent_pressure")}
                   </span>
                 </div>
               </td>
@@ -178,17 +165,17 @@ export function TherapyTable({
               <td className="whitespace-nowrap px-4 py-3 text-gray-600">
                 <div className="space-y-0.5">
                   <span className="block">
-                    Net: {flowValue(row.flows, "net_rem_flow")}
+                    {t("scada.signal.c_net_rem_flow_act")}: {flowValue(row.flows, "net_rem_flow")}
                   </span>
                   <span className="block">
-                    FS: {flowValue(row.flows, "fs_mid_flow")}
+                    {t("scada.signal.c_pump_fs_mid_flow_act")}: {flowValue(row.flows, "fs_mid_flow")}
                   </span>
                 </div>
               </td>
 
               {/* Start Time */}
               <td className="whitespace-nowrap px-4 py-3 text-gray-600">
-                {formatStartTime(row.started_at)}
+                {formatDateTime(row.started_at)}
               </td>
 
               {/* Elapsed */}
@@ -208,7 +195,7 @@ export function TherapyTable({
                   onClick={() => onSelectTherapy(row.therapy_id)}
                   className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
                 >
-                  View SCADA
+                  {t("dashboard.viewScada")}
                 </button>
               </td>
             </tr>

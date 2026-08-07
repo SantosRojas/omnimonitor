@@ -55,6 +55,7 @@
     "edit": "Editar",
     "view": "Ver",
     "back": "Volver",
+    "backToDashboard": "Volver al Panel",
     "retry": "Reintentar",
     "noRecords": "No se encontraron registros.",
     "records_one": "{{count}} registro",

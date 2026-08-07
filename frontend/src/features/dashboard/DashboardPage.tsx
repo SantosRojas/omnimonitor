@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   createColumnHelper,
   useReactTable,
@@ -16,6 +17,7 @@ import { useLiveDataStore, type ReadingsBroadcast } from "../../store/live-data-
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { DataTable } from "../../ui/components/DataTable";
 import { formatDuration } from "../../core/utils/time";
+import { formatDateTime } from "../../core/utils/format";
 import {
   PRESSURE_GAUGES,
   FLOW_INDICATORS,
@@ -50,22 +52,6 @@ const SIGNAL_UNITS: Record<string, string> = {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-/** Formats an ISO timestamp into a short, locale-friendly date/time. */
-function formatStartTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
-
 /** Seconds elapsed since `startedAt`, clamped to zero. */
 function computeElapsedSeconds(startedAt: string | null | undefined): number {
   if (!startedAt) return 0;
@@ -97,6 +83,7 @@ function hideSm(columnId: string): string {
 const columnHelper = createColumnHelper<DashboardTherapyRow>();
 
 export default function DashboardPage() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const readings = useLiveDataStore((s) => s.readings);
 
@@ -180,27 +167,27 @@ export default function DashboardPage() {
   const columns = useMemo(
     () => [
       columnHelper.accessor("patient_name", {
-        header: "Patient",
+        header: t("dashboard.patient"),
         cell: (i) => (
           <span className="font-medium text-gray-900 dark:text-gray-100">{i.getValue()}</span>
         ),
       }),
       columnHelper.accessor("machine_label", {
-        header: "Machine",
+        header: t("dashboard.machine"),
       }),
       columnHelper.accessor("therapy_type", {
-        header: "Therapy Mode",
+        header: t("dashboard.therapyMode"),
         cell: (i) => i.getValue() ?? "—",
       }),
       columnHelper.display({
         id: "pressures",
-        header: "Pressures",
+        header: t("dashboard.pressures"),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
             {PRESSURE_GAUGES.map((g) => (
               <span key={g.key} className="block whitespace-nowrap">
-                {g.label}: {formatSignal(row.original.live, g.key)}
+                {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatSignal(row.original.live, g.key)}
               </span>
             ))}
           </div>
@@ -208,24 +195,24 @@ export default function DashboardPage() {
       }),
       columnHelper.display({
         id: "flows",
-        header: "Flows",
+        header: t("dashboard.flows"),
         enableSorting: false,
         cell: ({ row }) => (
           <div className="space-y-0.5">
             {FLOW_INDICATORS.map((f) => (
               <span key={f.key} className="block whitespace-nowrap">
-                {f.label}: {formatSignal(row.original.live, f.key)}
+                {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatSignal(row.original.live, f.key)}
               </span>
             ))}
           </div>
         ),
       }),
       columnHelper.accessor("started_at", {
-        header: "Start Time",
-        cell: (i) => formatStartTime(i.getValue()),
+        header: t("dashboard.startTime"),
+        cell: (i) => formatDateTime(i.getValue()),
       }),
       columnHelper.accessor("elapsed_seconds", {
-        header: "Elapsed",
+        header: t("dashboard.elapsed"),
         cell: ({ row }) => (
           <span className="tabular-nums">{formatDuration(row.original.started_at)}</span>
         ),
@@ -240,12 +227,12 @@ export default function DashboardPage() {
             onClick={() => navigate(`/dashboard/${row.original.machine_id}/scada`)}
             className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900/70 dark:focus:ring-blue-400"
           >
-            View SCADA
+            {t("dashboard.viewScada")}
           </button>
         ),
       }),
     ],
-    [navigate],
+    [navigate, t, i18n.language],
   );
 
   const table = useReactTable({
@@ -259,13 +246,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="Active therapies across all machines with live pressures and flows"
+        title={t("nav.dashboard")}
+        description={t("dashboard.pageDescription")}
       />
       <DataTable
         table={table}
         isLoading={isLoading}
-        emptyMessage="No active therapies"
+        emptyMessage={t("dashboard.emptyTitle")}
         hideSm={hideSm}
       />
     </div>

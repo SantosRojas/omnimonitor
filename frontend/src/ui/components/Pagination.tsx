@@ -1,5 +1,7 @@
 /* ── Public types ─────────────────────────────────────────────── */
 
+import { useTranslation } from "react-i18next";
+
 export interface PaginationProps {
   /** The current active page (1-indexed). */
   currentPage: number;
@@ -58,6 +60,7 @@ export function Pagination({
   totalPages,
   onPageChange,
 }: PaginationProps) {
+  const { t } = useTranslation();
   if (totalPages <= 1) return null;
 
   const pages = buildPageWindow(currentPage, totalPages);
@@ -80,7 +83,7 @@ export function Pagination({
         onClick={() => onPageChange(currentPage - 1)}
         className={btnBase}
       >
-        Previous
+        {t("common.previous")}
       </button>
 
       {/* Page numbers */}
@@ -113,7 +116,7 @@ export function Pagination({
         onClick={() => onPageChange(currentPage + 1)}
         className={btnBase}
       >
-        Next
+        {t("common.next")}
       </button>
     </nav>
   );

@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useMachineSubscription } from "../../data/ws-hook";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
@@ -20,6 +21,7 @@ const machineRepo = new HttpMachineRepo();
 const therapyRepo = new HttpTherapyRepo();
 
 export default function ScadaDetailContainer() {
+  const { t } = useTranslation();
   const { id: machineIdParam } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const machineId = machineIdParam ?? "";
@@ -97,10 +99,10 @@ export default function ScadaDetailContainer() {
   if (machineError) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-red-600">
-        <p className="text-lg font-semibold">Failed to load machine</p>
-        <p className="mt-1 text-sm text-red-400">Machine "{machineId}" could not be found or is unreachable.</p>
+        <p className="text-lg font-semibold">{t("errors.loadMachineFailed")}</p>
+        <p className="mt-1 text-sm text-red-400">{t("errors.machineUnreachable", { id: machineId })}</p>
         <Button variant="outline" className="mt-4" onClick={() => navigate("/dashboard")}>
-          &larr; Back to Dashboard
+          &larr; {t("common.backToDashboard")}
         </Button>
       </div>
     );
@@ -114,8 +116,8 @@ export default function ScadaDetailContainer() {
         <div className="flex items-center gap-3">
           <MachineStatusDot status={connectionStatus} size="lg" />
           <PageHeader
-            title={machine?.label ?? machine?.serial_number ?? `Machine #${machineId}`}
-            description={`Serial: ${machine?.serial_number ?? "—"}`}
+            title={machine?.label ?? machine?.serial_number ?? `${t("history.machine")} #${machineId}`}
+            description={`${t("admin.serial")}: ${machine?.serial_number ?? "—"}`}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -127,7 +129,7 @@ export default function ScadaDetailContainer() {
                 onClick={() => navigate(`/history/${activeTherapyId}`)}
               >
                 <History className="h-3.5 w-3.5" />
-                History
+                {t("nav.history")}
               </Button>
               <CloseTherapyButton
                 therapyId={activeTherapyId}
@@ -136,7 +138,7 @@ export default function ScadaDetailContainer() {
             </>
           )}
           <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")}>
-            &larr; Back
+            {t("history.back")}
           </Button>
         </div>
       </div>

@@ -55,6 +55,7 @@
     "edit": "Edit",
     "view": "View",
     "back": "Back",
+    "backToDashboard": "Back to Dashboard",
     "retry": "Retry",
     "noRecords": "No records found.",
     "records_one": "{{count}} record",
