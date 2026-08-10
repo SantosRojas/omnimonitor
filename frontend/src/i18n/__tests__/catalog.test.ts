@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import en from "../locales/en/translation.json";
 import es from "../locales/es/translation.json";
@@ -54,5 +56,28 @@ describe("translation catalogs", () => {
         `key "${key}" is not under a mandated group prefix`,
       ).toContain(prefix);
     }
+  });
+
+  it("no locale-aware formatting call site remains outside core/utils/format.ts", () => {
+    const srcRoot = resolve(__dirname, "../..");
+    const offenders: string[] = [];
+
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        const stat = statSync(full);
+        if (stat.isDirectory()) walk(full);
+        else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+          const content = readFileSync(full, "utf8");
+          if (/toLocale\w*\(/.test(content)) {
+            const rel = relative(srcRoot, full).replace(/\\/g, "/");
+            if (rel !== "core/utils/format.ts") offenders.push(rel);
+          }
+        }
+      }
+    };
+    walk(srcRoot);
+
+    expect(offenders).toEqual([]);
   });
 });
