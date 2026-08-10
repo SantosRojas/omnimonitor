@@ -1,4 +1,5 @@
 import { type FormEvent, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 /* ── Public types ─────────────────────────────────────────────── */
 
@@ -41,6 +42,7 @@ export function AdminCrudForm({
   initialValues,
   isLoading,
 }: AdminCrudFormProps) {
+  const { t } = useTranslation();
   const [values, setValues] = useState<
     Record<string, string | number>
   >({});
@@ -70,7 +72,7 @@ export function AdminCrudForm({
         v === "" ||
         (typeof v === "number" && isNaN(v))
       ) {
-        next[f.name] = `${f.label} is required.`;
+        next[f.name] = t("admin.form.required", { label: f.label });
       }
     }
     setErrors(next);
@@ -120,7 +122,7 @@ export function AdminCrudForm({
               onChange={(e) => setValue(field.name, e.target.value)}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <option value="">Select {field.label}</option>
+              <option value="">{t("admin.form.select", { label: field.label })}</option>
               {field.options.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -138,7 +140,7 @@ export function AdminCrudForm({
                   ? "border-red-400 focus:border-red-500 focus:ring-red-500"
                   : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"
               }`}
-              placeholder={`Enter ${field.label.toLowerCase()}`}
+              placeholder={t("admin.form.enter", { label: field.label.toLowerCase() })}
             />
           )}
 
@@ -155,7 +157,7 @@ export function AdminCrudForm({
           disabled={isLoading}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
-          {isLoading ? "Saving…" : "Save"}
+          {isLoading ? t("common.saving") : t("common.save")}
         </button>
       </div>
     </form>

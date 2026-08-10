@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useLocation, Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Table } from "../components/AdminCrudTable";
 import type { Column } from "../components/AdminCrudTable";
 import { AdminCrudForm } from "../components/AdminCrudForm";
@@ -13,18 +14,19 @@ import type { User, Bridge, Machine } from "../../core/types";
 import { PageHeader } from "../layouts/PageHeader";
 import { Card, CardContent } from "../primitives/card";
 import { Button } from "../primitives/button";
+import { formatDate, formatDateTime } from "../../core/utils/format";
 
 const adminRepo = new HttpAdminRepo();
 const signalRepo = new HttpSignalRepo();
 
 type SectionId = "users" | "signals" | "equivalences" | "bridges" | "machines";
 
-const SECTIONS: { id: SectionId; label: string }[] = [
-  { id: "users", label: "Users" },
-  { id: "signals", label: "Signals" },
-  { id: "equivalences", label: "Equivalences" },
-  { id: "bridges", label: "Bridges" },
-  { id: "machines", label: "Machines" },
+const SECTIONS: { id: SectionId }[] = [
+  { id: "users" },
+  { id: "signals" },
+  { id: "equivalences" },
+  { id: "bridges" },
+  { id: "machines" },
 ];
 
 interface CrudState<T> {
@@ -40,6 +42,7 @@ function initialCrudState<T>(): CrudState<T> {
 /* ── Users Section ──────────────────────────────────────────────── */
 
 function UsersSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [state, setState] = useState<CrudState<User>>(initialCrudState);
 
@@ -66,31 +69,31 @@ function UsersSection() {
   });
 
   const columns: Column<User>[] = [
-    { key: "username", label: "Username" },
-    { key: "role", label: "Role" },
-    { key: "created_at", label: "Created", render: (item) => (item.created_at ? new Date(item.created_at).toLocaleDateString() : "—") },
+    { key: "username", label: t("admin.username") },
+    { key: "role", label: t("admin.role") },
+    { key: "created_at", label: t("admin.created"), render: (item) => (item.created_at ? formatDate(item.created_at) : "—") },
   ];
 
   const formFields: Field[] = [
-    { name: "username", label: "Username", type: "text" },
-    { name: "password", label: "Password", type: "text" },
-    { name: "role", label: "Role", type: "select", options: [{ value: "admin", label: "Admin" }, { value: "operator", label: "Operator" }, { value: "viewer", label: "Viewer" }] },
+    { name: "username", label: t("admin.username"), type: "text" },
+    { name: "password", label: t("admin.password"), type: "text" },
+    { name: "role", label: t("admin.role"), type: "select", options: [{ value: "admin", label: t("admin.roleAdmin") }, { value: "operator", label: t("admin.roleOperator") }, { value: "viewer", label: t("admin.roleViewer") }] },
   ];
 
   const editFields: Field[] = [
-    { name: "username", label: "Username", type: "text" },
-    { name: "role", label: "Role", type: "select", options: [{ value: "admin", label: "Admin" }, { value: "operator", label: "Operator" }, { value: "viewer", label: "Viewer" }] },
+    { name: "username", label: t("admin.username"), type: "text" },
+    { name: "role", label: t("admin.role"), type: "select", options: [{ value: "admin", label: t("admin.roleAdmin") }, { value: "operator", label: t("admin.roleOperator") }, { value: "viewer", label: t("admin.roleViewer") }] },
   ];
 
   return (
-    <SectionShell title="Users" onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
+    <SectionShell title={t("admin.users")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
       {!state.formOpen ? (
         <Table<User>
           columns={columns}
           data={users}
           keyExtractor={(u) => u.id}
           isLoading={isLoading}
-          emptyMessage="No users found."
+          emptyMessage={t("admin.noUsers")}
           filterableColumns={["username", "role"]}
           onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
           onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
@@ -98,13 +101,13 @@ function UsersSection() {
       ) : (
         <Card>
           <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? "Edit User" : "Create User"}</h3>
+            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? t("admin.editUser") : t("admin.createUser")}</h3>
             <AdminCrudForm fields={state.editing ? editFields : formFields} initialValues={state.editing ? { id: state.editing.id, username: state.editing.username, role: state.editing.role } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
           </CardContent>
         </Card>
       )}
-      <ConfirmDialog open={state.deleting !== null} title="Delete User" message={`Are you sure you want to delete user "${state.deleting?.username}"? This action cannot be undone.`} onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
+      <ConfirmDialog open={state.deleting !== null} title={t("admin.deleteUser")} message={t("admin.deleteUserMessage", { username: state.deleting?.username ?? "" })} onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
     </SectionShell>
   );
 }
@@ -112,21 +115,22 @@ function UsersSection() {
 /* ── Signals Section ────────────────────────────────────────────── */
 
 function SignalsSection() {
+  const { t } = useTranslation();
   const { data: signals = [], isLoading } = useQuery({ queryKey: ["admin", "signals"], queryFn: () => signalRepo.list() });
   const columns: Column<Record<string, unknown>>[] = [
-    { key: "id", label: "ID" },
-    { key: "internal_name", label: "Internal Name" },
-    { key: "display_name", label: "Display Name", render: (item) => String(item.display_name ?? "—") },
-    { key: "unit", label: "Unit", render: (item) => String(item.unit ?? "—") },
+    { key: "id", label: t("admin.id") },
+    { key: "internal_name", label: t("admin.internalName") },
+    { key: "display_name", label: t("admin.displayName"), render: (item) => String(item.display_name ?? "—") },
+    { key: "unit", label: t("admin.unit"), render: (item) => String(item.unit ?? "—") },
   ];
   return (
-    <SectionShell title="Signals">
+    <SectionShell title={t("admin.signals")}>
       <Table<Record<string, unknown>>
         columns={columns}
         data={signals as unknown as Record<string, unknown>[]}
         keyExtractor={(row) => row.id as number}
         isLoading={isLoading}
-        emptyMessage="No signals found."
+        emptyMessage={t("admin.noSignals")}
         filterableColumns={["internal_name", "display_name"]}
       />
     </SectionShell>
@@ -136,6 +140,7 @@ function SignalsSection() {
 /* ── Equivalences Section ───────────────────────────────────────── */
 
 function EquivalencesSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [state, setState] = useState<CrudState<Record<string, unknown>>>(initialCrudState);
   const { data: equivalences = [], isLoading } = useQuery({ queryKey: ["admin", "equivalences"], queryFn: () => adminRepo.listEquivalences() });
@@ -156,20 +161,20 @@ function EquivalencesSection() {
   });
 
   const columns: Column<Record<string, unknown>>[] = [
-    { key: "id", label: "ID" }, { key: "from", label: "From" }, { key: "to", label: "To" },
+    { key: "id", label: t("admin.id") }, { key: "from", label: t("admin.from") }, { key: "to", label: t("admin.to") },
   ];
   const formFields: Field[] = [
-    { name: "from", label: "From", type: "text" }, { name: "to", label: "To", type: "text" },
+    { name: "from", label: t("admin.from"), type: "text" }, { name: "to", label: t("admin.to"), type: "text" },
   ];
 
   return (
-    <SectionShell title="Equivalences" onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
+    <SectionShell title={t("admin.equivalences")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
       {state.formOpen ? (
         <Card>
           <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? "Edit Equivalence" : "Create Equivalence"}</h3>
+            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? t("admin.editEquivalence") : t("admin.createEquivalence")}</h3>
             <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id as number, from: state.editing.from as string, to: state.editing.to as string } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
           </CardContent>
         </Card>
       ) : (
@@ -178,13 +183,13 @@ function EquivalencesSection() {
           data={equivalences as Record<string, unknown>[]}
           keyExtractor={(row) => row.id as number}
           isLoading={isLoading}
-          emptyMessage="No equivalences found."
+          emptyMessage={t("admin.noEquivalences")}
           filterableColumns={["from", "to"]}
           onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
           onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
         />
       )}
-      <ConfirmDialog open={state.deleting !== null} title="Delete Equivalence" message="Are you sure you want to delete this equivalence?" onConfirm={() => state.deleting && deleteMutation.mutate(Number(state.deleting.id))} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
+      <ConfirmDialog open={state.deleting !== null} title={t("admin.deleteEquivalence")} message={t("admin.deleteEquivalenceMessage", { from: state.deleting?.from ?? "", to: state.deleting?.to ?? "" })} onConfirm={() => state.deleting && deleteMutation.mutate(Number(state.deleting.id))} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
     </SectionShell>
   );
 }
@@ -192,6 +197,7 @@ function EquivalencesSection() {
 /* ── Bridges Section (RPi serial gateways) ───────────────────── */
 
 function BridgesSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [state, setState] = useState<CrudState<Bridge>>(initialCrudState);
 
@@ -224,57 +230,57 @@ function BridgesSection() {
   });
 
   const columns: Column<Bridge>[] = [
-    { key: "ip_address", label: "IP Address" },
-    { key: "label", label: "Label", render: (item) => item.label ?? "—" },
+    { key: "ip_address", label: t("admin.ipAddress") },
+    { key: "label", label: t("admin.label"), render: (item) => item.label ?? "—" },
     {
       key: "authorized",
-      label: "Authorized",
+      label: t("admin.authorized"),
       render: (item) => (
         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${item.authorized ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
-          {item.authorized ? "Yes" : "No"}
+          {item.authorized ? t("common.yes") : t("common.no")}
         </span>
       ),
     },
     {
       key: "status",
-      label: "Status",
+      label: t("admin.status"),
       render: (item) => (
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${item.status === "online" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${item.status === "online" ? "bg-green-500" : "bg-neutral-400"}`} />
-          {item.status}
+          {t(`state.${item.status}`, { defaultValue: item.status })}
         </span>
       ),
     },
-    { key: "last_seen_at", label: "Last Seen", render: (item) => item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "—" },
+    { key: "last_seen_at", label: t("admin.lastSeen"), render: (item) => item.last_seen_at ? formatDateTime(item.last_seen_at) : "—" },
   ];
 
   const formFields: Field[] = [
-    { name: "ip_address", label: "IP Address", type: "text" },
-    { name: "label", label: "Label", type: "text" },
+    { name: "ip_address", label: t("admin.ipAddress"), type: "text" },
+    { name: "label", label: t("admin.label"), type: "text" },
   ];
 
   const editFields: Field[] = [
-    { name: "label", label: "Label", type: "text" },
+    { name: "label", label: t("admin.label"), type: "text" },
     {
       name: "authorized",
-      label: "Authorized",
+      label: t("admin.authorized"),
       type: "select",
       options: [
-        { value: "true", label: "Yes" },
-        { value: "false", label: "No" },
+        { value: "true", label: t("common.yes") },
+        { value: "false", label: t("common.no") },
       ],
     },
   ];
 
   return (
-    <SectionShell title="Bridges" onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
+    <SectionShell title={t("admin.bridges")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
       {!state.formOpen ? (
         <Table<Bridge>
           columns={columns}
           data={bridges}
           keyExtractor={(b) => b.id}
           isLoading={isLoading}
-          emptyMessage="No bridges registered. Add the bridge IP so it can authenticate."
+          emptyMessage={t("admin.noBridges")}
           filterableColumns={["ip_address", "label", "status"]}
           onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
           onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
@@ -283,7 +289,7 @@ function BridgesSection() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-              {state.editing ? `Edit Bridge: ${state.editing.ip_address}` : "Register Bridge"}
+              {state.editing ? t("admin.editBridge", { ip: state.editing.ip_address }) : t("admin.registerBridge")}
             </h3>
             <AdminCrudForm
               fields={state.editing ? editFields : formFields}
@@ -291,14 +297,14 @@ function BridgesSection() {
               onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
               isLoading={createMutation.isPending || updateMutation.isPending}
             />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
           </CardContent>
         </Card>
       )}
       <ConfirmDialog
         open={state.deleting !== null}
-        title="Delete Bridge"
-        message={`Are you sure you want to remove bridge "${state.deleting?.ip_address}"? The bridge will not be able to connect.`}
+        title={t("admin.deleteBridge")}
+        message={t("admin.deleteBridgeMessage", { ip: state.deleting?.ip_address ?? "" })}
         onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)}
         onCancel={() => setState(initialCrudState)}
         isLoading={deleteMutation.isPending}
@@ -310,6 +316,7 @@ function BridgesSection() {
 /* ── Machines Section (auto-registered by bridge, editable IP/label) */
 
 function MachinesSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const machineRepo = new HttpMachineRepo();
   const [state, setState] = useState<CrudState<Machine>>(initialCrudState);
@@ -334,36 +341,36 @@ function MachinesSection() {
   });
 
   const columns: Column<Machine>[] = [
-    { key: "serial_number", label: "Serial" },
-    { key: "label", label: "Label", render: (item) => item.label ?? "—" },
-    { key: "ip_address", label: "IP Address", render: (item) => item.ip_address ?? "—" },
+    { key: "serial_number", label: t("admin.serial") },
+    { key: "label", label: t("admin.label"), render: (item) => item.label ?? "—" },
+    { key: "ip_address", label: t("admin.ipAddress"), render: (item) => item.ip_address ?? "—" },
     {
       key: "status",
-      label: "Status",
+      label: t("admin.status"),
       render: (item) => (
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${item.status === "online" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${item.status === "online" ? "bg-green-500" : "bg-neutral-400"}`} />
-          {item.status ?? "unknown"}
+          {item.status ? t(`state.${item.status}`) : t("state.unknown")}
         </span>
       ),
     },
-    { key: "last_seen_at", label: "Last Seen", render: (item) => item.last_seen_at ? new Date(item.last_seen_at).toLocaleString() : "—" },
+    { key: "last_seen_at", label: t("admin.lastSeen"), render: (item) => item.last_seen_at ? formatDateTime(item.last_seen_at) : "—" },
   ];
 
   const editFields: Field[] = [
-    { name: "label", label: "Label", type: "text" },
-    { name: "ip_address", label: "IP Address", type: "text" },
+    { name: "label", label: t("admin.label"), type: "text" },
+    { name: "ip_address", label: t("admin.ipAddress"), type: "text" },
   ];
 
   return (
-    <SectionShell title="Machines">
+    <SectionShell title={t("admin.machines")}>
       {!state.formOpen ? (
         <Table<Machine>
           columns={columns}
           data={machines}
           keyExtractor={(m) => m.id}
           isLoading={isLoading}
-          emptyMessage="No machines registered."
+          emptyMessage={t("admin.noMachines")}
           filterableColumns={["serial_number", "ip_address", "label", "status"]}
           onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
           onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
@@ -372,7 +379,7 @@ function MachinesSection() {
         <Card>
           <CardContent className="pt-6">
             <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-              {state.editing ? `Edit Machine: ${state.editing.serial_number}` : ""}
+              {state.editing ? t("admin.editMachine", { serial: state.editing.serial_number }) : ""}
             </h3>
             <AdminCrudForm
               fields={editFields}
@@ -380,14 +387,14 @@ function MachinesSection() {
               onSubmit={(vals) => { updateMutation.mutate(vals); }}
               isLoading={updateMutation.isPending}
             />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>Cancel</Button>
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
           </CardContent>
         </Card>
       )}
       <ConfirmDialog
         open={state.deleting !== null}
-        title="Delete Machine"
-        message={`Are you sure you want to delete machine "${state.deleting?.serial_number}"? This will soft-delete it.`}
+        title={t("admin.deleteMachine")}
+        message={t("admin.deleteMachineMessage", { serial: state.deleting?.serial_number ?? "" })}
         onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)}
         onCancel={() => setState(initialCrudState)}
         isLoading={deleteMutation.isPending}
@@ -399,11 +406,12 @@ function MachinesSection() {
 /* ── Section Shell ──────────────────────────────────────────────── */
 
 function SectionShell({ title, onCreate, children }: { title: string; onCreate?: () => void; children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">{title}</h2>
-        {onCreate && <Button size="sm" onClick={onCreate}>+ New</Button>}
+        {onCreate && <Button size="sm" onClick={onCreate}>{t("admin.new")}</Button>}
       </div>
       {children}
     </div>
@@ -415,6 +423,7 @@ function SectionShell({ title, onCreate, children }: { title: string; onCreate?:
  * ================================================================= */
 
 export default function AdminPanelContainer() {
+  const { t } = useTranslation();
   const location = useLocation();
   // Extract the section from the URL path: /admin/<section>
   const pathSection = location.pathname.replace("/admin/", "");
@@ -439,7 +448,7 @@ export default function AdminPanelContainer() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Admin Panel" description="Manage users, signals, equivalences, bridges, and machines." />
+      <PageHeader title={t("admin.title")} description={t("admin.description")} />
 
       <div>{renderSection()}</div>
     </div>

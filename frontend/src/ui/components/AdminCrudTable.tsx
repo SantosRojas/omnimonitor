@@ -1,4 +1,5 @@
 import { useState, useMemo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   useReactTable,
   getCoreRowModel,
@@ -72,8 +73,9 @@ export function Table<T>({
   isLoading = false,
   onEdit,
   onDelete,
-  emptyMessage = "No records found.",
+  emptyMessage,
 }: TableProps<T>) {
+  const { t } = useTranslation();
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -186,7 +188,7 @@ export function Table<T>({
                         >
                           <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-400" />
                           <input
-                            placeholder="Filter..."
+                            placeholder={t("common.filter")}
                             value={filterValue}
                             onChange={(e) => {
                               header.column.setFilterValue(e.target.value);
@@ -201,7 +203,7 @@ export function Table<T>({
                 })}
                 {hasActions && (
                   <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">
-                    Actions
+                    {t("common.actions")}
                   </th>
                 )}
               </tr>
@@ -215,7 +217,7 @@ export function Table<T>({
                   colSpan={columns.length + (hasActions ? 1 : 0)}
                   className="px-4 py-12 text-center text-sm text-neutral-400"
                 >
-                  {emptyMessage}
+                  {emptyMessage ?? t("common.noRecords")}
                 </td>
               </tr>
             ) : (
@@ -248,7 +250,7 @@ export function Table<T>({
                             onClick={() => onEdit(row.original)}
                             className="rounded px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors dark:text-blue-400 dark:hover:bg-blue-950"
                           >
-                            Edit
+                            {t("common.edit")}
                           </button>
                         )}
                         {onDelete && (
@@ -257,7 +259,7 @@ export function Table<T>({
                             onClick={() => onDelete(row.original)}
                             className="rounded px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors dark:text-red-400 dark:hover:bg-red-950"
                           >
-                            Delete
+                            {t("common.delete")}
                           </button>
                         )}
                       </div>
@@ -273,7 +275,7 @@ export function Table<T>({
       {/* ── Pagination ──────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          {totalRows} record{totalRows !== 1 ? "s" : ""}
+          {t("common.records", { count: totalRows })}
         </p>
         <div className="flex items-center gap-2">
           <button
