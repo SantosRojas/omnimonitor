@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Sun, Moon, Palette, Bell, Globe, Info, Wifi, Gauge } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/primitives/card";
 import { Switch } from "../../ui/primitives/switch";
@@ -13,29 +14,41 @@ import type {
   CylinderPressureType,
 } from "../../features/scada/domain/cylinder-config";
 
-const PRESSURE_LABELS: Record<CylinderPressureType, string> = {
-  arterial: "Arterial",
-  venous: "Venoso",
-  tmp: "TMP",
-  filter: "Filtro",
-  effluent: "Efluente",
-};
-
-const PRESSURE_TYPES = Object.keys(PRESSURE_LABELS) as CylinderPressureType[];
+const PRESSURE_TYPES = [
+  "arterial",
+  "venous",
+  "tmp",
+  "filter",
+  "effluent",
+] as CylinderPressureType[];
 
 const PRESSURE_FIELDS: (keyof CylinderConfig)[] = ["min", "max", "step"];
-const FIELD_LABELS: Record<string, string> = { min: "Mín", max: "Máx", step: "Paso" };
 
 export default function Settings() {
+  const { t } = useTranslation();
   const { theme, setTheme } = useThemeStore();
   const [alarmSound, setAlarmSound] = useState(() => localStorage.getItem("alarm-sound") !== "off");
   const [reconnectNotify, setReconnectNotify] = useState(() => localStorage.getItem("reconnect-notify") !== "off");
   const { configs, updateConfig, resetConfigs } = useCylinderConfigs();
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
 
+  const pressureLabels: Record<CylinderPressureType, string> = {
+    arterial: t("settings.pressureArterial"),
+    venous: t("settings.pressureVenous"),
+    tmp: t("settings.pressureTmp"),
+    filter: t("settings.pressureFilter"),
+    effluent: t("settings.pressureEffluent"),
+  };
+
+  const fieldLabels: Record<string, string> = {
+    min: t("settings.pressureMin"),
+    max: t("settings.pressureMax"),
+    step: t("settings.pressureStep"),
+  };
+
   const themes: { key: "light" | "dark"; label: string; icon: typeof Sun }[] = [
-    { key: "light", label: "Light", icon: Sun },
-    { key: "dark", label: "Dark", icon: Moon },
+    { key: "light", label: t("nav.light"), icon: Sun },
+    { key: "dark", label: t("nav.dark"), icon: Moon },
   ];
 
   function handlePressureChange(type: CylinderPressureType, field: keyof CylinderConfig, raw: string) {
@@ -71,9 +84,9 @@ export default function Settings() {
     <div className="mx-auto max-w-2xl space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Settings</h1>
+        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">{t("settings.title")}</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Customize your application experience
+          {t("settings.description")}
         </p>
       </div>
 
@@ -82,12 +95,12 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Palette className="h-4 w-4" />
-            Appearance
+            {t("settings.appearance")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div>
-            <p className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">Theme</p>
+            <p className="mb-2 text-sm font-medium text-neutral-700 dark:text-neutral-300">{t("settings.theme")}</p>
             <div className="flex overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
               {themes.map(({ key, label, icon: Icon }) => {
                 const isActive = theme === key;
@@ -117,14 +130,12 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Gauge className="h-4 w-4" />
-            Límites de presión
+            {t("settings.pressureLimits")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-            Configurar los límites mínimo, máximo y paso de escala para cada tipo de presión
-            (utilizado en la vista de cilindro graduado). Estos valores se comparten entre
-            todos los clientes conectados.
+            {t("settings.pressureLimitsDescription")}
           </p>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -136,7 +147,7 @@ export default function Settings() {
                   className="rounded-lg border border-neutral-200 p-3 dark:border-neutral-700"
                 >
                   <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                    {PRESSURE_LABELS[type]}
+                    {pressureLabels[type]}
                   </p>
 
                   <div className="space-y-1.5">
@@ -147,7 +158,7 @@ export default function Settings() {
                       return (
                         <div key={field}>
                           <label className="text-[10px] uppercase text-neutral-400 dark:text-neutral-500">
-                            {FIELD_LABELS[field]}
+                            {fieldLabels[field]}
                           </label>
                           <Input
                             value={displayValue}
@@ -166,7 +177,7 @@ export default function Settings() {
 
           <div className="mt-4">
             <Button variant="outline" size="sm" onClick={handleReset}>
-              Restablecer valores predeterminados
+              {t("settings.resetDefaults")}
             </Button>
           </div>
         </CardContent>
@@ -177,15 +188,15 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
-            Notifications
+            {t("settings.notifications")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-neutral-900 dark:text-white">Alarm Sound</p>
+              <p className="text-sm font-medium text-neutral-900 dark:text-white">{t("settings.alarmSound")}</p>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Play a sound when a machine alarm is triggered
+                {t("settings.alarmSoundDescription")}
               </p>
             </div>
             <Switch
@@ -200,9 +211,9 @@ export default function Settings() {
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-neutral-900 dark:text-white">Reconnection Alerts</p>
+              <p className="text-sm font-medium text-neutral-900 dark:text-white">{t("settings.reconnectionAlerts")}</p>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Show a notification when the WebSocket reconnects
+                {t("settings.reconnectionAlertsDescription")}
               </p>
             </div>
             <Switch
@@ -222,12 +233,12 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Wifi className="h-4 w-4" />
-            Connection
+            {t("settings.connection")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            Server: <span className="font-mono text-neutral-700 dark:text-neutral-300">{import.meta.env.VITE_API_TARGET || "http://localhost:9001"}</span>
+            {t("settings.server", { url: import.meta.env.VITE_API_TARGET || "http://localhost:9001" })}
           </p>
         </CardContent>
       </Card>
@@ -237,7 +248,7 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
-            Language
+            {t("common.language")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -250,13 +261,13 @@ export default function Settings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Info className="h-4 w-4" />
-            About
+            {t("settings.about")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-neutral-500 dark:text-neutral-400">
-          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">Version:</span> 0.1.0</p>
-          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">Frontend:</span> React + Vite + Tailwind v4</p>
-          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">Backend:</span> Rust + Axum + PostgreSQL</p>
+          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">{t("settings.version", { value: "0.1.0" })}</span></p>
+          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">{t("settings.frontend", { value: "React + Vite + Tailwind v4" })}</span></p>
+          <p><span className="font-medium text-neutral-700 dark:text-neutral-300">{t("settings.backend", { value: "Rust + Axum + PostgreSQL" })}</span></p>
         </CardContent>
       </Card>
     </div>

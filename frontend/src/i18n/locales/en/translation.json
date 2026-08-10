@@ -59,7 +59,8 @@
     "retry": "Retry",
     "noRecords": "No records found.",
     "records_one": "{{count}} record",
-    "records_other": "{{count}} records"
+    "records_other": "{{count}} records",
+    "pagination": "Pagination"
   },
   "errors": {
     "invalidCredentials": "Invalid credentials",
@@ -73,7 +74,8 @@
     "details": "Error details",
     "loadMachineFailed": "Failed to load machine",
     "machineUnreachable": "Machine \"{{id}}\" could not be found or is unreachable.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "passwordChangeFailed": "Failed to change password"
   },
   "status": {
     "active": "Active",
@@ -191,7 +193,27 @@
       "select": "Select {{label}}",
       "enter": "Enter {{label}}"
     },
-    "new": "+ New"
+    "new": "+ New",
+    "signalConfigTitle": "Signal Configuration",
+    "signalConfigMachine": "Configure visibility for machine {{machineId}}",
+    "signalConfigGeneric": "Configure signal visibility",
+    "searchSignals": "Search signals...",
+    "loadingSignals": "Loading signals...",
+    "noSignalsFound": "No signals found",
+    "signal": "Signal",
+    "phase": "Phase",
+    "visible": "Visible",
+    "equivalenceConfigTitle": "Equivalence Configuration",
+    "equivalenceConfigDescription": "Value mapping rules",
+    "addRule": "Add Rule",
+    "inputValue": "Input Value",
+    "outputValue": "Output Value",
+    "update": "Update",
+    "create": "Create",
+    "noEquivalenceRules": "No equivalence rules defined",
+    "deleteRuleConfirm": "Delete this rule?",
+    "inputValuePlaceholder": "e.g. raw_high",
+    "outputValuePlaceholder": "e.g. critical_high"
   },
   "scada": {
     "layout": {
@@ -235,9 +257,11 @@
       "preparation": "Preparation",
       "connect": "Connect",
       "therapy": "Therapy",
-      "finish": "Finish"
+      "finish": "Finish",
+      "inProgress": "◉ IN PROGRESS"
     },
     "processDiagram": {
+      "title": "Dialysis Circuit",
       "patient": "Patient",
       "arterial": "Arterial",
       "dialyzer": "Dialyzer",
@@ -250,17 +274,46 @@
     "comments": {
       "empty": "No comments",
       "addPlaceholder": "Add a comment...",
-      "delete": "Delete comment"
+      "delete": "Delete comment",
+      "count": "Comments ({{count}})"
     },
     "closeTherapy": {
       "label": "Close therapy",
       "title": "Close current therapy?",
       "message": "Therapy is still active. Do you want to close it?",
-      "finalWeight": "Final patient weight (kg)"
+      "finalWeight": "Final patient weight (kg)",
+      "weightPlaceholder": "Weight from serial frame"
     },
     "stateMachine": {
       "patient": "Patient: {{name}}",
       "started": "Started: {{time}}"
+    },
+    "connection": {
+      "title": "Connection Monitor",
+      "description": "Live telemetry for online machines",
+      "machine": "Machine",
+      "bridgeLabel": "Bridge Label",
+      "failures": "Failures",
+      "machineFallback": "Machine {{id}}",
+      "loadingMachines": "Loading machines...",
+      "noOnlineMachines": "No online machines",
+      "loadFailed": "Failed to load machines",
+      "unknownError": "Unknown error"
+    },
+    "nurseStation": {
+      "title": "Nurse Station",
+      "description": "Central monitoring — all machines at a glance",
+      "searchPlaceholder": "Search by machine, patient, or DNI...",
+      "all": "All",
+      "onlineCount": "{{count}} online",
+      "offlineCount": "{{count}} offline",
+      "alarms_one": "{{count}} alarm",
+      "alarms_other": "{{count}} alarms",
+      "noMachinesMatch": "No machines match your filters",
+      "tryAdjusting": "Try adjusting filters",
+      "noMachines": "No machines registered",
+      "appearViaBridge": "Machines appear automatically when they connect via a bridge",
+      "patientDni": "DNI: {{id}}"
     }
   },
   "history": {
@@ -282,6 +335,7 @@
     "status": "Status",
     "recordEndWeight": "Record end weight",
     "totalTherapies": "{{count}} total therapies",
+    "noTherapies": "No therapies found",
     "pageInfo": "Page {{page}} of {{totalPages}}",
     "back": "← Back",
     "detailTitle": "History #{{id}}",
@@ -298,6 +352,9 @@
     "readingsRange": "{{from}}–{{to}} of {{count}} readings",
     "rowsPerPage": "Rows per page:",
     "noData": "No data for {{title}}",
+    "resetZoom": "Reset Zoom",
+    "enterFullscreen": "Enter fullscreen",
+    "exitFullscreen": "Exit fullscreen",
     "patient": "Patient",
     "machine": "Machine",
     "type": "Type",
@@ -358,6 +415,19 @@
     "pressureVenous": "Venous",
     "pressureTmp": "TMP",
     "pressureFilter": "Filter",
-    "pressureEffluent": "Effluent"
+    "pressureEffluent": "Effluent",
+    "title": "Settings",
+    "userProfile": "User Profile",
+    "accountInfo": "Account Information",
+    "username": "Username",
+    "email": "Email",
+    "role": "Role",
+    "changePassword": "Change Password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordsMismatch": "Passwords do not match",
+    "passwordChanged": "Password changed successfully",
+    "changingPassword": "Changing..."
   }
 }

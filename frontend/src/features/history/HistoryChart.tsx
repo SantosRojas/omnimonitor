@@ -11,6 +11,7 @@ import {
   Brush,
 } from "recharts";
 import { Maximize, Minimize, ZoomOut, BarChart3 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "../../ui/primitives/card";
 import { Button } from "../../ui/primitives/button";
 import { ChartTooltip } from "../scada/components/chart-tooltip";
@@ -35,6 +36,7 @@ export function HistoryChart({
   unitMap,
   xAxisKey = "timeOnly",
 }: HistoryChartProps) {
+  const { t } = useTranslation();
   const [brushIdx, setBrushIdx] = useState(() => brushRange(data.length));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() => new Set());
@@ -103,7 +105,7 @@ export function HistoryChart({
       <Card>
         <CardContent className="flex flex-col items-center py-12 text-neutral-400">
           <BarChart3 className="mb-2 h-8 w-8" />
-          <p className="text-sm">No data for {title.toLowerCase()}</p>
+          <p className="text-sm">{t("history.noData", { title: title.toLowerCase() })}</p>
         </CardContent>
       </Card>
     );
@@ -121,14 +123,14 @@ export function HistoryChart({
             {isZoomed && (
               <Button variant="ghost" size="sm" onClick={resetZoom}>
                 <ZoomOut className="mr-1 h-3.5 w-3.5" />
-                Reset Zoom
+                {t("history.resetZoom")}
               </Button>
             )}
             <Button
               variant="ghost"
               size="sm"
               onClick={toggleFullscreen}
-              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              title={isFullscreen ? t("history.exitFullscreen") : t("history.enterFullscreen")}
             >
               {isFullscreen ? (
                 <Minimize className="h-3.5 w-3.5" />
@@ -157,7 +159,7 @@ export function HistoryChart({
                   type="monotone"
                   dataKey={s.key}
                   stroke={s.color}
-                  name={displayNameMap?.[s.key] ?? s.name}
+                  name={t(`scada.signal.${s.key}`, { defaultValue: displayNameMap?.[s.key] ?? s.name })}
                   dot={false}
                   strokeWidth={2}
                   hide={hiddenKeys.has(s.key)}

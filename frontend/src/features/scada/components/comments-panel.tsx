@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Send, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HttpTherapyRepo } from "../../../data/repos/http-therapy-repo";
@@ -6,6 +7,7 @@ import { useAuthStore } from "../../../store/auth-store";
 import { Card } from "../../../ui/primitives/card";
 import { Button } from "../../../ui/primitives/button";
 import { Input } from "../../../ui/primitives/input";
+import { formatDateTime } from "../../../core/utils/format";
 import type { TherapyComment } from "../../../core/types";
 
 interface CommentsPanelProps {
@@ -21,6 +23,7 @@ const therapyRepo = new HttpTherapyRepo();
  * conventions (see TherapyHistoryPage).
  */
 export function CommentsPanel({ therapyId }: CommentsPanelProps) {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const canComment = user?.role !== "viewer";
@@ -62,14 +65,14 @@ export function CommentsPanel({ therapyId }: CommentsPanelProps) {
   return (
     <Card className="rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
       <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-scada-muted">
-        Comments ({comments.length})
+        {t("scada.comments.count", { count: comments.length })}
       </h3>
 
       <div className="mb-2 max-h-64 space-y-2 overflow-y-auto pr-1">
         {isLoading ? (
-          <p className="text-xs text-scada-muted">Loading...</p>
+          <p className="text-xs text-scada-muted">{t("common.loading")}</p>
         ) : comments.length === 0 ? (
-          <p className="text-xs text-scada-muted">No comments</p>
+          <p className="text-xs text-scada-muted">{t("scada.comments.empty")}</p>
         ) : (
           sortedComments.map((c) => (
             <div key={c.id} className="rounded-md bg-scada-card/50 p-2 text-xs">
@@ -77,13 +80,13 @@ export function CommentsPanel({ therapyId }: CommentsPanelProps) {
                 <span className="font-medium text-scada-text">{c.username}</span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-scada-muted">
-                    {new Date(c.created_at).toLocaleString()}
+                    {formatDateTime(c.created_at)}
                   </span>
                   {isAdmin && (
                     <button
                       onClick={() => deleteComment.mutate(c.id)}
                       className="text-scada-muted transition-colors hover:text-scada-danger"
-                      title="Delete comment"
+                      title={t("scada.comments.delete")}
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -99,7 +102,7 @@ export function CommentsPanel({ therapyId }: CommentsPanelProps) {
       {canComment && (
         <div className="flex gap-2">
           <Input
-            placeholder="Add a comment..."
+            placeholder={t("scada.comments.addPlaceholder")}
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
             onKeyDown={(e) => {

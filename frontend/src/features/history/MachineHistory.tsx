@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
@@ -8,6 +9,7 @@ import { Input } from "../../ui/primitives/input";
 import { Button } from "../../ui/primitives/button";
 import { Badge } from "../../ui/primitives/badge";
 import { Check } from "lucide-react";
+import { formatDateTime } from "../../core/utils/format";
 const therapyRepo = new HttpTherapyRepo();
 const PAGE_SIZE = 10;
 
@@ -35,6 +37,7 @@ function toLocalIso(iso: string | null | undefined): string {
 }
 
 export default function MachineHistory() {
+  const { t } = useTranslation();
   const { machineId } = useParams();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -118,20 +121,20 @@ export default function MachineHistory() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Therapy History"
-        description={`Past therapies for machine ${machineId}`}
-        actions={<Button size="sm" onClick={exportCsv}>Export CSV</Button>}
+        title={t("history.title")}
+        description={t("history.machineDescription", { machineId })}
+        actions={<Button size="sm" onClick={exportCsv}>{t("history.exportCsv")}</Button>}
       />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <Input placeholder="Search by patient or status..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="max-w-xs" />
+        <Input placeholder={t("history.searchPlaceholder")} value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="max-w-xs" />
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
           className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-950"
         >
-          <option value="">All types</option>
+          <option value="">{t("history.allTypes")}</option>
           {therapyTypes.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} className="w-40" />
@@ -139,36 +142,36 @@ export default function MachineHistory() {
       </div>
 
       {isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">Loading...</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">{t("common.loading")}</CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">No therapies found</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">{t("history.noTherapies")}</CardContent></Card>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 dark:bg-neutral-900">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Patient</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Type</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Start</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">End</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Weight (initial)</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Weight (end)</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">Status</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.patient")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.type")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.start")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.end")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.weightInitial")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.weightEnd")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.status")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                {pageData.map((t: any) => (
-                  <tr key={t.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">{t.patient_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.therapy_type ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.created_at ? new Date(t.created_at).toLocaleString() : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.ended_at ? new Date(t.ended_at).toLocaleString() : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{t.weight != null ? `${t.weight} kg` : "—"}</td>
+                {pageData.map((row: any) => (
+                  <tr key={row.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
+                    <td className="px-4 py-3 font-medium">{row.patient_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.therapy_type ?? "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.ended_at ? formatDateTime(row.ended_at) : "—"}</td>
+                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.weight != null ? `${row.weight} kg` : "—"}</td>
                     <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
-                      {t.end_weight != null ? (
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">{t.end_weight} kg</span>
-                      ) : t.status === "completed" ? (
+                      {row.end_weight != null ? (
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">{row.end_weight} kg</span>
+                      ) : row.status === "completed" ? (
                         <div className="flex items-center gap-1">
                           <Input
                             type="number"
@@ -176,9 +179,9 @@ export default function MachineHistory() {
                             min="0"
                             placeholder="kg"
                             className="h-8 w-20 text-xs"
-                            value={editingEndWeight[t.id] ?? ""}
+                            value={editingEndWeight[row.id] ?? ""}
                             onChange={(e) =>
-                              setEditingEndWeight((prev) => ({ ...prev, [t.id]: e.target.value }))
+                              setEditingEndWeight((prev) => ({ ...prev, [row.id]: e.target.value }))
                             }
                             onClick={(e) => e.stopPropagation()}
                           />
@@ -186,9 +189,9 @@ export default function MachineHistory() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            disabled={!editingEndWeight[t.id] || !isFinite(Number(editingEndWeight[t.id])) || Number(editingEndWeight[t.id]) <= 0}
-                            onClick={() => handleRecordWeight(t.id)}
-                            title="Record end weight"
+                            disabled={!editingEndWeight[row.id] || !isFinite(Number(editingEndWeight[row.id])) || Number(editingEndWeight[row.id]) <= 0}
+                            onClick={() => handleRecordWeight(row.id)}
+                            title={t("history.recordEndWeight")}
                           >
                             <Check className="h-4 w-4 text-green-500" />
                           </Button>
@@ -197,7 +200,7 @@ export default function MachineHistory() {
                         <span className="text-neutral-400 dark:text-neutral-500">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3"><Badge variant={statusVariant[t.status ?? ""] ?? "secondary"}>{t.status ?? "unknown"}</Badge></td>
+                    <td className="px-4 py-3"><Badge variant={statusVariant[row.status ?? ""] ?? "secondary"}>{row.status ? t(`status.${row.status}`, { defaultValue: row.status }) : "—"}</Badge></td>
                   </tr>
                 ))}
               </tbody>
@@ -206,11 +209,11 @@ export default function MachineHistory() {
 
           {/* Pagination */}
           <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400">
-            <span>{filtered.length} total therapies</span>
+            <span>{t("history.totalTherapies", { count: filtered.length })}</span>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
-              <span>Page {page + 1} of {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>Next</Button>
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>{t("common.previous")}</Button>
+              <span>{t("history.pageInfo", { page: page + 1, totalPages })}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{t("common.next")}</Button>
             </div>
           </div>
         </>

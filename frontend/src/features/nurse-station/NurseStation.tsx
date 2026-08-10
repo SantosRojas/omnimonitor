@@ -35,12 +35,12 @@ const patientRepo = new HttpPatientRepo();
 
 type StatusFilter = "all" | ConnectionStatus;
 
-const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "online", label: "Online" },
-  { key: "offline", label: "Offline" },
-  { key: "error", label: "Error" },
-  { key: "unknown", label: "Unknown" },
+const STATUS_FILTERS: { key: StatusFilter; labelKey: string }[] = [
+  { key: "all", labelKey: "scada.nurseStation.all" },
+  { key: "online", labelKey: "state.online" },
+  { key: "offline", labelKey: "state.offline" },
+  { key: "error", labelKey: "state.error" },
+  { key: "unknown", labelKey: "state.unknown" },
 ];
 
 interface MachineCardData {
@@ -52,16 +52,6 @@ interface MachineCardData {
   patient: Patient | null;
   unackedAlarms: number;
   hasActiveTherapy: boolean;
-}
-
-function formatLastSeen(lastSeen: string | null): string {
-  if (!lastSeen) return "—";
-  const diff = Date.now() - new Date(lastSeen).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  return `${hours}h ago`;
 }
 
 /* ── Mini sparkline bar ──────────────────────────────────── */
@@ -117,6 +107,7 @@ function TherapyBadge({
 /* ── Main component ──────────────────────────────────────── */
 export default function NurseStation() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
@@ -235,22 +226,24 @@ export default function NurseStation() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <PageHeader
-            title="Nurse Station"
-            description="Central monitoring — all machines at a glance"
+            title={t("scada.nurseStation.title")}
+            description={t("scada.nurseStation.description")}
           />
           <div className="mt-1 flex items-center gap-4 text-sm text-neutral-500">
             <span className="flex items-center gap-1">
               <Wifi className="h-3.5 w-3.5 text-green-500" />
-              {onlineCount} online
+              {t("scada.nurseStation.onlineCount", { count: onlineCount })}
             </span>
             <span className="flex items-center gap-1">
               <WifiOff className="h-3.5 w-3.5 text-neutral-400" />
-              {cards.length - onlineCount} offline
+              {t("scada.nurseStation.offlineCount", {
+                count: cards.length - onlineCount,
+              })}
             </span>
             {alarmCount > 0 && (
               <span className="flex items-center gap-1 text-red-500">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                {alarmCount} alarm{alarmCount !== 1 ? "s" : ""}
+                {t("scada.nurseStation.alarms", { count: alarmCount })}
               </span>
             )}
           </div>
@@ -262,7 +255,7 @@ export default function NurseStation() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
           <Input
-            placeholder="Search by machine, patient, or DNI..."
+            placeholder={t("scada.nurseStation.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -279,7 +272,7 @@ export default function NurseStation() {
                   : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
               }`}
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
@@ -303,13 +296,13 @@ export default function NurseStation() {
             <Activity className="mb-2 h-10 w-10" />
             <p className="text-sm font-medium">
               {search || statusFilter !== "all"
-                ? "No machines match your filters"
-                : "No machines registered"}
+                ? t("scada.nurseStation.noMachinesMatch")
+                : t("scada.nurseStation.noMachines")}
             </p>
             <p className="mt-1 text-xs">
               {search || statusFilter !== "all"
-                ? "Try adjusting filters"
-                : "Machines appear automatically when they connect via a bridge"}
+                ? t("scada.nurseStation.tryAdjusting")
+                : t("scada.nurseStation.appearViaBridge")}
             </p>
           </CardContent>
         </Card>
@@ -341,7 +334,7 @@ export default function NurseStation() {
                 {/* Last seen */}
                 <div className="mt-1 flex items-center gap-1 text-[11px] text-neutral-400">
                   <Clock className="h-3 w-3" />
-                  {formatLastSeen(c.lastSeen)}
+                  {relativeTime(c.lastSeen)}
                 </div>
 
                 {/* Patient info */}
@@ -350,11 +343,13 @@ export default function NurseStation() {
                     <div className="flex items-center gap-1.5">
                       <User className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
                       <p className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                        {c.patient.name ?? "Unknown patient"}
+                        {c.patient.name ?? t("common.unknownPatient")}
                       </p>
                     </div>
                     <p className="truncate text-xs text-neutral-500">
-                      DNI: {c.patient.external_id}
+                      {t("scada.nurseStation.patientDni", {
+                        id: c.patient.external_id,
+                      })}
                     </p>
                     <div className="mt-1 flex items-center gap-3 text-[11px] text-neutral-500">
                       <span className="flex items-center gap-1">

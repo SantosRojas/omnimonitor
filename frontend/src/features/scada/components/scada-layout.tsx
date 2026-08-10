@@ -19,16 +19,11 @@ import { getNum, getUnit, hasSignal } from "../domain/signal-classifier";
 import { useCylinderConfigs } from "../domain/use-cylinder-config";
 import { preferencesStorage } from "../infrastructure/preferences";
 import { ToggleLeft, ToggleRight, Maximize, Minimize } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ScadaViewModel } from "../domain/scada-view-model";
 
 const ScadaTrendChart = lazy(() =>
   import("./scada-trend-chart").then((m) => ({ default: m.ScadaTrendChart })),
-);
-
-const TREND_CHART_FALLBACK = (
-  <div className="flex h-[180px] items-center justify-center text-xs text-scada-muted">
-    Cargando gráfico…
-  </div>
 );
 
 interface TherapySummary {
@@ -66,8 +61,15 @@ export function ScadaLayout({
   therapySummary,
   children,
 }: ScadaLayoutProps) {
+  const { t } = useTranslation();
   const { telemetry, therapy, presentation } = vm;
   const { info, pressures, flows, history } = telemetry;
+
+  const trendFallback = (
+    <div className="flex h-[180px] items-center justify-center text-xs text-scada-muted">
+      {t("scada.layout.chartFallback")}
+    </div>
+  );
 
   const [pressureView, setPressureView] = useState<"gauge" | "cylinder">("gauge");
   const [fsChart, setFsChart] = useState<"presiones" | "caudales" | null>(null);
@@ -137,7 +139,7 @@ export function ScadaLayout({
 
         <Card className={cn(SCADA_CARD_CLASS, "p-3")}>
           <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-scada-muted">
-            Flows
+            {t("scada.layout.flows")}
           </h3>
           <div className="flex flex-col gap-3">
             {visibleFlowIndicators.map((g) => (
@@ -149,7 +151,7 @@ export function ScadaLayout({
                   getUnit(flows, g.key) ||
                   (g.key === "c_net_rem_flow_act" ? "ml/h" : "ml/min")
                 }
-                label={g.label}
+                label={t(`scada.signal.${g.key}`, { defaultValue: g.label })}
                 color={g.color}
                 hasData={hasSignal(flows, g.key)}
               />
@@ -167,12 +169,12 @@ export function ScadaLayout({
           <Card className={cn(SCADA_CARD_CLASS, "flex-1 p-3")}>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-[12px] font-semibold uppercase tracking-wider text-scada-muted">
-                Pressures
+                {t("scada.layout.pressures")}
               </h3>
               <button
                 onClick={() => setPressureView((v) => (v === "gauge" ? "cylinder" : "gauge"))}
                 className="text-scada-muted transition-colors hover:text-scada-text"
-                title={pressureView === "gauge" ? "Cylinder view" : "Gauge view"}
+                title={pressureView === "gauge" ? t("scada.layout.cylinderView") : t("scada.layout.gaugeView")}
               >
                 {pressureView === "gauge" ? (
                   <ToggleRight className="h-5 w-5 text-primary" />
@@ -195,7 +197,7 @@ export function ScadaLayout({
                       min={cfg.min}
                       max={cfg.max}
                       unit="mmHg"
-                      label={g.label}
+                      label={t(`scada.signal.${g.key}`, { defaultValue: g.label })}
                       color={g.color}
                       size="md"
                       warning={Math.abs(cfg.max) * 0.7}
@@ -212,7 +214,7 @@ export function ScadaLayout({
                   return (
                     <PressureCylinder
                       key={g.key}
-                      label={g.label}
+                      label={t(`scada.signal.${g.key}`, { defaultValue: g.label })}
                       value={getNum(pressures, g.key)}
                       unit="mmHg"
                       config={cfg}
@@ -229,11 +231,11 @@ export function ScadaLayout({
           {/* Visible signals toggle */}
           <Card className={cn(SCADA_CARD_CLASS, "p-3")}>
             <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-scada-muted">
-              Visible signals
+              {t("scada.layout.visibleSignals")}
             </h3>
             <div className="space-y-2">
               <p className="text-[9px] font-semibold uppercase tracking-wider text-scada-muted/60">
-                Pressures
+                {t("scada.layout.pressures")}
               </p>
               {PRESSURE_GAUGES.map((g) => {
                 const checked = visibleSignals.has(g.key);
@@ -264,12 +266,14 @@ export function ScadaLayout({
                         </svg>
                       )}
                     </button>
-                    <span className="text-xs text-scada-text">{g.label}</span>
+                    <span className="text-xs text-scada-text">
+                      {t(`scada.signal.${g.key}`, { defaultValue: g.label })}
+                    </span>
                   </label>
                 );
               })}
               <p className="mt-2 text-[9px] font-semibold uppercase tracking-wider text-scada-muted/60">
-                Flows
+                {t("scada.layout.flows")}
               </p>
               {FLOW_INDICATORS.map((g) => {
                 const checked = visibleSignals.has(g.key);
@@ -300,7 +304,9 @@ export function ScadaLayout({
                         </svg>
                       )}
                     </button>
-                    <span className="text-xs text-scada-text">{g.label}</span>
+                    <span className="text-xs text-scada-text">
+                      {t(`scada.signal.${g.key}`, { defaultValue: g.label })}
+                    </span>
                   </label>
                 );
               })}
@@ -317,7 +323,7 @@ export function ScadaLayout({
             >
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-scada-muted">
-                  Pressure Trend
+                  {t("scada.layout.pressureTrend")}
                 </h3>
                 <button
                   onClick={() => toggleFs("presiones")}
@@ -327,7 +333,7 @@ export function ScadaLayout({
                 </button>
               </div>
               <div style={{ flex: 1, minHeight: 0 }}>
-                <Suspense fallback={TREND_CHART_FALLBACK}>
+                <Suspense fallback={trendFallback}>
                   <ScadaTrendChart
                     data={history}
                     series={visiblePressureSeries}
@@ -344,7 +350,7 @@ export function ScadaLayout({
             >
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-[12px] font-semibold uppercase tracking-wider text-scada-muted">
-                  Flow Trend
+                  {t("scada.layout.flowTrend")}
                 </h3>
                 <button
                   onClick={() => toggleFs("caudales")}
@@ -354,7 +360,7 @@ export function ScadaLayout({
                 </button>
               </div>
               <div style={{ flex: 1, minHeight: 0 }}>
-                <Suspense fallback={TREND_CHART_FALLBACK}>
+                <Suspense fallback={trendFallback}>
                   <ScadaTrendChart
                     data={history}
                     series={visibleFlowSeries}

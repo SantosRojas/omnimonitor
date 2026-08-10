@@ -1,6 +1,8 @@
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { Card } from "../../../ui/primitives/card";
 import { Play } from "lucide-react";
+import { formatDateTime } from "../../../core/utils/format";
 import type { TelemetryReading } from "../domain/scada-store";
 
 /** Database-backed subset of the active therapy, used when the bridge has not sent a signal. */
@@ -24,7 +26,7 @@ interface PatientInfoCardProps {
 
 interface FieldConfig {
   key: string;
-  label: string;
+  labelKey: string;
   unit?: string;
   format?: (v: string) => string;
 }
@@ -42,14 +44,16 @@ export function PatientInfoCard({
   displayNameMap,
   therapySummary,
 }: PatientInfoCardProps) {
+  const { t } = useTranslation();
+
   const fields: FieldConfig[] = [
-    { key: "g_patient_id_str", label: "Patient", format: (v) => v },
-    { key: "g_patient_data_weight_set", label: "Weight", unit: "kg" },
-    { key: "g_therapy_mode_set", label: "Therapy Mode", format: (v) => v },
-    { key: "g_anticoag_mode_set", label: "Anticoagulant", format: (v) => v },
-    { key: "g_substitution_mode_set", label: "Substitution", format: (v) => v },
-    { key: "d_renal_dose_act", label: "Renal Dose", unit: "ml/kg/h" },
-    { key: "d_kit_type_str", label: "Kit", format: (v) => v },
+    { key: "g_patient_id_str", labelKey: "scada.patientInfo.patient", format: (v) => v },
+    { key: "g_patient_data_weight_set", labelKey: "scada.patientInfo.weight", unit: "kg" },
+    { key: "g_therapy_mode_set", labelKey: "scada.patientInfo.therapyMode", format: (v) => v },
+    { key: "g_anticoag_mode_set", labelKey: "scada.patientInfo.anticoagulant", format: (v) => v },
+    { key: "g_substitution_mode_set", labelKey: "scada.patientInfo.substitution", format: (v) => v },
+    { key: "d_renal_dose_act", labelKey: "scada.patientInfo.renalDose", unit: "ml/kg/h" },
+    { key: "d_kit_type_str", labelKey: "scada.patientInfo.kit", format: (v) => v },
   ];
 
   function formatValue(reading: TelemetryReading, field: FieldConfig): string | null {
@@ -95,15 +99,26 @@ export function PatientInfoCard({
 
   const age = therapySummary?.age ?? null;
 
-  /** Therapy time and net removal labels come from the signals catalog
-   *  (`displayNameMap`), falling back to English when not present. */
-  const therapyTimeLabel = displayNameMap?.["c_acc_therapy_time_act"] ?? "Therapy Time";
-  const netRemovalLabel = displayNameMap?.["c_acc_net_rem_vol_act"] ?? "Net Removal Vol";
+  /** Signal display labels resolve catalog-first (D4): `scada.signal.<internal_name>`
+   *  wins when present (en overlay), otherwise the DB `displayNameMap` value or a
+   *  static localized label. */
+  function signalLabel(field: FieldConfig): string {
+    return t(`scada.signal.${field.key}`, {
+      defaultValue: displayNameMap?.[field.key] ?? t(field.labelKey),
+    });
+  }
+
+  const therapyTimeLabel = t("scada.signal.c_acc_therapy_time_act", {
+    defaultValue: displayNameMap?.["c_acc_therapy_time_act"] ?? t("scada.patientInfo.therapyTime"),
+  });
+  const netRemovalLabel = t("scada.signal.c_acc_net_rem_vol_act", {
+    defaultValue: displayNameMap?.["c_acc_net_rem_vol_act"] ?? t("scada.patientInfo.netRemovalVol"),
+  });
 
   return (
     <Card className="rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-scada-muted">
-        Information
+        {t("scada.patientInfo.title")}
       </h3>
       <div className="space-y-2">
         {fields.map((field) => {
@@ -115,7 +130,7 @@ export function PatientInfoCard({
                 ? formatValue(reading, field)
                 : fallbackValue(field);
           if (!value) return null;
-          const label = displayNameMap?.[field.key] ?? field.label;
+          const label = signalLabel(field);
           return (
             <Fragment key={field.key}>
               <div className="flex justify-between text-xs">
@@ -124,7 +139,7 @@ export function PatientInfoCard({
               </div>
               {field.key === "g_patient_id_str" && age != null && (
                 <div className="flex justify-between text-xs">
-                  <span className="text-scada-muted">Age</span>
+                  <span className="text-scada-muted">{t("scada.patientInfo.age")}</span>
                   <span className="font-mono text-scada-text">{age}</span>
                 </div>
               )}
@@ -143,10 +158,10 @@ export function PatientInfoCard({
           <div className="mt-2 flex justify-between border-t border-scada-border pt-2 text-xs">
             <span className="flex items-center gap-1 text-scada-muted">
               <Play className="h-3 w-3 text-primary" />
-              Therapy Start
+              {t("scada.patientInfo.therapyStart")}
             </span>
             <span className="font-mono text-scada-text">
-              {new Date(therapyStart).toLocaleString()}
+              {formatDateTime(therapyStart)}
             </span>
           </div>
         )}

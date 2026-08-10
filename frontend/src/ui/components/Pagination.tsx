@@ -74,7 +74,7 @@ export function Pagination({
   return (
     <nav
       className="flex items-center justify-center gap-1"
-      aria-label="Pagination"
+      aria-label={t("common.pagination")}
     >
       {/* Previous */}
       <button

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,6 +17,7 @@ import { PageHeader } from "../../ui/layouts/PageHeader";
 import { DataTable } from "../../ui/components/DataTable";
 import { ConfirmDialog } from "../../ui/components/ConfirmDialog";
 import { formatDuration } from "../../core/utils/time";
+import { formatDateTime } from "../../core/utils/format";
 import type { Therapy, Machine } from "../../core/types";
 
 const machineRepo = new HttpMachineRepo();
@@ -33,22 +35,6 @@ interface TherapyHistoryRow {
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 
-/** Formats an ISO timestamp into a short, locale-friendly date/time. */
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
-
 /** Hide the type/end columns on narrow viewports. */
 function hideSm(columnId: string): string {
   return ["therapy_type", "ended_at"].includes(columnId)
@@ -61,6 +47,7 @@ function hideSm(columnId: string): string {
 const columnHelper = createColumnHelper<TherapyHistoryRow>();
 
 export default function TherapiesHistoryPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -121,29 +108,29 @@ export default function TherapiesHistoryPage() {
   const columns = useMemo(
     () => [
       columnHelper.accessor("patient_name", {
-        header: "Patient",
+        header: t("history.patient"),
         cell: (i) => (
           <span className="font-medium text-gray-900 dark:text-gray-100">{i.getValue()}</span>
         ),
       }),
       columnHelper.accessor("machine_label", {
-        header: "Machine",
+        header: t("history.machine"),
       }),
       columnHelper.accessor("therapy_type", {
-        header: "Type",
+        header: t("history.type"),
         cell: (i) => i.getValue() ?? "-",
       }),
       columnHelper.accessor("started_at", {
-        header: "Start",
+        header: t("history.start"),
         cell: (i) => formatDateTime(i.getValue()),
       }),
       columnHelper.accessor("ended_at", {
-        header: "End",
+        header: t("history.end"),
         cell: (i) => formatDateTime(i.getValue()),
       }),
       columnHelper.display({
         id: "duration",
-        header: "Duration",
+        header: t("history.duration"),
         enableSorting: false,
         cell: ({ row }) => (
           <span className="tabular-nums">
@@ -162,13 +149,13 @@ export default function TherapiesHistoryPage() {
               onClick={() => navigate(`/history/${row.original.therapy_id}`)}
               className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900/70 dark:focus:ring-blue-400"
             >
-              View
+              {t("common.view")}
             </button>
             {isAdmin && (
               <button
                 type="button"
-                title="Delete from history"
-                aria-label={`Delete therapy ${row.original.therapy_id}`}
+                title={t("history.deleteFromHistory")}
+                aria-label={t("history.deleteFromHistory", { id: row.original.therapy_id })}
                 onClick={() => {
                   setDeleteTarget(row.original);
                   setDeleteReason("");
@@ -182,7 +169,7 @@ export default function TherapiesHistoryPage() {
         ),
       }),
     ],
-    [navigate, isAdmin],
+    [navigate, isAdmin, t],
   );
 
   const table = useReactTable({
@@ -196,22 +183,22 @@ export default function TherapiesHistoryPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Therapy History"
-        description="Completed therapies across all machines"
+        title={t("history.title")}
+        description={t("history.completedDescription")}
       />
       <DataTable
         table={table}
         isLoading={isLoading}
-        emptyMessage="No completed therapies"
+        emptyMessage={t("history.empty")}
         hideSm={hideSm}
       />
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete therapy from history"
+        title={t("history.deleteTitle")}
         message={
           deleteTarget
-            ? `Remove the therapy for ${deleteTarget.patient_name}? This keeps an audit trail of who deleted it and why.`
+            ? t("history.deleteMessage", { patient: deleteTarget.patient_name })
             : ""
         }
         onConfirm={() => deleteTherapy.mutate()}
@@ -223,13 +210,13 @@ export default function TherapiesHistoryPage() {
       >
         <label className="mt-4 block">
           <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            Deletion reason
+            {t("history.deletionReason")}
           </span>
           <textarea
             value={deleteReason}
             onChange={(e) => setDeleteReason(e.target.value)}
             rows={3}
-            placeholder="Why is this therapy being removed?"
+            placeholder={t("history.deletionReasonPlaceholder")}
             className="mt-1 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
           />
         </label>

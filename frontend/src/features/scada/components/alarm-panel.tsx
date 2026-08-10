@@ -4,6 +4,7 @@ import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { Badge } from "../../../ui/primitives/badge";
 import { Button } from "../../../ui/primitives/button";
 import { cn } from "../../../ui/primitives";
+import { formatDateTime } from "../../../core/utils/format";
 
 export interface ScadaAlarm {
   id: string;
@@ -65,7 +66,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
     >
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
-          Alarms
+          {t("alarm.title")}
           {unackedCount > 0 && (
             <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900 dark:text-red-100">
               {unackedCount}
@@ -75,7 +76,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
       </div>
 
       {alarms.length === 0 ? (
-        <p className="py-4 text-center text-sm text-neutral-400">No active alarms</p>
+        <p className="py-4 text-center text-sm text-neutral-400">{t("alarm.empty")}</p>
       ) : (
         <ul className="space-y-2">
           {visible.map((alarm) => {
@@ -107,8 +108,8 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
                     {alarm.message}
                   </p>
                   <div className="mt-1 flex gap-3 text-xs text-neutral-400">
-                    <span>{new Date(alarm.timestamp).toLocaleString()}</span>
-                    {alarm.source && <span>Source: {alarm.source}</span>}
+                    <span>{formatDateTime(alarm.timestamp)}</span>
+                    {alarm.source && <span>{t("alarm.source", { source: alarm.source })}</span>}
                   </div>
                 </div>
                 {!alarm.acknowledged && onAcknowledge && (
@@ -118,7 +119,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
                     onClick={() => onAcknowledge(alarm.id)}
                     className="shrink-0"
                   >
-                    Acknowledge
+                    {t("alarm.acknowledge")}
                   </Button>
                 )}
               </li>
@@ -134,7 +135,7 @@ const AlarmPanel: FC<AlarmPanelProps> = ({
           className="mt-2 w-full"
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? "Show less" : `Show all (${alarms.length})`}
+          {expanded ? t("alarm.showLess") : t("alarm.showAll", { count: alarms.length })}
         </Button>
       )}
     </div>

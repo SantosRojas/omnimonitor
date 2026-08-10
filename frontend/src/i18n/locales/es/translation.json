@@ -59,7 +59,8 @@
     "retry": "Reintentar",
     "noRecords": "No se encontraron registros.",
     "records_one": "{{count}} registro",
-    "records_other": "{{count}} registros"
+    "records_other": "{{count}} registros",
+    "pagination": "Paginación"
   },
   "errors": {
     "invalidCredentials": "Credenciales inválidas",
@@ -73,7 +74,8 @@
     "details": "Detalles del error",
     "loadMachineFailed": "No se pudo cargar la máquina",
     "machineUnreachable": "La máquina \"{{id}}\" no se pudo encontrar o no está disponible.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "passwordChangeFailed": "Error al cambiar la contraseña"
   },
   "status": {
     "active": "Activa",
@@ -191,7 +193,27 @@
       "select": "Seleccionar {{label}}",
       "enter": "Ingresar {{label}}"
     },
-    "new": "+ Nuevo"
+    "new": "+ Nuevo",
+    "signalConfigTitle": "Configuración de señales",
+    "signalConfigMachine": "Configurar visibilidad para la máquina {{machineId}}",
+    "signalConfigGeneric": "Configurar visibilidad de señales",
+    "searchSignals": "Buscar señales...",
+    "loadingSignals": "Cargando señales...",
+    "noSignalsFound": "No se encontraron señales",
+    "signal": "Señal",
+    "phase": "Fase",
+    "visible": "Visible",
+    "equivalenceConfigTitle": "Configuración de equivalencias",
+    "equivalenceConfigDescription": "Reglas de mapeo de valores",
+    "addRule": "Agregar regla",
+    "inputValue": "Valor de entrada",
+    "outputValue": "Valor de salida",
+    "update": "Actualizar",
+    "create": "Crear",
+    "noEquivalenceRules": "No hay reglas de equivalencia definidas",
+    "deleteRuleConfirm": "¿Eliminar esta regla?",
+    "inputValuePlaceholder": "p. ej. raw_high",
+    "outputValuePlaceholder": "p. ej. critical_high"
   },
   "scada": {
     "layout": {
@@ -235,9 +257,11 @@
       "preparation": "Preparación",
       "connect": "Conexión",
       "therapy": "Terapia",
-      "finish": "Finalizar"
+      "finish": "Finalizar",
+      "inProgress": "◉ EN CURSO"
     },
     "processDiagram": {
+      "title": "Circuito de diálisis",
       "patient": "Paciente",
       "arterial": "Arterial",
       "dialyzer": "Dializador",
@@ -250,17 +274,46 @@
     "comments": {
       "empty": "No hay comentarios",
       "addPlaceholder": "Agregar un comentario...",
-      "delete": "Eliminar comentario"
+      "delete": "Eliminar comentario",
+      "count": "Comentarios ({{count}})"
     },
     "closeTherapy": {
       "label": "Cerrar terapia",
       "title": "¿Cerrar la terapia actual?",
       "message": "La terapia sigue activa. ¿Desea cerrarla?",
-      "finalWeight": "Peso final del paciente (kg)"
+      "finalWeight": "Peso final del paciente (kg)",
+      "weightPlaceholder": "Peso del frame serial"
     },
     "stateMachine": {
       "patient": "Paciente: {{name}}",
       "started": "Iniciada: {{time}}"
+    },
+    "connection": {
+      "title": "Monitor de conexiones",
+      "description": "Telemetría en vivo de máquinas en línea",
+      "machine": "Máquina",
+      "bridgeLabel": "Etiqueta del puente",
+      "failures": "Fallos",
+      "machineFallback": "Máquina {{id}}",
+      "loadingMachines": "Cargando máquinas...",
+      "noOnlineMachines": "No hay máquinas en línea",
+      "loadFailed": "No se pudieron cargar las máquinas",
+      "unknownError": "Error desconocido"
+    },
+    "nurseStation": {
+      "title": "Central de enfermería",
+      "description": "Monitoreo central: todas las máquinas de un vistazo",
+      "searchPlaceholder": "Buscar por máquina, paciente o DNI...",
+      "all": "Todos",
+      "onlineCount": "{{count}} en línea",
+      "offlineCount": "{{count}} desconectadas",
+      "alarms_one": "{{count}} alarma",
+      "alarms_other": "{{count}} alarmas",
+      "noMachinesMatch": "Ninguna máquina coincide con los filtros",
+      "tryAdjusting": "Ajusta los filtros",
+      "noMachines": "No hay máquinas registradas",
+      "appearViaBridge": "Las máquinas aparecen automáticamente cuando se conectan a través de un puente",
+      "patientDni": "DNI: {{id}}"
     }
   },
   "history": {
@@ -282,6 +335,7 @@
     "status": "Estado",
     "recordEndWeight": "Registrar peso final",
     "totalTherapies": "{{count}} terapias en total",
+    "noTherapies": "No se encontraron terapias",
     "pageInfo": "Página {{page}} de {{totalPages}}",
     "back": "← Volver",
     "detailTitle": "Historial #{{id}}",
@@ -298,6 +352,9 @@
     "readingsRange": "{{from}}–{{to}} de {{count}} lecturas",
     "rowsPerPage": "Filas por página:",
     "noData": "Sin datos para {{title}}",
+    "resetZoom": "Restablecer zoom",
+    "enterFullscreen": "Entrar en pantalla completa",
+    "exitFullscreen": "Salir de pantalla completa",
     "patient": "Paciente",
     "machine": "Máquina",
     "type": "Tipo",
@@ -358,6 +415,19 @@
     "pressureVenous": "Venoso",
     "pressureTmp": "TMP",
     "pressureFilter": "Filtro",
-    "pressureEffluent": "Efluente"
+    "pressureEffluent": "Efluente",
+    "title": "Configuración",
+    "userProfile": "Perfil de usuario",
+    "accountInfo": "Información de la cuenta",
+    "username": "Usuario",
+    "email": "Correo electrónico",
+    "role": "Rol",
+    "changePassword": "Cambiar contraseña",
+    "currentPassword": "Contraseña actual",
+    "newPassword": "Nueva contraseña",
+    "confirmPassword": "Confirmar nueva contraseña",
+    "passwordsMismatch": "Las contraseñas no coinciden",
+    "passwordChanged": "Contraseña cambiada correctamente",
+    "changingPassword": "Cambiando..."
   }
 }

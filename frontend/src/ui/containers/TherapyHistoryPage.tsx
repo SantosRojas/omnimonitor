@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,6 +31,7 @@ import { HistoryChart } from "../../features/history/HistoryChart";
 import { DataTable } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
+import { formatDateTime, formatTime } from "../../core/utils/format";
 import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 
 const therapyRepo = new HttpTherapyRepo();
@@ -37,20 +39,23 @@ const signalRepo = new HttpSignalRepo();
 
 const columnHelper = createColumnHelper<HistoryRow>();
 
-const buildHistoryColumns = (signalDisplayMap: Record<string, string>) => [
+const buildHistoryColumns = (
+  signalDisplayMap: Record<string, string>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => [
   columnHelper.accessor("recorded_at", {
-    header: "Time",
+    header: t("history.time"),
     cell: (i) => {
       const ts = i.getValue();
       return (
         <span className="text-neutral-500">
-          {ts ? new Date(ts).toLocaleString() : "—"}
+          {ts ? formatDateTime(ts) : "—"}
         </span>
       );
     },
   }),
   columnHelper.accessor("internal_name", {
-    header: "Signal",
+    header: t("history.signal"),
     cell: (i) => {
       const name = i.getValue();
       return (
@@ -61,7 +66,7 @@ const buildHistoryColumns = (signalDisplayMap: Record<string, string>) => [
     },
   }),
   columnHelper.accessor("value", {
-    header: "Value",
+    header: t("history.value"),
     cell: (i) => (
       <span className="font-medium tabular-nums">
         {i.getValue()?.toFixed(2) ?? "—"}
@@ -69,12 +74,13 @@ const buildHistoryColumns = (signalDisplayMap: Record<string, string>) => [
     ),
   }),
   columnHelper.accessor("unit", {
-    header: "Unit",
+    header: t("history.unit"),
     cell: (i) => <span className="text-neutral-500">{i.getValue() ?? "—"}</span>,
   }),
 ];
 
 export default function TherapyHistoryPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -163,11 +169,7 @@ export default function TherapyHistoryPage() {
       // Group by minute (UTC key — only used for grouping/sorting).
       const minuteKey = r.recorded_at.slice(0, 16);
       // Display time in the viewer's local timezone (recorded_at is UTC ISO).
-      const timeOnly = new Date(r.recorded_at).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
+      const timeOnly = formatTime(r.recorded_at);
 
       let point = map.get(minuteKey);
       if (!point) {
@@ -208,7 +210,10 @@ export default function TherapyHistoryPage() {
     pageSize: 25,
   });
 
-  const columns = useMemo(() => buildHistoryColumns(signalDisplayMap), [signalDisplayMap]);
+  const columns = useMemo(
+    () => buildHistoryColumns(signalDisplayMap, t),
+    [signalDisplayMap, t],
+  );
 
   const table = useReactTable({
     data: filteredRows,
@@ -251,16 +256,16 @@ export default function TherapyHistoryPage() {
     <div className="space-y-4">
       {/* Header */}
       <PageHeader
-        title={`History #${id}`}
+        title={t("history.detailTitle", { id })}
         description={
           therapy
-            ? `${therapy.therapy_type ?? "Therapy"} · ${therapy.status ?? "—"}`
-            : "Historical readings and charts"
+            ? `${therapy.therapy_type ?? "—"} · ${therapy.status ? t(`status.${therapy.status}`, { defaultValue: therapy.status }) : "—"}`
+            : t("history.detailDescription")
         }
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
-              &larr; Back
+              {t("history.back")}
             </Button>
             <Button
               variant="outline"
@@ -287,7 +292,7 @@ export default function TherapyHistoryPage() {
               <Table2 className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={handleExport}>
-              <Download className="h-4 w-4" /> CSV
+              <Download className="h-4 w-4" /> {t("history.exportCsv")}
             </Button>
           </div>
         }
@@ -296,14 +301,14 @@ export default function TherapyHistoryPage() {
       {/* Therapy summary */}
       {therapy && (
         <div className="flex flex-wrap gap-4 text-sm text-neutral-600 dark:text-neutral-400">
-          <span>Type: <strong>{therapy.therapy_type ?? "—"}</strong></span>
-          <span>Kit: <strong>{therapy.kit ?? "—"}</strong></span>
-          <span>Weight: <strong>{therapy.weight != null ? `${therapy.weight} kg` : "—"}</strong></span>
-          <span>End weight: <strong>{therapy.end_weight != null ? `${therapy.end_weight} kg` : "—"}</strong></span>
-          <span>Status: <Badge variant={statusVariant[therapy.status ?? ""] ?? "secondary"}>{therapy.status ?? "—"}</Badge></span>
-          <span>Start: <strong>{therapy.started_at ? new Date(therapy.started_at).toLocaleString() : "—"}</strong></span>
-          <span>End: <strong>{therapy.ended_at ? new Date(therapy.ended_at).toLocaleString() : "—"}</strong></span>
-          <span>Readings: <strong>{filteredRows.length}</strong></span>
+          <span>{t("history.metaType")} <strong>{therapy.therapy_type ?? "—"}</strong></span>
+          <span>{t("history.metaKit")} <strong>{therapy.kit ?? "—"}</strong></span>
+          <span>{t("history.metaWeight")} <strong>{therapy.weight != null ? `${therapy.weight} kg` : "—"}</strong></span>
+          <span>{t("history.metaEndWeight")} <strong>{therapy.end_weight != null ? `${therapy.end_weight} kg` : "—"}</strong></span>
+          <span>{t("history.metaStatus")} <Badge variant={statusVariant[therapy.status ?? ""] ?? "secondary"}>{therapy.status ? t(`status.${therapy.status}`, { defaultValue: therapy.status }) : "—"}</Badge></span>
+          <span>{t("history.metaStart")} <strong>{therapy.started_at ? formatDateTime(therapy.started_at) : "—"}</strong></span>
+          <span>{t("history.metaEnd")} <strong>{therapy.ended_at ? formatDateTime(therapy.ended_at) : "—"}</strong></span>
+          <span>{t("history.readingsCount", { count: filteredRows.length })}</span>
         </div>
       )}
 
@@ -312,12 +317,12 @@ export default function TherapyHistoryPage() {
         <Card>
           <CardContent className="p-4">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
-              <MessageSquare className="h-4 w-4" /> Comments ({comments.length})
+              <MessageSquare className="h-4 w-4" /> {t("scada.comments.count", { count: comments.length })}
             </h3>
 
             <div className="mb-3 max-h-48 space-y-2 overflow-y-auto">
               {comments.length === 0 ? (
-                <p className="text-sm text-neutral-400">No comments</p>
+                <p className="text-sm text-neutral-400">{t("scada.comments.empty")}</p>
               ) : (
                 comments.map((c) => (
                   <div key={c.id} className="rounded-lg bg-neutral-50 p-3 text-sm dark:bg-neutral-800/50">
@@ -327,13 +332,13 @@ export default function TherapyHistoryPage() {
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-neutral-400">
-                          {new Date(c.created_at).toLocaleString()}
+                          {formatDateTime(c.created_at)}
                         </span>
                         {(user?.role === "admin" || user?.id === c.user_id) && (
                           <button
                             onClick={() => deleteComment.mutate(c.id)}
                             className="text-red-500 hover:text-red-700"
-                            title="Delete comment"
+                            title={t("scada.comments.delete")}
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -349,7 +354,7 @@ export default function TherapyHistoryPage() {
             {user?.role !== "viewer" && (
               <div className="flex gap-2">
                 <Input
-                  placeholder="Add a comment..."
+                  placeholder={t("scada.comments.addPlaceholder")}
                   value={commentText}
                   onChange={(e) => setCommentText(e.target.value)}
                   onKeyDown={(e) => {
@@ -375,14 +380,14 @@ export default function TherapyHistoryPage() {
       {showCharts && (
         <div className="grid gap-4 md:grid-cols-2">
           <HistoryChart
-            title="Pressures"
+            title={t("scada.layout.pressures")}
             data={chartData}
             series={PRESSURE_SERIES}
             displayNameMap={signalDisplayMap}
             unitMap={signalUnitMap}
           />
           <HistoryChart
-            title="Flows"
+            title={t("scada.layout.flows")}
             data={chartData}
             series={FLOW_SERIES}
             displayNameMap={signalDisplayMap}
@@ -397,13 +402,13 @@ export default function TherapyHistoryPage() {
           <CardContent className="p-4">
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-neutral-500">Signal:</label>
+                <label className="text-xs font-medium text-neutral-500">{t("history.signal")}:</label>
                 <select
                   value={signalFilter}
                   onChange={(e) => setSignalFilter(e.target.value)}
                   className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-950"
                 >
-                  <option value="all">All</option>
+                  <option value="all">{t("history.all")}</option>
                   {signalOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
@@ -412,24 +417,26 @@ export default function TherapyHistoryPage() {
                 </select>
               </div>
               <Input
-                placeholder="Search..."
+                placeholder={t("common.searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 max-w-xs text-xs"
               />
               <span className="text-xs text-neutral-400">
-                {filteredRows.length === 0
-                  ? "0 of 0 readings"
-                  : `${pageStart}–${pageEnd} of ${filteredRows.length} readings`}
+                {t("history.readingsRange", {
+                  from: filteredRows.length === 0 ? 0 : pageStart,
+                  to: filteredRows.length === 0 ? 0 : pageEnd,
+                  count: filteredRows.length,
+                })}
               </span>
             </div>
 
-            <DataTable table={table} emptyMessage="No readings found" />
+            <DataTable table={table} emptyMessage={t("history.noReadings")} />
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <label className="text-xs font-medium text-neutral-500">
-                  Rows per page:
+                  {t("history.rowsPerPage")}
                 </label>
                 <select
                   value={pageSize}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Square } from "lucide-react";
 import { HttpTherapyRepo } from "../../../data/repos/http-therapy-repo";
@@ -29,6 +30,7 @@ export function CloseTherapyButton({
   className,
   defaultWeight,
 }: CloseTherapyButtonProps) {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,19 +80,19 @@ export function CloseTherapyButton({
         disabled={closeTherapy.isPending}
       >
         <Square className="h-3.5 w-3.5" />
-        Close therapy
+        {t("scada.closeTherapy.label")}
       </Button>
       <ConfirmDialog
         open={dialogOpen}
-        title="Close current therapy?"
-        message="Therapy is still active. Do you want to close it?"
+        title={t("scada.closeTherapy.title")}
+        message={t("scada.closeTherapy.message")}
         onConfirm={() => closeTherapy.mutate()}
         onCancel={() => setDialogOpen(false)}
         isLoading={closeTherapy.isPending}
       >
         <label className="mt-4 block">
           <span className="block text-sm font-medium text-gray-700">
-            Final patient weight (kg)
+            {t("scada.closeTherapy.finalWeight")}
           </span>
           <input
             type="number"
@@ -99,7 +101,7 @@ export function CloseTherapyButton({
             inputMode="decimal"
             value={endWeight}
             onChange={(e) => setEndWeight(e.target.value)}
-            placeholder="Weight from serial frame"
+            placeholder={t("scada.closeTherapy.weightPlaceholder")}
             className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
           />
         </label>

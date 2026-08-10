@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpAdminRepo } from "../../data/repos/http-admin-repo";
@@ -22,6 +23,7 @@ function formatReading(r: TelemetryReading | undefined): string {
 }
 
 export default function ConnectionMonitor() {
+  const { t } = useTranslation();
   const machineStatuses = useMachineStatusStore((s) => s.machines);
   const bridgeStatuses = useBridgeStatusStore((s) => s.bridges);
   // Classified per-machine telemetry (pressures/flows) fed by the WS adapter.
@@ -79,39 +81,39 @@ export default function ConnectionMonitor() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Connection Monitor" description="Live telemetry for online machines" />
+      <PageHeader title={t("scada.connection.title")} description={t("scada.connection.description")} />
 
       {/* ── Machine Status Table ── */}
       {isError ? (
         <Card>
           <CardContent className="py-8 text-center">
             <div className="mb-3 text-red-500">
-              <p className="font-medium">Failed to load machines</p>
-              <p className="mt-1 text-sm text-neutral-500">{(error as Error)?.message ?? "Unknown error"}</p>
+              <p className="font-medium">{t("scada.connection.loadFailed")}</p>
+              <p className="mt-1 text-sm text-neutral-500">{(error as Error)?.message ?? t("scada.connection.unknownError")}</p>
             </div>
             <button
               onClick={() => refetch()}
               className="inline-flex items-center gap-2 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
             >
-              Retry
+              {t("common.retry")}
             </button>
           </CardContent>
         </Card>
       ) : isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">Loading machines...</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400">{t("scada.connection.loadingMachines")}</CardContent></Card>
       ) : rows.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">No online machines</CardContent></Card>
+        <Card><CardContent className="py-8 text-center text-neutral-400">{t("scada.connection.noOnlineMachines")}</CardContent></Card>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 dark:bg-neutral-900">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Machine</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Serial</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Pressures</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Flows</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Bridge Label</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">Failures</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.machine")}</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.serial")}</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.layout.pressures")}</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.layout.flows")}</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.bridgeLabel")}</th>
+                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.failures")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -122,13 +124,13 @@ export default function ConnectionMonitor() {
                 const bridgeStatus = bridge ? bridgeStatuses[bridge.id] : undefined;
                 return (
                   <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">{m.label ?? `Machine ${m.id}`}</td>
+                    <td className="px-4 py-3 font-medium">{m.label ?? t("scada.connection.machineFallback", { id: m.id })}</td>
                     <td className="px-4 py-3 text-neutral-500">{m.serial_number ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="space-y-0.5 whitespace-nowrap">
                         {PRESSURE_GAUGES.map((g) => (
                           <span key={g.key} className="block">
-                            {g.label}: {formatReading(m.telemetry?.pressures[g.key])}
+                            {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatReading(m.telemetry?.pressures[g.key])}
                           </span>
                         ))}
                       </div>
@@ -137,7 +139,7 @@ export default function ConnectionMonitor() {
                       <div className="space-y-0.5 whitespace-nowrap">
                         {FLOW_INDICATORS.map((f) => (
                           <span key={f.key} className="block">
-                            {f.label}: {formatReading(m.telemetry?.flows[f.key])}
+                            {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatReading(m.telemetry?.flows[f.key])}
                           </span>
                         ))}
                       </div>

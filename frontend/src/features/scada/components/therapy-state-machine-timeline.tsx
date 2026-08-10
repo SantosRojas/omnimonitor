@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "../../../ui/primitives";
 import { Card } from "../../../ui/primitives/card";
 
@@ -10,10 +11,10 @@ interface TherapyStateMachineTimelineProps {
 }
 
 const states = [
-  { key: "preparation", label: "Preparation" },
-  { key: "connect", label: "Connect" },
-  { key: "therapy", label: "Therapy" },
-  { key: "end", label: "Finish" },
+  { key: "preparation", labelKey: "scada.timeline.preparation" },
+  { key: "connect", labelKey: "scada.timeline.connect" },
+  { key: "therapy", labelKey: "scada.timeline.therapy" },
+  { key: "end", labelKey: "scada.timeline.finish" },
 ];
 
 /**
@@ -51,12 +52,13 @@ export function TherapyStateMachineTimeline({
   therapyActive,
   footer,
 }: TherapyStateMachineTimelineProps) {
+  const { t } = useTranslation();
   const activeIdx = getTherapyStepIndex(currentState);
 
   return (
     <Card className="flex-1 rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-scada-muted">
-        Therapy State
+        {t("scada.timeline.title")}
       </h3>
 
       <div className="relative">
@@ -89,9 +91,11 @@ export function TherapyStateMachineTimeline({
                         : "text-scada-muted",
                   )}
                 >
-                  {s.label}
+                  {t(s.labelKey)}
                   {isActive && therapyActive && (
-                    <span className="ml-2 text-[10px] text-scada-accent">◉ IN PROGRESS</span>
+                    <span className="ml-2 text-[10px] text-scada-accent">
+                      {t("scada.timeline.inProgress")}
+                    </span>
                   )}
                 </span>
               </div>

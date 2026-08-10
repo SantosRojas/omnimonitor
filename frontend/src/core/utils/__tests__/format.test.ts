@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { formatDate, formatDateTime, formatTime } from "../format";
+import { formatDate, formatDateTime, formatTime, formatTimeSeconds } from "../format";
 import { changeLanguage, initI18n } from "../../../i18n";
 
 // Local-time ISO (no Z): the calendar date stays 7/21 in every timezone.
@@ -65,5 +65,18 @@ describe("formatTime", () => {
     await changeLanguage("es");
     const es = formatTime(ISO_UTC);
     expect(en).not.toBe(es);
+  });
+});
+
+describe("formatTimeSeconds", () => {
+  it("returns em dash for null/empty/invalid", () => {
+    expect(formatTimeSeconds(null)).toBe("—");
+    expect(formatTimeSeconds("")).toBe("—");
+    expect(formatTimeSeconds("nope")).toBe("—");
+  });
+
+  it("always renders the seconds part", () => {
+    expect(formatTimeSeconds("2026-07-21T12:00:05")).toContain("05");
+    expect(formatTimeSeconds(ISO_LOCAL)).toMatch(/:\d{2}$/);
   });
 });

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { PatientInfoCard } from "../patient-info-card";
+import { resetI18n, setLanguage } from "../../../../i18n/testing";
 import type { TelemetryReading } from "../../domain/scada-store";
 
 /** Minimal reading for a given signal name. */
@@ -24,6 +25,10 @@ function reading(
 }
 
 describe("PatientInfoCard", () => {
+  afterEach(() => {
+    resetI18n();
+  });
+
   it("renders patient info from the therapy summary when no bridge signals arrived", () => {
     render(
       <PatientInfoCard
@@ -127,7 +132,30 @@ describe("PatientInfoCard", () => {
     expect(screen.queryByText("Anticoagulant")).not.toBeInTheDocument();
   });
 
-  it("uses the signal display names for therapy time and net removal labels", () => {
+  it("uses the en signal overlay for therapy time and net removal labels", () => {
+    render(
+      <PatientInfoCard
+        info={{}}
+        therapyTime="01:30:00"
+        netRemovalVol="250 ml"
+        displayNameMap={{
+          c_acc_therapy_time_act: "Tiempo de terapia transcurrido",
+          c_acc_net_rem_vol_act: "Remoción neta acumulada",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Therapy elapsed time")).toBeInTheDocument();
+    expect(screen.getByText("Accumulated net removal")).toBeInTheDocument();
+    expect(screen.getByText("01:30:00")).toBeInTheDocument();
+    expect(screen.getByText("250 ml")).toBeInTheDocument();
+    expect(screen.queryByText("Tiempo de terapia transcurrido")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remoción neta acumulada")).not.toBeInTheDocument();
+  });
+
+  it("shows the DB Spanish names for therapy time and net removal under es", async () => {
+    await setLanguage("es");
+
     render(
       <PatientInfoCard
         info={{}}
@@ -144,7 +172,5 @@ describe("PatientInfoCard", () => {
     expect(screen.getByText("Remoción neta acumulada")).toBeInTheDocument();
     expect(screen.getByText("01:30:00")).toBeInTheDocument();
     expect(screen.getByText("250 ml")).toBeInTheDocument();
-    expect(screen.queryByText("Therapy Time")).not.toBeInTheDocument();
-    expect(screen.queryByText("Net Removal Vol")).not.toBeInTheDocument();
   });
 });

@@ -26,3 +26,16 @@ export function formatTime(iso: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return "—";
   return date.toLocaleTimeString(i18n.language);
 }
+
+/** Formats an ISO timestamp as a locale-aware 24h time with seconds (HH:MM:SS). */
+export function formatTimeSeconds(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleTimeString(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}

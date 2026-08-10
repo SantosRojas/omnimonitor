@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Card } from "../../../ui/primitives/card";
 
 interface ProcessDiagramProps {
@@ -12,6 +13,7 @@ interface ProcessDiagramProps {
  * adapted to omni's `Reading` shape.
  */
 export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
+  const { t } = useTranslation();
   const fmt = (r: { value: number | null; unit?: string | null } | undefined, unit?: string) => {
     if (!r || r.value === null || r.value === undefined) return "---";
     return `${r.value} ${r.unit ?? unit ?? ""}`.trim();
@@ -20,7 +22,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
   return (
     <Card className="relative w-full overflow-hidden rounded-xl border border-scada-border bg-scada-card p-3 text-scada-text shadow-sm">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-scada-muted">
-        Dialysis Circuit
+        {t("scada.processDiagram.title")}
       </h3>
 
       <div className="flex items-center justify-center gap-8">
@@ -32,7 +34,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
               <path d="M10 44c0-8 6-16 14-16s14 8 14 16" />
             </svg>
           </div>
-          <span className="text-[10px] text-scada-muted">Patient</span>
+          <span className="text-[10px] text-scada-muted">{t("scada.processDiagram.patient")}</span>
         </div>
 
         {/* Arterial Line */}
@@ -44,7 +46,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
           <span className="font-mono text-xs text-scada-press-ap">
             {fmt(pressures["c_press_ap_act"], "mmHg")}
           </span>
-          <span className="text-[10px] text-scada-muted">Arterial</span>
+          <span className="text-[10px] text-scada-muted">{t("scada.processDiagram.arterial")}</span>
         </div>
 
         {/* Dialyzer */}
@@ -59,7 +61,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
               <line x1="5" y1="52" x2="35" y2="52" strokeDasharray="2 2" />
             </svg>
           </div>
-          <span className="text-[10px] text-scada-muted">Dialyzer</span>
+          <span className="text-[10px] text-scada-muted">{t("scada.processDiagram.dialyzer")}</span>
           <div className="flex gap-3 text-[10px] text-scada-muted">
             <span>
               FP:{" "}
@@ -93,7 +95,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
               <line x1="7" y1="14" x2="17" y2="14" strokeDasharray="2 1" />
               <line x1="7" y1="19" x2="14" y2="19" strokeDasharray="2 1" />
             </svg>
-            <span className="text-[10px] text-scada-muted">Effluent</span>
+            <span className="text-[10px] text-scada-muted">{t("scada.processDiagram.effluent")}</span>
           </div>
         </div>
 
@@ -106,7 +108,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
           <span className="font-mono text-xs text-scada-press-vp">
             {fmt(pressures["c_press_vp_act"], "mmHg")}
           </span>
-          <span className="text-[10px] text-scada-muted">Venous</span>
+          <span className="text-[10px] text-scada-muted">{t("scada.processDiagram.venous")}</span>
         </div>
       </div>
 
@@ -116,7 +118,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
           <div className="h-1.5 w-1.5 rounded-full bg-scada-flow-bf" />
           <div className="flex-1">
             <div className="flex justify-start gap-1 text-[10px]">
-              <span className="text-scada-muted">Blood Flow</span>
+              <span className="text-scada-muted">{t("scada.processDiagram.bloodFlow")}</span>
               <span className="font-mono text-scada-flow-bf">
                 {fmt(flows["c_pump_bs_bl_flow_act"], "ml/min")}
               </span>
@@ -127,7 +129,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
           <div className="h-1.5 w-1.5 rounded-full bg-scada-flow-df" />
           <div className="flex-1">
             <div className="flex justify-start gap-1 text-[10px]">
-              <span className="text-scada-muted">Dialysis Flow</span>
+              <span className="text-scada-muted">{t("scada.processDiagram.dialysisFlow")}</span>
               <span className="font-mono text-scada-flow-df">
                 {fmt(flows["c_pump_fs_mid_flow_act"], "ml/min")}
               </span>
@@ -138,7 +140,7 @@ export function ProcessDiagram({ pressures, flows }: ProcessDiagramProps) {
           <div className="h-1.5 w-1.5 rounded-full bg-scada-flow-nr" />
           <div className="flex-1">
             <div className="flex justify-start gap-1 text-[10px]">
-              <span className="text-scada-muted">Net Removal</span>
+              <span className="text-scada-muted">{t("scada.processDiagram.netRemoval")}</span>
               <span className="font-mono text-scada-flow-nr">
                 {fmt(flows["c_net_rem_flow_act"], "ml/min")}
               </span>

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,6 +13,7 @@ import {
 import type { TelemetryHistoryPoint } from "../domain/scada-store";
 import type { SeriesConfig } from "../signal-configs";
 import { ChartTooltip } from "./chart-tooltip";
+import { formatTimeSeconds } from "../../../core/utils/format";
 
 interface ScadaTrendChartProps {
   data: TelemetryHistoryPoint[];
@@ -27,18 +29,9 @@ interface ScadaTrendChartProps {
  * string would show UTC — convert to the viewer's timezone instead.
  */
 function formatChartTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return iso;
-  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return formatTimeSeconds(iso);
 }
 
 /**
@@ -53,6 +46,7 @@ export function ScadaTrendChart({
   showGrid = false,
   displayNameMap,
 }: ScadaTrendChartProps) {
+  const { t } = useTranslation();
   const formattedData = useMemo(() => {
     if (!data || data.length === 0) return [];
     return data
@@ -101,7 +95,7 @@ export function ScadaTrendChart({
               type="monotone"
               dataKey={s.key}
               stroke={s.color}
-              name={displayNameMap?.[s.key] ?? s.name}
+              name={t(`scada.signal.${s.key}`, { defaultValue: displayNameMap?.[s.key] ?? s.name })}
               strokeWidth={1.5}
               dot={false}
               activeDot={{ r: 3, fill: s.color }}
