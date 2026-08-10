@@ -157,36 +157,6 @@ export class HttpAdminRepo implements AdminRepo {
     await apiClient.delete(`/admin/comments/${commentId}`);
   }
 
-  // ── Export ──────────────────────────────────────────────────────
-
-  async exportPatient(
-    patientId: number,
-    format: "csv" | "json",
-  ): Promise<Blob> {
-    const { data } = await apiClient.get(
-      `/admin/export/patients/${patientId}`,
-      {
-        params: { format },
-        responseType: "blob",
-      },
-    );
-    return data;
-  }
-
-  async exportTherapy(
-    therapyId: number,
-    format: "csv" | "json",
-  ): Promise<Blob> {
-    const { data } = await apiClient.get(
-      `/admin/export/therapies/${therapyId}`,
-      {
-        params: { format },
-        responseType: "blob",
-      },
-    );
-    return data;
-  }
-
   // ── Config ──────────────────────────────────────────────────────
 
   async getConfig(): Promise<Record<string, unknown>> {

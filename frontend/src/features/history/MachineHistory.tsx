@@ -10,6 +10,7 @@ import { Button } from "../../ui/primitives/button";
 import { Badge } from "../../ui/primitives/badge";
 import { Check } from "lucide-react";
 import { formatDateTime } from "../../core/utils/format";
+import { exportToExcel } from "../../core/utils/exportExcel";
 const therapyRepo = new HttpTherapyRepo();
 const PAGE_SIZE = 10;
 
@@ -78,18 +79,26 @@ export default function MachineHistory() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageData = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  const exportCsv = () => {
-    const header = "Patient,Type,Start,End,Status";
-    const rows = filtered.map((t: any) =>
-      `"${t.patient_name ?? ""}","${t.therapy_type ?? ""}","${toLocalIso(t.created_at)}","${toLocalIso(t.ended_at)}","${t.status ?? ""}"`,
+  const exportExcel = () => {
+    exportToExcel(
+      filtered,
+      [
+        { header: t("history.patient"), value: (r: any) => r.patient_name ?? "" },
+        { header: t("history.type"), value: (r: any) => r.therapy_type ?? "" },
+        { header: t("history.start"), value: (r: any) => toLocalIso(r.created_at) },
+        { header: t("history.end"), value: (r: any) => toLocalIso(r.ended_at) },
+        {
+          header: t("history.weightInitial"),
+          value: (r: any) => (r.weight != null ? `${r.weight} kg` : ""),
+        },
+        {
+          header: t("history.weightEnd"),
+          value: (r: any) => (r.end_weight != null ? `${r.end_weight} kg` : ""),
+        },
+        { header: t("history.status"), value: (r: any) => r.status ?? "" },
+      ],
+      `machine-${machineId}-history.xlsx`,
     );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `machine-${machineId}-history.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const setEndWeight = useMutation({
@@ -123,7 +132,7 @@ export default function MachineHistory() {
       <PageHeader
         title={t("history.title")}
         description={t("history.machineDescription", { machineId })}
-        actions={<Button size="sm" onClick={exportCsv}>{t("history.exportCsv")}</Button>}
+        actions={<Button size="sm" onClick={exportExcel}>{t("history.exportExcel")}</Button>}
       />
 
       {/* Filters */}

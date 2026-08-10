@@ -31,6 +31,7 @@
     "react-tooltip": "^6.0.8",
     "recharts": "^3.10.0",
     "tailwind-merge": "^3.6.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zustand": "^5.0.0"
   },
   "devDependencies": {

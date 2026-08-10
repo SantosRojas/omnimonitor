@@ -30,10 +30,6 @@ export interface AdminRepo {
   createComment(therapyId: number, content: string): Promise<unknown>;
   deleteComment(commentId: number): Promise<void>;
 
-  // Export
-  exportPatient(patientId: number, format: "csv" | "json"): Promise<Blob>;
-  exportTherapy(therapyId: number, format: "csv" | "json"): Promise<Blob>;
-
   // Config
   getConfig(): Promise<Record<string, unknown>>;
 }

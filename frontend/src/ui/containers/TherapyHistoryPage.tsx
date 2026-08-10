@@ -32,6 +32,7 @@ import { DataTable } from "../components/DataTable";
 import { Pagination } from "../components/Pagination";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import { formatDateTime, formatTime } from "../../core/utils/format";
+import { exportToExcel } from "../../core/utils/exportExcel";
 import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 
 const therapyRepo = new HttpTherapyRepo();
@@ -230,11 +231,32 @@ export default function TherapyHistoryPage() {
   const pageStart = filteredRows.length === 0 ? 0 : pageIndex * pageSize + 1;
   const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredRows.length);
 
-  // ── CSV export via existing backend endpoint ───────────────
+  // ── Excel export (client-side, no server round-trip) ───────
   const handleExport = useCallback(() => {
-    const url = `/api/export/readings?therapy_id=${therapyId}&format=csv`;
-    window.open(url, "_blank");
-  }, [therapyId]);
+    exportToExcel(
+      filteredRows,
+      [
+        {
+          header: t("history.time"),
+          value: (r) => (r.recorded_at ? formatDateTime(r.recorded_at) : ""),
+        },
+        {
+          header: t("history.signal"),
+          value: (r) =>
+            r.internal_name ? signalDisplayName(signalDisplayMap, r.internal_name) : "",
+        },
+        {
+          header: t("history.value"),
+          value: (r) => (r.value != null ? Number(r.value.toFixed(2)) : ""),
+        },
+        {
+          header: t("history.unit"),
+          value: (r) => r.unit ?? "",
+        },
+      ],
+      `therapy-${therapyId}-history.xlsx`,
+    );
+  }, [filteredRows, signalDisplayMap, t, therapyId]);
 
   // ── Loading ────────────────────────────────────────────────
   if (historyLoading && historyRows.length === 0) {
@@ -292,7 +314,7 @@ export default function TherapyHistoryPage() {
               <Table2 className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={handleExport}>
-              <Download className="h-4 w-4" /> {t("history.exportCsv")}
+              <Download className="h-4 w-4" /> {t("history.exportExcel")}
             </Button>
           </div>
         }
