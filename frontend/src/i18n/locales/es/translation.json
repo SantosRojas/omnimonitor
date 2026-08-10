@@ -299,21 +299,6 @@
       "noOnlineMachines": "No hay máquinas en línea",
       "loadFailed": "No se pudieron cargar las máquinas",
       "unknownError": "Error desconocido"
-    },
-    "nurseStation": {
-      "title": "Central de enfermería",
-      "description": "Monitoreo central: todas las máquinas de un vistazo",
-      "searchPlaceholder": "Buscar por máquina, paciente o DNI...",
-      "all": "Todos",
-      "onlineCount": "{{count}} en línea",
-      "offlineCount": "{{count}} desconectadas",
-      "alarms_one": "{{count}} alarma",
-      "alarms_other": "{{count}} alarmas",
-      "noMachinesMatch": "Ninguna máquina coincide con los filtros",
-      "tryAdjusting": "Ajusta los filtros",
-      "noMachines": "No hay máquinas registradas",
-      "appearViaBridge": "Las máquinas aparecen automáticamente cuando se conectan a través de un puente",
-      "patientDni": "DNI: {{id}}"
     }
   },
   "history": {
@@ -400,7 +385,6 @@
     "reconnectionAlertsDescription": "Mostrar una notificación cuando el WebSocket se reconecta",
     "connection": "Conexión",
     "server": "Servidor: {{url}}",
-    "languageComingSoon": "La selección de idioma estará disponible en una futura actualización.",
     "about": "Acerca de",
     "version": "Versión: {{value}}",
     "frontend": "Frontend: {{value}}",

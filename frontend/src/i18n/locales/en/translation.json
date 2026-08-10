@@ -299,21 +299,6 @@
       "noOnlineMachines": "No online machines",
       "loadFailed": "Failed to load machines",
       "unknownError": "Unknown error"
-    },
-    "nurseStation": {
-      "title": "Nurse Station",
-      "description": "Central monitoring — all machines at a glance",
-      "searchPlaceholder": "Search by machine, patient, or DNI...",
-      "all": "All",
-      "onlineCount": "{{count}} online",
-      "offlineCount": "{{count}} offline",
-      "alarms_one": "{{count}} alarm",
-      "alarms_other": "{{count}} alarms",
-      "noMachinesMatch": "No machines match your filters",
-      "tryAdjusting": "Try adjusting filters",
-      "noMachines": "No machines registered",
-      "appearViaBridge": "Machines appear automatically when they connect via a bridge",
-      "patientDni": "DNI: {{id}}"
     }
   },
   "history": {
@@ -400,7 +385,6 @@
     "reconnectionAlertsDescription": "Show a notification when the WebSocket reconnects",
     "connection": "Connection",
     "server": "Server: {{url}}",
-    "languageComingSoon": "Language selection will be available in a future update.",
     "about": "About",
     "version": "Version: {{value}}",
     "frontend": "Frontend: {{value}}",
