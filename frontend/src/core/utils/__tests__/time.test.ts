@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach, beforeAll } from "vitest";
 import { relativeTime, formatDuration } from "../time";
-import { initI18n } from "../../../i18n";
+import { changeLanguage, initI18n } from "../../../i18n";
 
 beforeAll(() => {
   // relativeTime now resolves the en catalog ("just now", "5m ago", ...).
@@ -52,6 +52,20 @@ describe("relativeTime", () => {
   it("returns days ago", () => {
     expect(relativeTime(isoAgo(3 * 86400))).toBe("3d ago");
     expect(relativeTime(isoAgo(10 * 86400))).toBe("10d ago");
+  });
+});
+
+describe("relativeTime es plurals", () => {
+  afterEach(async () => {
+    await changeLanguage("en");
+  });
+
+  it("uses Spanish singular and plural forms", async () => {
+    await changeLanguage("es");
+
+    expect(relativeTime(isoAgo(60))).toBe("hace 1 minuto");
+    expect(relativeTime(isoAgo(3 * 60))).toBe("hace 3 minutos");
+    expect(relativeTime(isoAgo(2 * 3600))).toBe("hace 2 horas");
   });
 });
 
