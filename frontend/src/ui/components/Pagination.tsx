@@ -66,10 +66,10 @@ export function Pagination({
   const pages = buildPageWindow(currentPage, totalPages);
 
   const btnBase =
-    "rounded border border-gray-300 px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed";
-  const btnActive = "bg-blue-600 text-white border-blue-600";
+    "rounded border border-gray-300 px-3 py-1.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed dark:border-neutral-700 dark:text-neutral-300 dark:focus:ring-accent/60";
+  const btnActive = "bg-blue-600 text-white border-blue-600 dark:bg-accent dark:border-accent dark:text-neutral-950";
   const btnInactive =
-    "bg-white text-gray-700 hover:bg-gray-50";
+    "bg-white text-gray-700 hover:bg-gray-50 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800";
 
   return (
     <nav

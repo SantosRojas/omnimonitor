@@ -79,15 +79,15 @@ export function AppLayout() {
       "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none",
       collapsed ? "justify-center px-2" : "gap-3",
       isActive(to)
-        ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white"
-        : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-white",
+        ? "bg-neutral-100 text-neutral-900 dark:bg-accent/10 dark:text-accent"
+        : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200",
     );
 
   const sidebarContent = (
     <div className="flex h-full flex-col gap-4">
       {/* Logo */}
       <div className={cn("flex items-center px-4 py-4", collapsed ? "justify-center px-0" : "gap-2")}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-accent/15 dark:text-accent dark:ring-1 dark:ring-accent/30">
           <Activity className="h-4 w-4" />
         </div>
         {!collapsed && (
@@ -117,7 +117,7 @@ export function AppLayout() {
 
         {isAdmin && (
           <>
-            <div className="my-2 border-t border-neutral-200 dark:border-neutral-700" />
+            <div className="my-2 border-t border-neutral-200 dark:border-neutral-800" />
             {!collapsed && (
               <p className="px-3 text-xs font-medium text-neutral-500 dark:text-neutral-400">
                 {t("nav.administration")}
@@ -143,7 +143,7 @@ export function AppLayout() {
       </nav>
 
       {/* Bottom: user + theme + logout */}
-      <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
+      <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
         <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3 px-3")}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
             {user?.username?.charAt(0)?.toUpperCase() || "U"}
@@ -162,14 +162,14 @@ export function AppLayout() {
 
         {/* Theme toggle */}
         {!collapsed && (
-          <div className="mb-2 mt-3 flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-700">
+          <div className="mb-2 mt-3 flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-800">
             <button
               onClick={() => setTheme("light")}
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "light"
-                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
-                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
+                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-accent/15 dark:text-accent"
+                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               title={t("nav.lightMode")}
             >
@@ -180,8 +180,8 @@ export function AppLayout() {
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "dark"
-                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-neutral-800 dark:text-white"
-                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white",
+                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-accent/15 dark:text-accent"
+                  : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               title={t("nav.darkMode")}
             >

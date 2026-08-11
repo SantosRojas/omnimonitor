@@ -21,15 +21,15 @@ interface StatusBadgeProps {
  */
 const colourClasses: Record<string, string> = {
   active:
-    "bg-green-100 text-green-800 ring-green-600/20",
+    "bg-green-100 text-green-800 ring-green-600/20 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-500/30",
   completed:
-    "bg-gray-100 text-gray-600 ring-gray-500/20",
+    "bg-gray-100 text-gray-600 ring-gray-500/20 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-600/30",
   cancelled:
-    "bg-red-100 text-red-700 ring-red-600/20",
+    "bg-red-100 text-red-700 ring-red-600/20 dark:bg-red-900/40 dark:text-red-300 dark:ring-red-500/30",
   paused:
-    "bg-yellow-100 text-yellow-800 ring-yellow-600/20",
+    "bg-yellow-100 text-yellow-800 ring-yellow-600/20 dark:bg-yellow-900/40 dark:text-yellow-300 dark:ring-yellow-500/30",
   pending:
-    "bg-yellow-100 text-yellow-800 ring-yellow-600/20",
+    "bg-yellow-100 text-yellow-800 ring-yellow-600/20 dark:bg-yellow-900/40 dark:text-yellow-300 dark:ring-yellow-500/30",
 };
 
 function badgeColour(status: string): string {

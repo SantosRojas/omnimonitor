@@ -111,7 +111,7 @@ export default function Settings() {
                     className={cn(
                       "flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-all",
                       isActive
-                        ? "bg-neutral-900 text-white shadow-sm dark:bg-white dark:text-neutral-900"
+                        ? "bg-neutral-900 text-white shadow-sm dark:bg-accent/15 dark:text-accent"
                         : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800",
                     )}
                   >

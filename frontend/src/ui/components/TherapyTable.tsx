@@ -70,7 +70,7 @@ export function TherapyTable({
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="h-12 animate-pulse rounded-md bg-gray-100"
+            className="h-12 animate-pulse rounded-md bg-gray-100 dark:bg-neutral-800"
           />
         ))}
       </div>
@@ -80,7 +80,7 @@ export function TherapyTable({
   /* ── Empty state ──────────────────────────────────────────── */
   if (therapies.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+      <div className="flex flex-col items-center justify-center py-16 text-gray-400 dark:text-neutral-500">
         <svg
           className="mb-3 h-12 w-12"
           fill="none"
@@ -104,10 +104,10 @@ export function TherapyTable({
 
   /* ── Table ────────────────────────────────────────────────── */
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
+    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-neutral-800">
+      <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-neutral-800">
         {/* ── Header ──────────────────────────────────────────── */}
-        <thead className="bg-gray-50">
+        <thead className="bg-gray-50 dark:bg-neutral-900">
           <tr>
             {[
               t("dashboard.patient"),
@@ -121,7 +121,7 @@ export function TherapyTable({
             ].map((heading) => (
               <th
                 key={heading}
-                className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500"
+                className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-neutral-400"
               >
                 {heading}
               </th>
@@ -130,24 +130,24 @@ export function TherapyTable({
         </thead>
 
         {/* ── Body ────────────────────────────────────────────── */}
-        <tbody className="divide-y divide-gray-100 bg-white">
+        <tbody className="divide-y divide-gray-100 bg-white dark:divide-neutral-800 dark:bg-neutral-950">
           {therapies.map((row) => (
             <tr
               key={row.therapy_id}
-              className="hover:bg-gray-50/50 transition-colors"
+              className="hover:bg-gray-50/50 transition-colors dark:hover:bg-neutral-900/50"
             >
               {/* Patient */}
-              <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">
+              <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900 dark:text-neutral-100">
                 {row.patient_external_id}
               </td>
 
               {/* Machine */}
-              <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+              <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-neutral-400">
                 {row.machine_label ?? row.machine_serial}
               </td>
 
               {/* Pressures */}
-              <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+              <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-neutral-400">
                 <div className="space-y-0.5">
                   <span className="block">
                     {t("scada.signal.c_press_fp_act")}: {pressureValue(row.pressures, "filter_pressure")}
@@ -162,7 +162,7 @@ export function TherapyTable({
               </td>
 
               {/* Flows */}
-              <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+              <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-neutral-400">
                 <div className="space-y-0.5">
                   <span className="block">
                     {t("scada.signal.c_net_rem_flow_act")}: {flowValue(row.flows, "net_rem_flow")}
@@ -174,12 +174,12 @@ export function TherapyTable({
               </td>
 
               {/* Start Time */}
-              <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+              <td className="whitespace-nowrap px-4 py-3 text-gray-600 dark:text-neutral-400">
                 {formatDateTime(row.started_at)}
               </td>
 
               {/* Elapsed */}
-              <td className="whitespace-nowrap px-4 py-3 tabular-nums text-gray-600">
+              <td className="whitespace-nowrap px-4 py-3 tabular-nums text-gray-600 dark:text-neutral-400">
                 {formatElapsed(row.elapsed_seconds)}
               </td>
 
@@ -193,7 +193,7 @@ export function TherapyTable({
                 <button
                   type="button"
                   onClick={() => onSelectTherapy(row.therapy_id)}
-                  className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
+                  className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900/70 dark:focus:ring-blue-400"
                 >
                   {t("dashboard.viewScada")}
                 </button>

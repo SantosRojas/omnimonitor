@@ -76,7 +76,7 @@ function TabsTrigger({ value, className, children }: TabsTriggerProps) {
       className={cn(
         "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all",
         isActive
-          ? "bg-white text-neutral-900 shadow-sm dark:bg-neutral-950 dark:text-neutral-100"
+          ? "bg-white text-neutral-900 shadow-sm dark:bg-accent/15 dark:text-accent"
           : "hover:text-neutral-900 dark:hover:text-neutral-100",
         className,
       )}

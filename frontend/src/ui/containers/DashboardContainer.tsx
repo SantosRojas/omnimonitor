@@ -102,10 +102,10 @@ export default function DashboardContainer() {
     <div className="space-y-6">
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-neutral-100">
           {t("dashboard.title")}
         </h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-gray-500 dark:text-neutral-400">
           {t("dashboard.description")}
         </p>
       </div>

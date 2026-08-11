@@ -30,21 +30,21 @@ export class ErrorBoundary extends Component<Props, State> {
   render(): ReactNode {
     if (this.state.hasError) {
       return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-8">
+        <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-neutral-950 p-8">
           <div className="max-w-md text-center">
             <div className="mb-6 text-6xl">⚠️</div>
-            <h1 className="mb-4 text-2xl font-bold text-gray-900 dark:text-gray-100">
+            <h1 className="mb-4 text-2xl font-bold text-gray-900 dark:text-neutral-100">
               Algo salió mal
             </h1>
-            <p className="mb-6 text-gray-600 dark:text-gray-400">
+            <p className="mb-6 text-gray-600 dark:text-neutral-400">
               Ocurrió un error inesperado. Por favor intenta de nuevo.
             </p>
             {this.state.error && (
               <details className="mb-6 text-left">
-                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                <summary className="cursor-pointer text-sm text-gray-500 hover:text-gray-700 dark:text-neutral-400 dark:hover:text-neutral-200">
                   Detalles del error
                 </summary>
-                <pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-100 dark:bg-gray-800 p-3 text-xs text-red-600 dark:text-red-400">
+                <pre className="mt-2 max-h-40 overflow-auto rounded bg-gray-100 dark:bg-neutral-800 p-3 text-xs text-red-600 dark:text-red-400">
                   {this.state.error.message}
                   {"\n"}
                   {this.state.error.stack}
