@@ -187,12 +187,12 @@ export default function PatientList() {
 
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">{t("patients.dniReadOnly")}</label>
+                <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("patients.dniReadOnly")}</label>
                 <Input value={editPatient.external_id} disabled />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">{t("patients.name")}</label>
+                <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("patients.name")}</label>
                 <Input
                   value={editPatient.name ?? ""}
                   onChange={(e) =>
@@ -204,7 +204,7 @@ export default function PatientList() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-500">{t("patients.age")}</label>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("patients.age")}</label>
                   <Input
                     type="number"
                     min={0}
@@ -220,7 +220,7 @@ export default function PatientList() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-neutral-500">{t("patients.email")}</label>
+                  <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("patients.email")}</label>
                   <Input
                     type="email"
                     value={editPatient.email ?? ""}
@@ -233,7 +233,7 @@ export default function PatientList() {
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-neutral-500">{t("patients.address")}</label>
+                <label className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("patients.address")}</label>
                 <Input
                   value={editPatient.address ?? ""}
                   onChange={(e) =>

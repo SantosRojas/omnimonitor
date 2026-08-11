@@ -5,6 +5,7 @@ import { Square } from "lucide-react";
 import { HttpTherapyRepo } from "../../../data/repos/http-therapy-repo";
 import { useAuthStore } from "../../../store/auth-store";
 import { Button } from "../../../ui/primitives/button";
+import { Input } from "../../../ui/primitives/input";
 import { ConfirmDialog } from "../../../ui/components/ConfirmDialog";
 
 interface CloseTherapyButtonProps {
@@ -91,10 +92,10 @@ export function CloseTherapyButton({
         isLoading={closeTherapy.isPending}
       >
         <label className="mt-4 block">
-          <span className="block text-sm font-medium text-gray-700">
+          <span className="block text-sm font-medium text-neutral-700 dark:text-neutral-300">
             {t("scada.closeTherapy.finalWeight")}
           </span>
-          <input
+          <Input
             type="number"
             step="0.1"
             min="0"
@@ -102,7 +103,7 @@ export function CloseTherapyButton({
             value={endWeight}
             onChange={(e) => setEndWeight(e.target.value)}
             placeholder={t("scada.closeTherapy.weightPlaceholder")}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors"
+            className="mt-1"
           />
         </label>
       </ConfirmDialog>
