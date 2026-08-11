@@ -66,7 +66,7 @@ export function LoginForm({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
-          className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm placeholder-neutral-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder-neutral-500 dark:focus:border-accent dark:focus:ring-accent"
+          className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm placeholder-neutral-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder-neutral-500"
           placeholder={t("login.usernamePlaceholder")}
         />
       </div>
@@ -86,7 +86,7 @@ export function LoginForm({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 pr-10 text-sm text-neutral-900 shadow-sm placeholder-neutral-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder-neutral-500 dark:focus:border-accent dark:focus:ring-accent"
+            className="block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 pr-10 text-sm text-neutral-900 shadow-sm placeholder-neutral-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent dark:border-neutral-600 dark:bg-neutral-950 dark:text-neutral-100 dark:placeholder-neutral-500"
             placeholder={t("login.passwordPlaceholder")}
           />
           <button
@@ -109,7 +109,7 @@ export function LoginForm({
       <button
         type="submit"
         disabled={isLoading}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-accent dark:text-neutral-950 dark:hover:bg-[#22d9ff] dark:focus:ring-accent/60 dark:focus:ring-offset-neutral-900"
+        className="w-full rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-950 dark:hover:bg-accent/80 dark:focus:ring-offset-neutral-900"
       >
         {isLoading ? t("login.signingIn") : t("login.submit")}
       </button>

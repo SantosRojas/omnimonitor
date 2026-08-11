@@ -248,7 +248,7 @@ export function Table<T>({
                           <button
                             type="button"
                             onClick={() => onEdit(row.original)}
-                            className="rounded px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors dark:text-blue-400 dark:hover:bg-blue-950"
+                            className="rounded px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent/60 transition-colors"
                           >
                             {t("common.edit")}
                           </button>

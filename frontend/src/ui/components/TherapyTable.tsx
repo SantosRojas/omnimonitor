@@ -193,7 +193,7 @@ export function TherapyTable({
                 <button
                   type="button"
                   onClick={() => onSelectTherapy(row.therapy_id)}
-                  className="rounded bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 transition-colors dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900/70 dark:focus:ring-blue-400"
+                  className="rounded bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-1 transition-colors"
                 >
                   {t("dashboard.viewScada")}
                 </button>

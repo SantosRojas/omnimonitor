@@ -78,7 +78,7 @@ function CollapsedControl({ title }: { title: string }) {
         <Globe className="h-4 w-4" />
       </Button>
       {open && (
-        <div className="absolute bottom-full right-0 z-20 mb-2 w-28 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-28 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
           {LANGUAGE_OPTIONS.map(({ value: lng, label }) => (
             <button
               key={lng}

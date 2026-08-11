@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "../primitives/button";
 import { LanguageSelector } from "../components/LanguageSelector";
+import { AccentPicker } from "../components/AccentPicker";
 import { useAuthStore } from "../../store/auth-store";
 import { useThemeStore } from "../../store/theme-store";
 import { useTranslation } from "react-i18next";
@@ -79,7 +80,7 @@ export function AppLayout() {
       "flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none",
       collapsed ? "justify-center px-2" : "gap-3",
       isActive(to)
-        ? "bg-neutral-100 text-neutral-900 dark:bg-accent/10 dark:text-accent"
+        ? "bg-accent/10 text-accent"
         : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200",
     );
 
@@ -87,7 +88,7 @@ export function AppLayout() {
     <div className="flex h-full flex-col gap-4">
       {/* Logo */}
       <div className={cn("flex items-center px-4 py-4", collapsed ? "justify-center px-0" : "gap-2")}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-900 text-white dark:bg-accent/15 dark:text-accent dark:ring-1 dark:ring-accent/30">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15 text-accent ring-1 ring-accent/30">
           <Activity className="h-4 w-4" />
         </div>
         {!collapsed && (
@@ -168,7 +169,7 @@ export function AppLayout() {
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "light"
-                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-accent/15 dark:text-accent"
+                  ? "bg-accent/15 text-accent"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               title={t("nav.lightMode")}
@@ -180,13 +181,20 @@ export function AppLayout() {
               className={cn(
                 "flex flex-1 items-center justify-center rounded-md px-2 py-1.5 text-xs transition-all",
                 theme === "dark"
-                  ? "bg-neutral-100 text-neutral-900 shadow-sm dark:bg-accent/15 dark:text-accent"
+                  ? "bg-accent/15 text-accent"
                   : "text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100",
               )}
               title={t("nav.darkMode")}
             >
               <Moon className="h-3.5 w-3.5" />
             </button>
+          </div>
+        )}
+
+        {/* Accent picker (expanded) */}
+        {!collapsed && (
+          <div className="mb-2 mt-3 flex justify-center">
+            <AccentPicker variant="icon" />
           </div>
         )}
 
@@ -198,6 +206,7 @@ export function AppLayout() {
             <Button variant="ghost" size="icon" onClick={toggle} title={theme === "light" ? t("nav.dark") : t("nav.light")}>
               {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </Button>
+            <AccentPicker variant="icon" />
             <LanguageSelector variant="collapsed" />
           </div>
         )}

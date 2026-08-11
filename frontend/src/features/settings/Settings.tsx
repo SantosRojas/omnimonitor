@@ -7,6 +7,7 @@ import { Input } from "../../ui/primitives/input";
 import { Button } from "../../ui/primitives/button";
 import { useThemeStore } from "../../store/theme-store";
 import { LanguageSelector } from "../../ui/components/LanguageSelector";
+import { AccentPicker } from "../../ui/components/AccentPicker";
 import { cn } from "../../ui/primitives";
 import { useCylinderConfigs } from "../../features/scada/domain/use-cylinder-config";
 import type {
@@ -111,7 +112,7 @@ export default function Settings() {
                     className={cn(
                       "flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-all",
                       isActive
-                        ? "bg-neutral-900 text-white shadow-sm dark:bg-accent/15 dark:text-accent"
+                        ? "bg-accent/15 text-accent"
                         : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800",
                     )}
                   >
@@ -121,6 +122,9 @@ export default function Settings() {
                 );
               })}
             </div>
+          </div>
+          <div className="mt-4">
+            <AccentPicker />
           </div>
         </CardContent>
       </Card>

@@ -428,6 +428,12 @@
     "confirmPassword": "Confirm new password",
     "passwordsMismatch": "Passwords do not match",
     "passwordChanged": "Password changed successfully",
-    "changingPassword": "Changing..."
+    "changingPassword": "Changing...",
+    "accent": "Accent color",
+    "accentDescription": "Customize the app accent color for both themes",
+    "accentCustom": "Custom",
+    "accentApply": "Apply",
+    "accentReset": "Reset",
+    "accentColors": { "cyan": "Cyan", "blue": "Blue", "green": "Green", "amber": "Amber", "red": "Red", "pink": "Pink", "purple": "Purple" }
   }
 }

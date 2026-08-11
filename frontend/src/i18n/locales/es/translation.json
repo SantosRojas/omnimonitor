@@ -428,6 +428,12 @@
     "confirmPassword": "Confirmar nueva contraseña",
     "passwordsMismatch": "Las contraseñas no coinciden",
     "passwordChanged": "Contraseña cambiada correctamente",
-    "changingPassword": "Cambiando..."
+    "changingPassword": "Cambiando...",
+    "accent": "Color de acento",
+    "accentDescription": "Personaliza el color de acento de la aplicación para ambos temas",
+    "accentCustom": "Personalizado",
+    "accentApply": "Aplicar",
+    "accentReset": "Restablecer",
+    "accentColors": { "cyan": "Cian", "blue": "Azul", "green": "Verde", "amber": "Ámbar", "red": "Rojo", "pink": "Rosa", "purple": "Púrpura" }
   }
 }
