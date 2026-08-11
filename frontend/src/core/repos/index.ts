@@ -4,4 +4,5 @@ export type { MachineRepo } from "./machine-repo";
 export type { SignalRepo } from "./signal-repo";
 export type { PatientRepo } from "./patient-repo";
 export type { AdminRepo } from "./admin-repo";
+export type { ProfileRepo } from "./profile-repo";
 export type { CylinderConfigRepo } from "./cylinder-config-repo";

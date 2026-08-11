@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Extension, Json, Router,
 };
 use argon2::PasswordHasher;
@@ -24,6 +24,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/admin/users", post(create_user))
         .route("/admin/users/:id", patch(update_user))
         .route("/admin/users/:id", delete(delete_user))
+        .route("/admin/users/:id/password", put(reset_user_password))
         // Equivalences CRUD
         .route("/admin/equivalences", get(list_admin_equivalences))
         .route("/admin/equivalences", post(create_admin_equivalence))
@@ -60,12 +61,19 @@ pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub role: String,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
     pub username: Option<String>,
     pub role: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub new_password: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -150,13 +158,14 @@ async fn create_user(
 
     let user = state
         .user_repo
-        .create(&req.username, &hash, &req.role)
+        .create(&req.username, &hash, &req.role, req.email.as_deref())
         .await
-        .map_err(|e| {
-            (
-                StatusCode::CONFLICT,
-                Json(json!({"error": e.to_string()})),
-            )
+        .map_err(|e| match e {
+            RepoError::Conflict(msg) => (StatusCode::CONFLICT, Json(json!({"error": msg}))),
+            other => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": other.to_string()})),
+            ),
         })?;
 
     Ok((StatusCode::CREATED, Json(json!(user))))
@@ -197,16 +206,51 @@ async fn update_user(
 
     let user = state
         .user_repo
-        .update(id, &username, &role)
+        .update(id, Some(&username), Some(&role), req.email.as_deref())
         .await
-        .map_err(|e| {
-            (
+        .map_err(|e| match e {
+            RepoError::Conflict(msg) => (StatusCode::CONFLICT, Json(json!({"error": msg}))),
+            other => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            )
+                Json(json!({"error": other.to_string()})),
+            ),
         })?;
 
     Ok(Json(json!(user)))
+}
+
+/// PUT /admin/users/:id/password — admin sets a new password for another user.
+async fn reset_user_password(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let salt = argon2::password_hash::SaltString::generate(
+        &mut argon2::password_hash::rand_core::OsRng,
+    );
+    let hash = argon2::Argon2::default()
+        .hash_password(req.new_password.as_bytes(), &salt)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Password hashing failed: {}", e)})),
+            )
+        })?
+        .to_string();
+
+    state
+        .user_repo
+        .update_password_hash(id, &hash)
+        .await
+        .map_err(|e| match e {
+            RepoError::NotFound(msg) => (StatusCode::NOT_FOUND, Json(json!({"error": msg}))),
+            other => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": other.to_string()})),
+            ),
+        })?;
+
+    Ok(Json(json!({"message": format!("Password for user {} updated", id)})))
 }
 
 /// DELETE /admin/users/:id

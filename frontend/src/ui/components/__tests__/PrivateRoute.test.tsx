@@ -48,6 +48,7 @@ function setLoggedIn(options: {
   const user: User = {
     id: userId,
     username,
+    email: null,
     role: options.role as "admin" | "operator" | "viewer",
     created_at: "2024-01-01T00:00:00Z",
   };

@@ -7,11 +7,28 @@ import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent } from "../../ui/primitives/card";
 import { Button } from "../../ui/primitives/button";
 import { Input } from "../../ui/primitives/input";
-import { Search, Pen, User } from "lucide-react";
+import { Search, Pen, User, Download } from "lucide-react";
 import { formatDate } from "../../core/utils/format";
+import { exportToExcel } from "../../core/utils/exportExcel";
 import type { Patient } from "../../core/types";
 
 const patientRepo = new HttpPatientRepo();
+
+/** Formats an ISO UTC timestamp as local-time ISO 8601 with offset (Excel-friendly). */
+function toLocalIso(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  );
+}
 
 export default function PatientList() {
   const { t } = useTranslation();
@@ -53,11 +70,32 @@ export default function PatientList() {
     updateMutation.mutate(editPatient);
   };
 
+  const handleExport = () => {
+    exportToExcel(
+      patients,
+      [
+        { header: t("patients.dni"), value: (r) => r.external_id ?? "" },
+        { header: t("patients.name"), value: (r) => r.name ?? "" },
+        { header: t("patients.age"), value: (r) => (r.age != null ? r.age : "") },
+        { header: t("patients.email"), value: (r) => r.email ?? "" },
+        { header: t("patients.address"), value: (r) => r.address ?? "" },
+        { header: t("patients.registered"), value: (r) => toLocalIso(r.created_at) },
+      ],
+      "patients.xlsx",
+    );
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={t("patients.title")}
         description={t("patients.description")}
+        actions={
+          <Button size="sm" onClick={handleExport}>
+            <Download className="h-4 w-4" />
+            {t("patients.exportExcel")}
+          </Button>
+        }
       />
 
       {/* Search + actions */}

@@ -14,6 +14,7 @@ export class HttpAdminRepo implements AdminRepo {
     username: string;
     password: string;
     role: string;
+    email?: string | null;
   }): Promise<User> {
     const { data } = await apiClient.post<User>("/admin/users", input);
     return data;
@@ -21,7 +22,7 @@ export class HttpAdminRepo implements AdminRepo {
 
   async updateUser(
     id: number,
-    input: { username?: string; role?: string },
+    input: { username?: string; role?: string; email?: string | null },
   ): Promise<User> {
     const { data } = await apiClient.patch<User>(
       `/admin/users/${id}`,
@@ -32,6 +33,17 @@ export class HttpAdminRepo implements AdminRepo {
 
   async deleteUser(id: number): Promise<void> {
     await apiClient.delete(`/admin/users/${id}`);
+  }
+
+  async resetPassword(
+    id: number,
+    newPassword: string,
+  ): Promise<{ message: string }> {
+    const { data } = await apiClient.put<{ message: string }>(
+      `/admin/users/${id}/password`,
+      { new_password: newPassword },
+    );
+    return data;
   }
 
   // ── Equivalences ────────────────────────────────────────────────

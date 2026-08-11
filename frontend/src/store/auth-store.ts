@@ -48,6 +48,11 @@ export interface AuthActions {
    * as authenticated.
    */
   login: (token: string, user: User) => void;
+  /**
+   * Replaces the stored user without invalidating the current token.
+   * Used to keep the session in sync after a profile update.
+   */
+  setUser: (user: User) => void;
   /** Clears credentials from memory and localStorage, effectively logging out. */
   logout: () => void;
   /**
@@ -75,6 +80,11 @@ export const useAuthStore = create<AuthStore>((set) => ({
     saveToStorage(TOKEN_KEY, token);
     saveToStorage(USER_KEY, user);
     set({ token, user, isAuthenticated: true });
+  },
+
+  setUser: (user: User) => {
+    saveToStorage(USER_KEY, user);
+    set({ user });
   },
 
   logout: () => {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 /* ── Public types ─────────────────────────────────────────────── */
 
-export type FieldType = "text" | "select" | "number";
+export type FieldType = "text" | "select" | "number" | "email";
 
 export interface Field {
   /** Field name (used as the key in form values). */
@@ -14,6 +14,8 @@ export interface Field {
   type: FieldType;
   /** Options for `type: "select"` fields. */
   options?: { value: string; label: string }[];
+  /** When `true`, an empty value is allowed (no required-field error). */
+  optional?: boolean;
 }
 
 export interface AdminCrudFormProps {
@@ -25,6 +27,8 @@ export interface AdminCrudFormProps {
   initialValues?: Record<string, string | number>;
   /** Whether the form is currently submitting. */
   isLoading: boolean;
+  /** Server-side error message surfaced above the submit button (e.g. a 409 conflict). */
+  error?: string | null;
 }
 
 /* ── Component ────────────────────────────────────────────────── */
@@ -41,6 +45,7 @@ export function AdminCrudForm({
   onSubmit,
   initialValues,
   isLoading,
+  error,
 }: AdminCrudFormProps) {
   const { t } = useTranslation();
   const [values, setValues] = useState<
@@ -67,12 +72,17 @@ export function AdminCrudForm({
     const next: Record<string, string> = {};
     for (const f of fields) {
       const v = values[f.name];
-      if (
+      const empty =
         v === undefined ||
         v === "" ||
-        (typeof v === "number" && isNaN(v))
-      ) {
+        (typeof v === "number" && isNaN(v));
+      if (empty && !f.optional) {
         next[f.name] = t("admin.form.required", { label: f.label });
+      }
+      if (!empty && f.type === "email" && typeof v === "string") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+          next[f.name] = t("admin.form.invalidEmail", { label: f.label });
+        }
       }
     }
     setErrors(next);
@@ -132,7 +142,7 @@ export function AdminCrudForm({
           ) : (
             <input
               id={`crud-${field.name}`}
-              type={field.type === "number" ? "number" : "text"}
+              type={field.type === "number" ? "number" : field.type === "email" ? "email" : "text"}
               value={String(values[field.name] ?? "")}
               onChange={(e) => setValue(field.name, e.target.value)}
               className={`mt-1 block w-full rounded-md border px-3 py-2 text-sm shadow-sm placeholder-gray-400 focus:outline-none focus:ring-1 ${
@@ -149,6 +159,13 @@ export function AdminCrudForm({
           )}
         </div>
       ))}
+
+      {/* ── Server error (e.g. 409 conflict) ────────────────────── */}
+      {error && (
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">
+          {error}
+        </p>
+      )}
 
       {/* ── Submit ──────────────────────────────────────────────── */}
       <div className="flex justify-end gap-3 pt-2">

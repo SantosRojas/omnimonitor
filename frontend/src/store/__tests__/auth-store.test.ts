@@ -7,6 +7,7 @@ import type { User } from "../../core/types";
 const mockUser: User = {
   id: 1,
   username: "nurse",
+  email: null,
   role: "operator",
   created_at: "2024-01-01T00:00:00Z",
 };

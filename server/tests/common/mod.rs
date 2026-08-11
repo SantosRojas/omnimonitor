@@ -123,13 +123,19 @@ async fn health_check() -> &'static str {
 /// Generate a test JWT token using the shared test secret "test-jwt-secret".
 /// The token has sub=1, role="admin", exp=24h from now.
 pub fn test_jwt() -> String {
+    jwt_for(1, "admin")
+}
+
+/// Generate a test JWT for an arbitrary user id and role.
+/// Useful for profile tests, where the token `sub` must match a real user.
+pub fn jwt_for(sub: i64, role: &str) -> String {
     use chrono::Utc;
     use jsonwebtoken::{EncodingKey, Header, encode};
     use server::api::auth::Claims;
 
     let claims = Claims {
-        sub: 1,
-        role: "admin".into(),
+        sub,
+        role: role.into(),
         exp: (Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
     };
     encode(

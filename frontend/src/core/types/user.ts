@@ -3,6 +3,7 @@ export type UserRole = "admin" | "operator" | "viewer";
 export interface User {
   id: number;
   username: string;
+  email: string | null;
   role: UserRole;
   created_at: string;
 }

@@ -73,7 +73,8 @@
     "loadMachineFailed": "No se pudo cargar la máquina",
     "machineUnreachable": "La máquina \"{{id}}\" no se pudo encontrar o no está disponible.",
     "retry": "Reintentar",
-    "passwordChangeFailed": "Error al cambiar la contraseña"
+    "passwordChangeFailed": "Error al cambiar la contraseña",
+    "updateProfileFailed": "Error al actualizar el perfil"
   },
   "status": {
     "active": "Activa",
@@ -152,6 +153,13 @@
     "roleAdmin": "Administrador",
     "roleOperator": "Operador",
     "roleViewer": "Espectador",
+    "email": "Correo electrónico",
+    "emailPlaceholder": "email@example.com",
+    "newPassword": "Nueva contraseña",
+    "resetPassword": "Restablecer contraseña",
+    "resetPasswordTitle": "Restablecer contraseña",
+    "passwordResetSuccess": "Contraseña actualizada correctamente",
+    "passwordResetFailed": "Error al restablecer la contraseña",
     "createUser": "Crear usuario",
     "editUser": "Editar usuario",
     "deleteUser": "Eliminar usuario",
@@ -189,7 +197,8 @@
     "form": {
       "required": "{{label}} es obligatorio.",
       "select": "Seleccionar {{label}}",
-      "enter": "Ingresar {{label}}"
+      "enter": "Ingresar {{label}}",
+      "invalidEmail": "{{label}} no es un correo electrónico válido."
     },
     "new": "+ Nuevo",
     "signalConfigTitle": "Configuración de señales",
@@ -370,7 +379,8 @@
     "actions": "Acciones",
     "editInfo": "Editar información del paciente",
     "dniReadOnly": "DNI (solo lectura)",
-    "saving": "Guardando..."
+    "saving": "Guardando...",
+    "exportExcel": "Exportar Excel"
   },
   "settings": {
     "description": "Personalice su experiencia de aplicación",
@@ -401,9 +411,16 @@
     "title": "Configuración",
     "userProfile": "Perfil de usuario",
     "accountInfo": "Información de la cuenta",
+    "editProfile": "Editar perfil",
     "username": "Usuario",
     "email": "Correo electrónico",
     "role": "Rol",
+    "usernamePlaceholder": "Nombre de usuario",
+    "emailPlaceholder": "email@example.com",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "profileUpdated": "Perfil actualizado correctamente",
+    "currentPasswordIncorrect": "La contraseña actual es incorrecta",
     "changePassword": "Cambiar contraseña",
     "currentPassword": "Contraseña actual",
     "newPassword": "Nueva contraseña",

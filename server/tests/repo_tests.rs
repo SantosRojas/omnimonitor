@@ -332,7 +332,7 @@ async fn therapy_soft_delete_records_audit_and_hides_from_list(pool: PgPool) {
     let (pid, mid) = seed_patient_and_machine(&pool).await;
     let repo = TherapyRepo::new(pool.clone());
     let user = UserRepo::new(pool)
-        .create("therapy-del-user", "hash", "admin")
+        .create("therapy-del-user", "hash", "admin", None)
         .await
         .unwrap();
 
@@ -366,7 +366,7 @@ async fn therapy_soft_delete_rejects_open_therapy(pool: PgPool) {
     let (pid, mid) = seed_patient_and_machine(&pool).await;
     let repo = TherapyRepo::new(pool.clone());
     let user = UserRepo::new(pool)
-        .create("therapy-del-user2", "hash", "admin")
+        .create("therapy-del-user2", "hash", "admin", None)
         .await
         .unwrap();
 
@@ -534,7 +534,7 @@ async fn signal_soft_delete(pool: PgPool) {
     let s = repo.create("to-delete", None, None).await.unwrap();
     // Create a user first so the FK constraint on deleted_by is satisfied
     let user_repo = server::infrastructure::postgres::user_repo::UserRepo::new(pool);
-    let user = user_repo.create("signal-test-user", "hash", "admin").await.unwrap();
+    let user = user_repo.create("signal-test-user", "hash", "admin", None).await.unwrap();
     repo.soft_delete(s.id, user.id).await.unwrap();
     // Should no longer be found
     assert!(repo.find_by_id(s.id).await.unwrap().is_none());
@@ -557,7 +557,7 @@ async fn signal_value_mappings(pool: PgPool) {
     let s = repo.create("sig-map", None, None).await.unwrap();
     // Create a user for FK constraint (deleted_by, changed_by)
     let user_repo = server::infrastructure::postgres::user_repo::UserRepo::new(pool);
-    let user = user_repo.create("map-test-user", "hash", "admin").await.unwrap();
+    let user = user_repo.create("map-test-user", "hash", "admin", None).await.unwrap();
 
     // Add mappings
     let m1 = repo.add_mapping(s.id, Some("0"), Some("Off")).await.unwrap();
@@ -758,7 +758,7 @@ async fn readings_machine_summary(pool: PgPool) {
 async fn user_create_and_find(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = UserRepo::new(pool);
-    let u = repo.create("alice", "hash123", "operator").await.unwrap();
+    let u = repo.create("alice", "hash123", "operator", None).await.unwrap();
     assert_eq!(u.username, "alice");
     assert_eq!(u.role.as_deref(), Some("operator"));
 
@@ -777,8 +777,8 @@ async fn user_list(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = UserRepo::new(pool);
     assert!(repo.list().await.unwrap().is_empty());
-    repo.create("u1", "h1", "viewer").await.unwrap();
-    repo.create("u2", "h2", "admin").await.unwrap();
+    repo.create("u1", "h1", "viewer", None).await.unwrap();
+    repo.create("u2", "h2", "admin", None).await.unwrap();
     assert_eq!(repo.list().await.unwrap().len(), 2);
 }
 
@@ -786,12 +786,92 @@ async fn user_list(pool: PgPool) {
 async fn user_duplicate_username(pool: PgPool) {
     common::setup_db(&pool).await;
     let repo = UserRepo::new(pool);
-    repo.create("bob", "hash1", "viewer").await.unwrap();
-    let result = repo.create("bob", "hash2", "admin").await;
+    repo.create("bob", "hash1", "viewer", None).await.unwrap();
+    let result = repo.create("bob", "hash2", "admin", None).await;
     let err = result.unwrap_err();
-    assert!(matches!(err, RepoError::Database(_)));
-    // Not a RepoError::Conflict because the repo doesn't catch unique violations
-    // It returns RepoError::Database wrapping the sqlx error
+    // The repo maps the UNIQUE violation (users_username_key) to
+    // RepoError::Conflict so the API layer can return HTTP 409.
+    assert!(matches!(err, RepoError::Conflict(_)));
+}
+
+#[sqlx::test]
+async fn user_create_with_email(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = UserRepo::new(pool);
+    let u = repo
+        .create("carol", "hash", "viewer", Some("carol@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(u.email.as_deref(), Some("carol@example.com"));
+    // Survives a round trip through find_by_id
+    let found = repo.find_by_id(u.id).await.unwrap().unwrap();
+    assert_eq!(found.email.as_deref(), Some("carol@example.com"));
+    // Email stays NULL when not provided
+    let no_email = repo.create("dave", "hash", "viewer", None).await.unwrap();
+    assert_eq!(no_email.email, None);
+}
+
+#[sqlx::test]
+async fn user_duplicate_email(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = UserRepo::new(pool);
+    repo.create("alice", "hash1", "viewer", Some("dup@example.com"))
+        .await
+        .unwrap();
+    let err = repo
+        .create("bob", "hash2", "admin", Some("dup@example.com"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RepoError::Conflict(_)));
+}
+
+#[sqlx::test]
+async fn user_update_email(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = UserRepo::new(pool);
+    let u = repo.create("erin", "hash", "operator", None).await.unwrap();
+    let updated = repo
+        .update(u.id, None, None, Some("erin@example.com"))
+        .await
+        .unwrap();
+    assert_eq!(updated.email.as_deref(), Some("erin@example.com"));
+    // NULL email keeps the existing value (COALESCE pattern)
+    let unchanged = repo.update(u.id, None, None, None).await.unwrap();
+    assert_eq!(unchanged.email.as_deref(), Some("erin@example.com"));
+    // username/role can be updated in the same call
+    let renamed = repo
+        .update(u.id, Some("erin-2"), Some("admin"), None)
+        .await
+        .unwrap();
+    assert_eq!(renamed.username, "erin-2");
+    assert_eq!(renamed.role.as_deref(), Some("admin"));
+}
+
+#[sqlx::test]
+async fn user_update_email_conflict(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = UserRepo::new(pool);
+    repo.create("frank", "hash1", "viewer", Some("taken@example.com"))
+        .await
+        .unwrap();
+    let u2 = repo.create("grace", "hash2", "viewer", None).await.unwrap();
+    let err = repo
+        .update(u2.id, None, None, Some("taken@example.com"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, RepoError::Conflict(_)));
+}
+
+#[sqlx::test]
+async fn user_update_password_hash(pool: PgPool) {
+    common::setup_db(&pool).await;
+    let repo = UserRepo::new(pool);
+    let u = repo.create("heidi", "old-hash", "viewer", None).await.unwrap();
+    repo.update_password_hash(u.id, "new-hash").await.unwrap();
+    let found = repo.find_by_id(u.id).await.unwrap().unwrap();
+    assert_eq!(found.password_hash, "new-hash");
+    let err = repo.update_password_hash(999_999, "hash").await.unwrap_err();
+    assert!(matches!(err, RepoError::NotFound(_)));
 }
 
 // ════════════════════════════════════════════════════════════════════════

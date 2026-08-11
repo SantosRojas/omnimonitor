@@ -168,13 +168,16 @@ async fn register(
         })?
         .to_string();
 
-    match state.user_repo.create(&req.username, &hash, role).await {
+    match state.user_repo.create(&req.username, &hash, role, None).await {
         Ok(user) => {
             info!("Created user {} (id={}, role={})", user.username, user.id, role);
             Ok((
                 StatusCode::CREATED,
                 Json(json!({"id": user.id, "username": user.username, "role": user.role})),
             ))
+        }
+        Err(RepoError::Conflict(msg)) => {
+            Err((StatusCode::CONFLICT, Json(json!({"error": msg}))))
         }
         Err(RepoError::Database(e)) => {
             if let Some(sqlx_err) = e.as_database_error() {

@@ -286,7 +286,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .to_string();
 
         user_repo
-            .create("admin", &hash, "admin")
+            .create("admin", &hash, "admin", None)
             .await
             .map_err(|e| format!("Failed to seed admin user: {}", e))?;
 

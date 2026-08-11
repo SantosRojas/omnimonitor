@@ -3,9 +3,10 @@ import type { Bridge, User } from "../types";
 export interface AdminRepo {
   // Users
   listUsers(): Promise<User[]>;
-  createUser(data: { username: string; password: string; role: string }): Promise<User>;
-  updateUser(id: number, data: { username?: string; role?: string }): Promise<User>;
+  createUser(data: { username: string; password: string; role: string; email?: string | null }): Promise<User>;
+  updateUser(id: number, data: { username?: string; role?: string; email?: string | null }): Promise<User>;
   deleteUser(id: number): Promise<void>;
+  resetPassword(id: number, newPassword: string): Promise<{ message: string }>;
 
   // Equivalences
   listEquivalences(): Promise<unknown[]>;

@@ -54,6 +54,7 @@ export function LoginContainer() {
       login(res.token, {
         id: res.user_id,
         username,
+        email: null,
         role: res.role as UserRole,
         created_at: new Date().toISOString(),
       });

@@ -10,10 +10,11 @@ import { HttpAdminRepo } from "../../data/repos/http-admin-repo";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User, Bridge, Machine } from "../../core/types";
+import type { User, Bridge, Machine, ApiError } from "../../core/types";
 import { PageHeader } from "../layouts/PageHeader";
 import { Card, CardContent } from "../primitives/card";
 import { Button } from "../primitives/button";
+import { Input } from "../primitives/input";
 import { formatDate, formatDateTime } from "../../core/utils/format";
 
 const adminRepo = new HttpAdminRepo();
@@ -45,22 +46,46 @@ function UsersSection() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [state, setState] = useState<CrudState<User>>(initialCrudState);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetSuccess, setResetSuccess] = useState(false);
 
   const { data: users = [], isLoading } = useQuery<User[]>({
     queryKey: ["admin", "users"],
     queryFn: () => adminRepo.listUsers(),
   });
 
+  function handleError(error: unknown) {
+    setFormError((error as ApiError)?.error ?? t("errors.unexpected"));
+  }
+
+  function resetFormState() {
+    setFormError(null);
+    setNewPassword("");
+    setResetSuccess(false);
+  }
+
   const createMutation = useMutation({
     mutationFn: (vals: Record<string, string | number>) =>
-      adminRepo.createUser({ username: String(vals.username), password: String(vals.password), role: String(vals.role) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "users"] }); setState(initialCrudState); },
+      adminRepo.createUser({
+        username: String(vals.username),
+        password: String(vals.password),
+        role: String(vals.role),
+        email: vals.email ? String(vals.email) : null,
+      }),
+    onError: handleError,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "users"] }); setState(initialCrudState); resetFormState(); },
   });
 
   const updateMutation = useMutation({
     mutationFn: (vals: Record<string, string | number>) =>
-      adminRepo.updateUser(Number(vals.id), { username: vals.username ? String(vals.username) : undefined, role: vals.role ? String(vals.role) : undefined }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "users"] }); setState(initialCrudState); },
+      adminRepo.updateUser(Number(vals.id), {
+        username: vals.username ? String(vals.username) : undefined,
+        role: vals.role ? String(vals.role) : undefined,
+        email: vals.email ? String(vals.email) : undefined,
+      }),
+    onError: handleError,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "users"] }); setState(initialCrudState); resetFormState(); },
   });
 
   const deleteMutation = useMutation({
@@ -68,8 +93,14 @@ function UsersSection() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin", "users"] }); setState(initialCrudState); },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: (id: number) => adminRepo.resetPassword(id, newPassword),
+    onSuccess: () => { setNewPassword(""); setResetSuccess(true); },
+  });
+
   const columns: Column<User>[] = [
     { key: "username", label: t("admin.username") },
+    { key: "email", label: t("admin.email"), render: (item) => item.email || "—" },
     { key: "role", label: t("admin.role") },
     { key: "created_at", label: t("admin.created"), render: (item) => (item.created_at ? formatDate(item.created_at) : "—") },
   ];
@@ -77,16 +108,18 @@ function UsersSection() {
   const formFields: Field[] = [
     { name: "username", label: t("admin.username"), type: "text" },
     { name: "password", label: t("admin.password"), type: "text" },
+    { name: "email", label: t("admin.email"), type: "email", optional: true },
     { name: "role", label: t("admin.role"), type: "select", options: [{ value: "admin", label: t("admin.roleAdmin") }, { value: "operator", label: t("admin.roleOperator") }, { value: "viewer", label: t("admin.roleViewer") }] },
   ];
 
   const editFields: Field[] = [
     { name: "username", label: t("admin.username"), type: "text" },
+    { name: "email", label: t("admin.email"), type: "email", optional: true },
     { name: "role", label: t("admin.role"), type: "select", options: [{ value: "admin", label: t("admin.roleAdmin") }, { value: "operator", label: t("admin.roleOperator") }, { value: "viewer", label: t("admin.roleViewer") }] },
   ];
 
   return (
-    <SectionShell title={t("admin.users")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
+    <SectionShell title={t("admin.users")} onCreate={() => { resetFormState(); setState({ formOpen: true, editing: null, deleting: null }); }}>
       {!state.formOpen ? (
         <Table<User>
           columns={columns}
@@ -94,16 +127,42 @@ function UsersSection() {
           keyExtractor={(u) => u.id}
           isLoading={isLoading}
           emptyMessage={t("admin.noUsers")}
-          filterableColumns={["username", "role"]}
-          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+          filterableColumns={["username", "email", "role"]}
+          onEdit={(row) => { resetFormState(); setState({ formOpen: true, editing: row, deleting: null }); }}
           onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
         />
       ) : (
         <Card>
           <CardContent className="pt-6">
             <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? t("admin.editUser") : t("admin.createUser")}</h3>
-            <AdminCrudForm fields={state.editing ? editFields : formFields} initialValues={state.editing ? { id: state.editing.id, username: state.editing.username, role: state.editing.role } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
+            <AdminCrudForm fields={state.editing ? editFields : formFields} initialValues={state.editing ? { id: state.editing.id, username: state.editing.username, email: state.editing.email ?? "", role: state.editing.role } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} error={formError} />
+            {state.editing && (
+              <div className="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-700">
+                <h4 className="mb-2 text-sm font-semibold text-neutral-900 dark:text-white">{t("admin.resetPasswordTitle")}</h4>
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <label htmlFor="crud-reset-password" className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("admin.newPassword")}</label>
+                    <Input
+                      id="crud-reset-password"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => { setNewPassword(e.target.value); setResetSuccess(false); }}
+                      placeholder={t("admin.newPassword")}
+                    />
+                  </div>
+                  <Button size="sm" disabled={!newPassword || resetPasswordMutation.isPending} onClick={() => state.editing && resetPasswordMutation.mutate(state.editing.id)}>
+                    {resetPasswordMutation.isPending ? t("common.saving") : t("admin.resetPassword")}
+                  </Button>
+                </div>
+                {resetPasswordMutation.isError && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{t("admin.passwordResetFailed")}</p>
+                )}
+                {resetSuccess && (
+                  <p className="mt-2 text-xs text-green-600 dark:text-green-400">{t("admin.passwordResetSuccess")}</p>
+                )}
+              </div>
+            )}
+            <Button variant="ghost" size="sm" className="mt-3" onClick={() => { resetFormState(); setState(initialCrudState); }}>{t("common.cancel")}</Button>
           </CardContent>
         </Card>
       )}

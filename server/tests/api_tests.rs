@@ -1095,6 +1095,421 @@ async fn bridges_admin_update_and_delete(pool: PgPool) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+//  Admin users: email + password reset tests
+// ════════════════════════════════════════════════════════════════════════
+
+/// Create a user via the admin API. Returns the created user JSON.
+async fn create_user_via_admin(app: &axum::Router, token: &str, username: &str) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/users")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({
+                        "username": username,
+                        "password": "initial-pass",
+                        "role": "operator"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CREATED);
+    body_json(response).await
+}
+
+#[sqlx::test]
+async fn admin_create_user_with_email(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/users")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({
+                        "username": "admin-email-user",
+                        "password": "secret",
+                        "role": "viewer",
+                        "email": "admin-user@example.com"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = body_json(response).await;
+    assert_eq!(body["email"], "admin-user@example.com");
+}
+
+#[sqlx::test]
+async fn admin_create_user_email_conflict(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+
+    let create = |app: axum::Router, username: &str| {
+        app.oneshot(
+            Request::builder()
+                .uri("/api/admin/users")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({
+                        "username": username,
+                        "password": "secret",
+                        "role": "viewer",
+                        "email": "shared@example.com"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+    };
+
+    let res1 = create(app.clone(), "admin-user-1").await.unwrap();
+    assert_eq!(res1.status(), StatusCode::CREATED);
+
+    let res2 = create(app, "admin-user-2").await.unwrap();
+    assert_eq!(res2.status(), StatusCode::CONFLICT);
+    let err: Value = body_json(res2).await;
+    assert!(err["error"].as_str().unwrap().contains("Email"));
+}
+
+#[sqlx::test]
+async fn admin_update_user_email(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+    let created = create_user_via_admin(&app, &token, "upd-user").await;
+    let id = created["id"].as_i64().unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/api/admin/users/{}", id))
+                .method(Method::PATCH)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"email": "upd@example.com"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = body_json(response).await;
+    assert_eq!(body["email"], "upd@example.com");
+}
+
+#[sqlx::test]
+async fn admin_reset_user_password(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+    let created = create_user_via_admin(&app, &token, "reset-user").await;
+    let id = created["id"].as_i64().unwrap();
+
+    let reset_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/api/admin/users/{}/password", id))
+                .method(Method::PUT)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"new_password": "admin-reset-pass"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reset_resp.status(), StatusCode::OK);
+
+    // The reset password must work for login
+    let login_resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/login")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"username": "reset-user", "password": "admin-reset-pass"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_resp.status(), StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn admin_reset_password_not_found(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::test_jwt();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/users/999999/password")
+                .method(Method::PUT)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({"new_password": "whatever"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  Profile (users/me) API tests
+// ════════════════════════════════════════════════════════════════════════
+
+#[sqlx::test]
+async fn profile_get_me_returns_email(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let admin_token = common::test_jwt();
+    let created = create_user_via_admin(&app, &admin_token, "profile-user").await;
+    let user_id = created["id"].as_i64().unwrap();
+    let user_token = common::jwt_for(user_id, "operator");
+
+    // Set email first via PATCH
+    let patch_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me")
+                .method(Method::PATCH)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", user_token))
+                .body(Body::from(
+                    serde_json::json!({"email": "profile@example.com"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(patch_resp.status(), StatusCode::OK);
+
+    // GET /users/me returns the profile with email, never password_hash
+    let get_resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me")
+                .method(Method::GET)
+                .header("authorization", format!("Bearer {}", user_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status(), StatusCode::OK);
+    let body: Value = body_json(get_resp).await;
+    assert_eq!(body["id"], user_id);
+    assert_eq!(body["username"], "profile-user");
+    assert_eq!(body["email"], "profile@example.com");
+    assert_eq!(body["role"], "operator");
+    assert!(body.get("password_hash").is_none(), "profile must not leak password_hash");
+}
+
+#[sqlx::test]
+async fn profile_get_me_not_found(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let token = common::jwt_for(999_999, "admin");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test]
+async fn profile_patch_email_conflict(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let admin_token = common::test_jwt();
+    let user_a = create_user_via_admin(&app, &admin_token, "profile-a").await;
+    let user_b = create_user_via_admin(&app, &admin_token, "profile-b").await;
+    let token_a = common::jwt_for(user_a["id"].as_i64().unwrap(), "operator");
+    let token_b = common::jwt_for(user_b["id"].as_i64().unwrap(), "operator");
+
+    // User A claims the email
+    let set_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me")
+                .method(Method::PATCH)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token_a))
+                .body(Body::from(
+                    serde_json::json!({"email": "shared@example.com"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(set_resp.status(), StatusCode::OK);
+
+    // User B tries the same email → 409
+    let conflict_resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me")
+                .method(Method::PATCH)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token_b))
+                .body(Body::from(
+                    serde_json::json!({"email": "shared@example.com"}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(conflict_resp.status(), StatusCode::CONFLICT);
+    let err: Value = body_json(conflict_resp).await;
+    assert!(err["error"].as_str().unwrap().contains("Email"));
+}
+
+#[sqlx::test]
+async fn profile_change_password_wrong_current(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let admin_token = common::test_jwt();
+    let created = create_user_via_admin(&app, &admin_token, "pw-user").await;
+    let user_id = created["id"].as_i64().unwrap();
+    let token = common::jwt_for(user_id, "operator");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me/password")
+                .method(Method::PUT)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({
+                        "current_password": "wrong",
+                        "new_password": "new-pass-123"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test]
+async fn profile_change_password_success_then_login(pool: PgPool) {
+    let app = common::build_test_app(pool).await;
+    let admin_token = common::test_jwt();
+    let created = create_user_via_admin(&app, &admin_token, "pw-user2").await;
+    let user_id = created["id"].as_i64().unwrap();
+    let token = common::jwt_for(user_id, "operator");
+
+    // Initial password works
+    let login_initial = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/login")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"username": "pw-user2", "password": "initial-pass"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_initial.status(), StatusCode::OK);
+
+    // Change password
+    let change_resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/users/me/password")
+                .method(Method::PUT)
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {}", token))
+                .body(Body::from(
+                    serde_json::json!({
+                        "current_password": "initial-pass",
+                        "new_password": "changed-pass"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(change_resp.status(), StatusCode::OK);
+
+    // Old password no longer works
+    let login_old = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/login")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"username": "pw-user2", "password": "initial-pass"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_old.status(), StatusCode::UNAUTHORIZED);
+
+    // New password works
+    let login_new = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/login")
+                .method(Method::POST)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({"username": "pw-user2", "password": "changed-pass"})
+                        .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login_new.status(), StatusCode::OK);
+}
+
+// ════════════════════════════════════════════════════════════════════════
 //  Health check makes sure basic routing works
 // ════════════════════════════════════════════════════════════════════════
 

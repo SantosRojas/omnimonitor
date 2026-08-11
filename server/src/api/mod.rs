@@ -8,6 +8,7 @@ pub mod dashboards;
 pub mod export;
 pub mod machines;
 pub mod patients;
+pub mod profile;
 pub mod signals;
 pub mod therapies;
 
@@ -75,6 +76,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(cylinder_configs::router(state.clone()))
         .merge(dashboards::router(state.clone()))
         .merge(export::router(state.clone()))
+        .merge(profile::router(state.clone()))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::auth_middleware,

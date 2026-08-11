@@ -73,7 +73,8 @@
     "loadMachineFailed": "Failed to load machine",
     "machineUnreachable": "Machine \"{{id}}\" could not be found or is unreachable.",
     "retry": "Retry",
-    "passwordChangeFailed": "Failed to change password"
+    "passwordChangeFailed": "Failed to change password",
+    "updateProfileFailed": "Failed to update profile"
   },
   "status": {
     "active": "Active",
@@ -152,6 +153,13 @@
     "roleAdmin": "Admin",
     "roleOperator": "Operator",
     "roleViewer": "Viewer",
+    "email": "Email",
+    "emailPlaceholder": "email@example.com",
+    "newPassword": "New password",
+    "resetPassword": "Reset password",
+    "resetPasswordTitle": "Reset password",
+    "passwordResetSuccess": "Password updated successfully",
+    "passwordResetFailed": "Failed to reset password",
     "createUser": "Create User",
     "editUser": "Edit User",
     "deleteUser": "Delete User",
@@ -189,7 +197,8 @@
     "form": {
       "required": "{{label}} is required.",
       "select": "Select {{label}}",
-      "enter": "Enter {{label}}"
+      "enter": "Enter {{label}}",
+      "invalidEmail": "{{label}} is not a valid email."
     },
     "new": "+ New",
     "signalConfigTitle": "Signal Configuration",
@@ -370,7 +379,8 @@
     "actions": "Actions",
     "editInfo": "Edit patient info",
     "dniReadOnly": "DNI (read-only)",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "exportExcel": "Export Excel"
   },
   "settings": {
     "description": "Customize your application experience",
@@ -401,9 +411,16 @@
     "title": "Settings",
     "userProfile": "User Profile",
     "accountInfo": "Account Information",
+    "editProfile": "Edit Profile",
     "username": "Username",
     "email": "Email",
     "role": "Role",
+    "usernamePlaceholder": "Username",
+    "emailPlaceholder": "email@example.com",
+    "save": "Save",
+    "saving": "Saving…",
+    "profileUpdated": "Profile updated successfully",
+    "currentPasswordIncorrect": "Current password is incorrect",
     "changePassword": "Change Password",
     "currentPassword": "Current password",
     "newPassword": "New password",
