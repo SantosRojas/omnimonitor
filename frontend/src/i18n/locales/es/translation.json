@@ -29,7 +29,9 @@
     "submit": "Iniciar sesión",
     "signingIn": "Iniciando sesión…",
     "usernamePlaceholder": "Ingresa tu usuario",
-    "passwordPlaceholder": "Ingresa tu contraseña"
+    "passwordPlaceholder": "Ingresa tu contraseña",
+    "showPassword": "Mostrar contraseña",
+    "hidePassword": "Ocultar contraseña"
   },
   "common": {
     "cancel": "Cancelar",

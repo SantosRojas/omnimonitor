@@ -87,14 +87,14 @@ describe("LoginContainer", () => {
       screen.getByRole("button", { name: /sign in/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
   });
 
   it("navigates to /dashboard on successful nurse login", async () => {
     render(<LoginContainer />);
 
     await user.type(screen.getByLabelText(/username/i), "nurse");
-    await user.type(screen.getByLabelText(/password/i), "pass");
+    await user.type(screen.getByLabelText("Password"), "pass");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
@@ -113,7 +113,7 @@ describe("LoginContainer", () => {
     render(<LoginContainer />);
 
     await user.type(screen.getByLabelText(/username/i), "admin");
-    await user.type(screen.getByLabelText(/password/i), "pass");
+    await user.type(screen.getByLabelText("Password"), "pass");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
@@ -127,7 +127,7 @@ describe("LoginContainer", () => {
     render(<LoginContainer />);
 
     await user.type(screen.getByLabelText(/username/i), "nurse");
-    await user.type(screen.getByLabelText(/password/i), "wrong-password");
+    await user.type(screen.getByLabelText("Password"), "wrong-password");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     await waitFor(() => {
@@ -156,7 +156,7 @@ describe("LoginContainer", () => {
     render(<LoginContainer />);
 
     await user.type(screen.getByLabelText(/username/i), "nurse");
-    await user.type(screen.getByLabelText(/password/i), "pass");
+    await user.type(screen.getByLabelText("Password"), "pass");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
 
     // Loading state should replace the button text

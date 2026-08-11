@@ -29,7 +29,9 @@
     "submit": "Sign in",
     "signingIn": "Signing in…",
     "usernamePlaceholder": "Enter your username",
-    "passwordPlaceholder": "Enter your password"
+    "passwordPlaceholder": "Enter your password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "common": {
     "cancel": "Cancel",
