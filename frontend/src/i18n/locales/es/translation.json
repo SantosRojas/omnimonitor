@@ -19,7 +19,9 @@
     "light": "Claro",
     "dark": "Oscuro",
     "expand": "Expandir",
-    "collapse": "Contraer"
+    "collapse": "Contraer",
+    "menu": "Menú",
+    "close": "Cerrar"
   },
   "login": {
     "title": "Iniciar sesión",

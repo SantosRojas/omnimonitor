@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -67,6 +67,25 @@ export function AppLayout() {
     });
   }
 
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [sidebarOpen]);
+
+  // Close sidebar on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && sidebarOpen) setSidebarOpen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen]);
+
   const handleLogout = () => {
     logout();
     navigate("/login", { replace: true });
@@ -88,7 +107,7 @@ export function AppLayout() {
     <div className="flex h-full flex-col gap-4">
       {/* Logo */}
       <div className={cn("flex items-center px-4 py-4", collapsed ? "justify-center px-0" : "gap-2")}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/15 text-accent ring-1 ring-accent/30">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent ring-1 ring-accent/30">
           <Activity className="h-4 w-4" />
         </div>
         {!collapsed && (
@@ -96,6 +115,14 @@ export function AppLayout() {
             OMNI PDMS
           </span>
         )}
+        {/* Mobile close button — right side of logo row */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="ml-auto flex h-8 w-8 items-center justify-center rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 md:hidden"
+          aria-label={t("nav.close")}
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Nav */}
@@ -231,10 +258,12 @@ export function AppLayout() {
     <div className="flex h-screen">
       {/* Mobile hamburger */}
       <button
-        className="fixed left-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white shadow-sm dark:border-neutral-700 dark:bg-neutral-900 md:hidden"
+        className="fixed left-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white shadow-sm transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800 md:hidden"
         onClick={() => setSidebarOpen(!sidebarOpen)}
+        aria-label={t("nav.menu")}
+        aria-expanded={sidebarOpen}
       >
-        {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        <Menu className="h-4 w-4" />
       </button>
 
       {/* Desktop sidebar */}
@@ -259,18 +288,37 @@ export function AppLayout() {
         </button>
       </aside>
 
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed left-0 top-0 z-50 h-full w-72 border-r border-neutral-200 bg-white shadow-xl dark:border-neutral-800 dark:bg-neutral-900">
+      {/* Mobile sidebar — animated slide-in overlay */}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 md:hidden",
+          sidebarOpen ? "pointer-events-auto" : "pointer-events-none",
+        )}
+        aria-hidden={!sidebarOpen}
+      >
+        {/* Backdrop */}
+        <div
+          className={cn(
+            "absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300",
+            sidebarOpen ? "opacity-100" : "opacity-0",
+          )}
+          onClick={() => setSidebarOpen(false)}
+        />
+        {/* Slide-in panel */}
+        <aside
+          className={cn(
+            "absolute left-0 top-0 z-50 flex h-full w-72 max-w-[85vw] flex-col border-r border-neutral-200 bg-white shadow-xl transition-transform duration-300 ease-out dark:border-neutral-800 dark:bg-neutral-950",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full",
+          )}
+        >
+          <div className="flex-1 overflow-y-auto">
             {sidebarContent}
-          </aside>
-        </div>
-      )}
+          </div>
+        </aside>
+      </div>
 
       {/* Main content */}
-      <main className="flex flex-1 flex-col overflow-y-auto bg-neutral-50 p-6 dark:bg-neutral-950">
+      <main className="flex flex-1 flex-col overflow-y-auto bg-neutral-50 px-4 pb-6 pt-12 sm:px-6 md:px-6 md:pt-6 dark:bg-neutral-950">
         <Outlet />
       </main>
     </div>

@@ -19,7 +19,9 @@
     "light": "Light",
     "dark": "Dark",
     "expand": "Expand",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "menu": "Menu",
+    "close": "Close"
   },
   "login": {
     "title": "Sign in",
