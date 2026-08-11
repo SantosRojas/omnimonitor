@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Table } from "../components/AdminCrudTable";
-import type { Column } from "../components/AdminCrudTable";
+import { DataTable as Table } from "../components/DataTable";
+import type { Column } from "../components/DataTable";
 import { AdminCrudForm } from "../components/AdminCrudForm";
 import type { Field } from "../components/AdminCrudForm";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -124,6 +124,7 @@ function UsersSection() {
         columns={columns}
         data={users}
         keyExtractor={(u) => u.id}
+        pageSize={10}
         isLoading={isLoading}
         emptyMessage={t("admin.noUsers")}
         filterableColumns={["username", "email", "role"]}
@@ -193,6 +194,7 @@ function SignalsSection() {
         columns={columns}
         data={signals as unknown as Record<string, unknown>[]}
         keyExtractor={(row) => row.id as number}
+        pageSize={10}
         isLoading={isLoading}
         emptyMessage={t("admin.noSignals")}
         filterableColumns={["internal_name", "display_name"]}
@@ -237,6 +239,7 @@ function EquivalencesSection() {
         columns={columns}
         data={equivalences as Record<string, unknown>[]}
         keyExtractor={(row) => row.id as number}
+        pageSize={10}
         isLoading={isLoading}
         emptyMessage={t("admin.noEquivalences")}
         filterableColumns={["from", "to"]}
@@ -345,6 +348,7 @@ function BridgesSection() {
         columns={columns}
         data={bridges}
         keyExtractor={(b) => b.id}
+        pageSize={10}
         isLoading={isLoading}
         emptyMessage={t("admin.noBridges")}
         filterableColumns={["ip_address", "label", "status"]}
@@ -431,6 +435,7 @@ function MachinesSection() {
         columns={columns}
         data={machines}
         keyExtractor={(m) => m.id}
+        pageSize={10}
         isLoading={isLoading}
         emptyMessage={t("admin.noMachines")}
         filterableColumns={["serial_number", "ip_address", "label", "status"]}

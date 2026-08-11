@@ -2,20 +2,13 @@ import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import {
-  createColumnHelper,
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-} from "@tanstack/react-table";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { HttpPatientRepo } from "../../data/repos/http-patient-repo";
 import { wsManager } from "../../data/ws-manager";
 import { useLiveDataStore, type ReadingsBroadcast } from "../../store/live-data-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
-import { DataTable } from "../../ui/components/DataTable";
+import { DataTable, type Column } from "../../ui/components/DataTable";
 import { formatDuration } from "../../core/utils/time";
 import { formatDateTime } from "../../core/utils/format";
 import {
@@ -71,16 +64,7 @@ function formatSignal(readings: Reading[], key: string): string {
   return unit ? `${r.value} ${unit}` : String(r.value);
 }
 
-/** Hide the pressure/flow/time columns on narrow viewports. */
-function hideSm(columnId: string): string {
-  return ["pressures", "flows", "started_at", "elapsed_seconds"].includes(columnId)
-    ? "hidden md:table-cell"
-    : "";
-}
-
 /* ── Component ────────────────────────────────────────────────── */
-
-const columnHelper = createColumnHelper<DashboardTherapyRow>();
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -164,84 +148,83 @@ export default function DashboardPage() {
     });
   }, [therapies, readings, machineById, patientById]);
 
-  const columns = useMemo(
+  const columns = useMemo<Column<DashboardTherapyRow>[]>(
     () => [
-      columnHelper.accessor("patient_name", {
-        header: t("dashboard.patient"),
-        cell: (i) => (
-          <span className="font-medium text-gray-900 dark:text-gray-100">{i.getValue()}</span>
+      {
+        key: "patient_name",
+        label: t("dashboard.patient"),
+        render: (item) => (
+          <span className="font-medium text-gray-900 dark:text-gray-100">{item.patient_name}</span>
         ),
-      }),
-      columnHelper.accessor("machine_label", {
-        header: t("dashboard.machine"),
-      }),
-      columnHelper.accessor("therapy_type", {
-        header: t("dashboard.therapyMode"),
-        cell: (i) => i.getValue() ?? "—",
-      }),
-      columnHelper.display({
-        id: "pressures",
-        header: t("dashboard.pressures"),
-        enableSorting: false,
-        cell: ({ row }) => (
+      },
+      { key: "machine_label", label: t("dashboard.machine") },
+      {
+        key: "therapy_type",
+        label: t("dashboard.therapyMode"),
+        render: (item) => item.therapy_type ?? "—",
+      },
+      {
+        key: "pressures",
+        label: t("dashboard.pressures"),
+        sortable: false,
+        hideSm: true,
+        render: (item) => (
           <div className="space-y-0.5">
             {PRESSURE_GAUGES.map((g) => (
               <span key={g.key} className="block whitespace-nowrap">
-                {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatSignal(row.original.live, g.key)}
+                {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatSignal(item.live, g.key)}
               </span>
             ))}
           </div>
         ),
-      }),
-      columnHelper.display({
-        id: "flows",
-        header: t("dashboard.flows"),
-        enableSorting: false,
-        cell: ({ row }) => (
+      },
+      {
+        key: "flows",
+        label: t("dashboard.flows"),
+        sortable: false,
+        hideSm: true,
+        render: (item) => (
           <div className="space-y-0.5">
             {FLOW_INDICATORS.map((f) => (
               <span key={f.key} className="block whitespace-nowrap">
-                {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatSignal(row.original.live, f.key)}
+                {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatSignal(item.live, f.key)}
               </span>
             ))}
           </div>
         ),
-      }),
-      columnHelper.accessor("started_at", {
-        header: t("dashboard.startTime"),
-        cell: (i) => formatDateTime(i.getValue()),
-      }),
-      columnHelper.accessor("elapsed_seconds", {
-        header: t("dashboard.elapsed"),
-        cell: ({ row }) => (
-          <span className="tabular-nums">{formatDuration(row.original.started_at)}</span>
+      },
+      {
+        key: "started_at",
+        label: t("dashboard.startTime"),
+        hideSm: true,
+        render: (item) => formatDateTime(item.started_at),
+      },
+      {
+        key: "elapsed_seconds",
+        label: t("dashboard.elapsed"),
+        hideSm: true,
+        render: (item) => (
+          <span className="tabular-nums">{formatDuration(item.started_at)}</span>
         ),
-      }),
-      columnHelper.display({
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
+      },
+      {
+        key: "actions",
+        label: "",
+        sortable: false,
+        className: "text-right",
+        render: (item) => (
           <button
             type="button"
-            onClick={() => navigate(`/dashboard/${row.original.machine_id}/scada`)}
+            onClick={() => navigate(`/dashboard/${item.machine_id}/scada`)}
             className="rounded bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-1 transition-colors"
           >
             {t("dashboard.viewScada")}
           </button>
         ),
-      }),
+      },
     ],
     [navigate, t, i18n.language],
   );
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   return (
     <div className="space-y-6">
@@ -250,10 +233,11 @@ export default function DashboardPage() {
         description={t("dashboard.pageDescription")}
       />
       <DataTable
-        table={table}
+        columns={columns}
+        data={rows}
+        keyExtractor={(r) => r.therapy_id}
         isLoading={isLoading}
         emptyMessage={t("dashboard.emptyTitle")}
-        hideSm={hideSm}
       />
     </div>
   );

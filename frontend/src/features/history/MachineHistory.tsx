@@ -4,13 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { PageHeader } from "../../ui/layouts/PageHeader";
-import { Card, CardContent } from "../../ui/primitives/card";
 import { Input } from "../../ui/primitives/input";
 import { Button } from "../../ui/primitives/button";
 import { Badge } from "../../ui/primitives/badge";
 import { Check } from "lucide-react";
 import { formatDateTime } from "../../core/utils/format";
 import { exportToExcel } from "../../core/utils/exportExcel";
+import { DataTable } from "../../ui/components/DataTable";
+import type { Column } from "../../ui/components/DataTable";
+import type { Therapy } from "../../core/types";
 const therapyRepo = new HttpTherapyRepo();
 const PAGE_SIZE = 10;
 
@@ -44,7 +46,6 @@ export default function MachineHistory() {
   const [typeFilter, setTypeFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [page, setPage] = useState(0);
   const [editingEndWeight, setEditingEndWeight] = useState<Record<number, string>>({});
   const queryClient = useQueryClient();
 
@@ -55,11 +56,11 @@ export default function MachineHistory() {
   });
 
   const filtered = useMemo(() => {
-    let list = (therapies ?? []) as any[];
+    let list = (therapies ?? []) as Therapy[];
     if (search) {
       list = list.filter((t) =>
-        t.patient_name?.toLowerCase().includes(search.toLowerCase()) ||
-        t.status?.toLowerCase().includes(search.toLowerCase()),
+        (t.patient_name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.status ?? "").toLowerCase().includes(search.toLowerCase()),
       );
     }
     if (typeFilter) {
@@ -76,26 +77,23 @@ export default function MachineHistory() {
     return list;
   }, [therapies, search, typeFilter, dateFrom, dateTo]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageData = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
   const exportExcel = () => {
     exportToExcel(
       filtered,
       [
-        { header: t("history.patient"), value: (r: any) => r.patient_name ?? "" },
-        { header: t("history.type"), value: (r: any) => r.therapy_type ?? "" },
-        { header: t("history.start"), value: (r: any) => toLocalIso(r.created_at) },
-        { header: t("history.end"), value: (r: any) => toLocalIso(r.ended_at) },
+        { header: t("history.patient"), value: (r: Therapy) => r.patient_name ?? "" },
+        { header: t("history.type"), value: (r: Therapy) => r.therapy_type ?? "" },
+        { header: t("history.start"), value: (r: Therapy) => toLocalIso(r.started_at) },
+        { header: t("history.end"), value: (r: Therapy) => toLocalIso(r.ended_at) },
         {
           header: t("history.weightInitial"),
-          value: (r: any) => (r.weight != null ? `${r.weight} kg` : ""),
+          value: (r: Therapy) => (r.weight != null ? `${r.weight} kg` : ""),
         },
         {
           header: t("history.weightEnd"),
-          value: (r: any) => (r.end_weight != null ? `${r.end_weight} kg` : ""),
+          value: (r: Therapy) => (r.end_weight != null ? `${r.end_weight} kg` : ""),
         },
-        { header: t("history.status"), value: (r: any) => r.status ?? "" },
+        { header: t("history.status"), value: (r: Therapy) => r.status ?? "" },
       ],
       `machine-${machineId}-history.xlsx`,
     );
@@ -123,9 +121,63 @@ export default function MachineHistory() {
   };
 
   const therapyTypes = useMemo(() => {
-    const types = new Set((therapies ?? []).map((t: any) => t.therapy_type).filter(Boolean));
+    const types = new Set((therapies ?? []).map((t) => t.therapy_type).filter(Boolean));
     return [...types] as string[];
   }, [therapies]);
+
+  const columns: Column<Therapy>[] = [
+    { key: "patient_name", label: t("history.patient") },
+    { key: "therapy_type", label: t("history.type") },
+    { key: "started_at", label: t("history.start"), render: (row) => row.started_at ? formatDateTime(row.started_at) : "—" },
+    { key: "ended_at", label: t("history.end"), render: (row) => row.ended_at ? formatDateTime(row.ended_at) : "—" },
+    { key: "weight", label: t("history.weightInitial"), render: (row) => row.weight != null ? `${row.weight} kg` : "—" },
+    {
+      key: "end_weight",
+      label: t("history.weightEnd"),
+      sortable: false,
+      render: (row) => {
+        if (row.end_weight != null) return <span className="font-medium text-neutral-700 dark:text-neutral-300">{row.end_weight} kg</span>;
+        if (row.status === "completed") {
+          return (
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="kg"
+                className="h-8 w-20 text-xs"
+                value={editingEndWeight[row.id] ?? ""}
+                onChange={(e) =>
+                  setEditingEndWeight((prev) => ({ ...prev, [row.id]: e.target.value }))
+                }
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={!editingEndWeight[row.id] || !isFinite(Number(editingEndWeight[row.id])) || Number(editingEndWeight[row.id]) <= 0}
+                onClick={() => handleRecordWeight(row.id)}
+                title={t("history.recordEndWeight")}
+              >
+                <Check className="h-4 w-4 text-green-500" />
+              </Button>
+            </div>
+          );
+        }
+        return <span className="text-neutral-400 dark:text-neutral-500">—</span>;
+      },
+    },
+    {
+      key: "status",
+      label: t("history.status"),
+      sortable: false,
+      render: (row) => (
+        <Badge variant={statusVariant[row.status ?? ""] ?? "secondary"}>
+          {row.status ? t(`status.${row.status}`, { defaultValue: row.status }) : "—"}
+        </Badge>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -137,96 +189,28 @@ export default function MachineHistory() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <Input placeholder={t("history.searchPlaceholder")} value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="max-w-xs" />
+        <Input placeholder={t("history.searchPlaceholder")} value={search} onChange={(e) => { setSearch(e.target.value); }} className="max-w-xs" />
         <select
           value={typeFilter}
-          onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}
+          onChange={(e) => { setTypeFilter(e.target.value); }}
           className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-700 dark:bg-neutral-950"
         >
           <option value="">{t("history.allTypes")}</option>
           {therapyTypes.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} className="w-40" />
-        <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} className="w-40" />
+        <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); }} className="w-40" />
+        <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); }} className="w-40" />
       </div>
 
-      {isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">{t("common.loading")}</CardContent></Card>
-      ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400 dark:text-neutral-500">{t("history.noTherapies")}</CardContent></Card>
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-50 dark:bg-neutral-900">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.patient")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.type")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.start")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.end")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.weightInitial")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.weightEnd")}</th>
-                  <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("history.status")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-                {pageData.map((row: any) => (
-                  <tr key={row.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">{row.patient_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.therapy_type ?? "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.created_at ? formatDateTime(row.created_at) : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.ended_at ? formatDateTime(row.ended_at) : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{row.weight != null ? `${row.weight} kg` : "—"}</td>
-                    <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
-                      {row.end_weight != null ? (
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">{row.end_weight} kg</span>
-                      ) : row.status === "completed" ? (
-                        <div className="flex items-center gap-1">
-                          <Input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            placeholder="kg"
-                            className="h-8 w-20 text-xs"
-                            value={editingEndWeight[row.id] ?? ""}
-                            onChange={(e) =>
-                              setEditingEndWeight((prev) => ({ ...prev, [row.id]: e.target.value }))
-                            }
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={!editingEndWeight[row.id] || !isFinite(Number(editingEndWeight[row.id])) || Number(editingEndWeight[row.id]) <= 0}
-                            onClick={() => handleRecordWeight(row.id)}
-                            title={t("history.recordEndWeight")}
-                          >
-                            <Check className="h-4 w-4 text-green-500" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-neutral-400 dark:text-neutral-500">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3"><Badge variant={statusVariant[row.status ?? ""] ?? "secondary"}>{row.status ? t(`status.${row.status}`, { defaultValue: row.status }) : "—"}</Badge></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400">
-            <span>{t("history.totalTherapies", { count: filtered.length })}</span>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>{t("common.previous")}</Button>
-              <span>{t("history.pageInfo", { page: page + 1, totalPages })}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>{t("common.next")}</Button>
-            </div>
-          </div>
-        </>
-      )}
+      <DataTable<Therapy>
+        key={`${search}|${typeFilter}|${dateFrom}|${dateTo}`}
+        columns={columns}
+        data={filtered}
+        keyExtractor={(t) => t.id}
+        pageSize={PAGE_SIZE}
+        isLoading={isLoading}
+        emptyMessage={t("history.noTherapies")}
+      />
     </div>
   );
 }

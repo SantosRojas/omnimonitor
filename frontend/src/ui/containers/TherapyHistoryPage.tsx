@@ -2,15 +2,6 @@ import { useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  createColumnHelper,
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  getPaginationRowModel,
-  type SortingState,
-  type PaginationState,
-} from "@tanstack/react-table";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useAuthStore } from "../../store/auth-store";
 import { PageHeader } from "../layouts/PageHeader";
@@ -28,8 +19,7 @@ import {
 } from "lucide-react";
 import { PRESSURE_SERIES, FLOW_SERIES, buildSignalDisplayMap, signalDisplayName } from "../../features/scada/signal-configs";
 import { HistoryChart } from "../../features/history/HistoryChart";
-import { DataTable } from "../components/DataTable";
-import { Pagination } from "../components/Pagination";
+import { DataTable, type Column } from "../components/DataTable";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import { formatDateTime, formatTime } from "../../core/utils/format";
 import { exportToExcel } from "../../core/utils/exportExcel";
@@ -38,46 +28,42 @@ import type { Therapy, HistoryRow, TherapyComment } from "../../core/types";
 const therapyRepo = new HttpTherapyRepo();
 const signalRepo = new HttpSignalRepo();
 
-const columnHelper = createColumnHelper<HistoryRow>();
-
 const buildHistoryColumns = (
   signalDisplayMap: Record<string, string>,
   t: (key: string, options?: Record<string, unknown>) => string,
-) => [
-  columnHelper.accessor("recorded_at", {
-    header: t("history.time"),
-    cell: (i) => {
-      const ts = i.getValue();
-      return (
-        <span className="text-neutral-500">
-          {ts ? formatDateTime(ts) : "—"}
-        </span>
-      );
-    },
-  }),
-  columnHelper.accessor("internal_name", {
-    header: t("history.signal"),
-    cell: (i) => {
-      const name = i.getValue();
-      return (
-        <span className="text-neutral-800 dark:text-neutral-200" title={name ?? undefined}>
-          {name ? signalDisplayName(signalDisplayMap, name) : "—"}
-        </span>
-      );
-    },
-  }),
-  columnHelper.accessor("value", {
-    header: t("history.value"),
-    cell: (i) => (
-      <span className="font-medium tabular-nums">
-        {i.getValue()?.toFixed(2) ?? "—"}
+): Column<HistoryRow>[] => [
+  {
+    key: "recorded_at",
+    label: t("history.time"),
+    render: (r) => (
+      <span className="text-neutral-500">
+        {r.recorded_at ? formatDateTime(r.recorded_at) : "—"}
       </span>
     ),
-  }),
-  columnHelper.accessor("unit", {
-    header: t("history.unit"),
-    cell: (i) => <span className="text-neutral-500">{i.getValue() ?? "—"}</span>,
-  }),
+  },
+  {
+    key: "internal_name",
+    label: t("history.signal"),
+    render: (r) => (
+      <span className="text-neutral-800 dark:text-neutral-200" title={r.internal_name ?? undefined}>
+        {r.internal_name ? signalDisplayName(signalDisplayMap, r.internal_name) : "—"}
+      </span>
+    ),
+  },
+  {
+    key: "value",
+    label: t("history.value"),
+    render: (r) => (
+      <span className="font-medium tabular-nums">
+        {r.value?.toFixed(2) ?? "—"}
+      </span>
+    ),
+  },
+  {
+    key: "unit",
+    label: t("history.unit"),
+    render: (r) => <span className="text-neutral-500">{r.unit ?? "—"}</span>,
+  },
 ];
 
 export default function TherapyHistoryPage() {
@@ -204,32 +190,11 @@ export default function TherapyHistoryPage() {
     return list;
   }, [historyRows, signalFilter, search]);
 
-  // ── TanStack table: sorting + client-side pagination ─────────
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState<PaginationState>({
-    pageIndex: 0,
-    pageSize: 25,
-  });
-
   const columns = useMemo(
     () => buildHistoryColumns(signalDisplayMap, t),
     [signalDisplayMap, t],
   );
 
-  const table = useReactTable({
-    data: filteredRows,
-    columns,
-    state: { sorting, pagination },
-    onSortingChange: setSorting,
-    onPaginationChange: setPagination,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-  });
-
-  const { pageIndex, pageSize } = table.getState().pagination;
-  const pageStart = filteredRows.length === 0 ? 0 : pageIndex * pageSize + 1;
-  const pageEnd = Math.min((pageIndex + 1) * pageSize, filteredRows.length);
 
   // ── Excel export (client-side, no server round-trip) ───────
   const handleExport = useCallback(() => {
@@ -444,40 +409,16 @@ export default function TherapyHistoryPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 max-w-xs text-xs"
               />
-              <span className="text-xs text-neutral-400">
-                {t("history.readingsRange", {
-                  from: filteredRows.length === 0 ? 0 : pageStart,
-                  to: filteredRows.length === 0 ? 0 : pageEnd,
-                  count: filteredRows.length,
-                })}
-              </span>
             </div>
 
-            <DataTable table={table} emptyMessage={t("history.noReadings")} />
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-medium text-neutral-500">
-                  {t("history.rowsPerPage")}
-                </label>
-                <select
-                  value={pageSize}
-                  onChange={(e) => table.setPageSize(Number(e.target.value))}
-                  className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs dark:border-neutral-700 dark:bg-neutral-950"
-                >
-                  {[25, 50, 100, 250].map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <Pagination
-                currentPage={pageIndex + 1}
-                totalPages={table.getPageCount()}
-                onPageChange={(page) => table.setPageIndex(page - 1)}
-              />
-            </div>
+            <DataTable<HistoryRow>
+              columns={columns}
+              data={filteredRows}
+              keyExtractor={(r) => r.id}
+              pageSize={25}
+              pageSizeOptions={[25, 50, 100, 250]}
+              emptyMessage={t("history.noReadings")}
+            />
           </CardContent>
         </Card>
       )}

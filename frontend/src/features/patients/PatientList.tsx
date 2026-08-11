@@ -7,9 +7,11 @@ import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent } from "../../ui/primitives/card";
 import { Button } from "../../ui/primitives/button";
 import { Input } from "../../ui/primitives/input";
-import { Search, Pen, User, Download } from "lucide-react";
+import { Search, User, Download } from "lucide-react";
 import { formatDate } from "../../core/utils/format";
 import { exportToExcel } from "../../core/utils/exportExcel";
+import { DataTable } from "../../ui/components/DataTable";
+import type { Column } from "../../ui/components/DataTable";
 import type { Patient } from "../../core/types";
 
 const patientRepo = new HttpPatientRepo();
@@ -85,6 +87,15 @@ export default function PatientList() {
     );
   };
 
+  const columns: Column<Patient>[] = [
+    { key: "external_id", label: t("patients.dni"), className: "font-mono" },
+    { key: "name", label: t("patients.name") },
+    { key: "age", label: t("patients.age") },
+    { key: "email", label: t("patients.email") },
+    { key: "address", label: t("patients.address"), className: "max-w-[200px] truncate" },
+    { key: "created_at", label: t("patients.registered"), render: (p) => formatDate(p.created_at) },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -114,66 +125,16 @@ export default function PatientList() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
-            </div>
-          ) : patients.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-neutral-400 dark:text-neutral-500">
-              <User className="mb-2 h-10 w-10" />
-              <p className="text-sm font-medium">{t("patients.emptyTitle")}</p>
-              <p className="text-xs mt-1">
-                {search
-                  ? t("patients.emptySearch")
-                  : t("patients.emptyAuto")}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-neutral-50 dark:bg-neutral-800">
-                  <tr className="border-b border-neutral-200 dark:border-neutral-700">
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.dni")}</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.name")}</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.age")}</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.email")}</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.address")}</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-500 dark:text-neutral-400">{t("patients.registered")}</th>
-                    {canEdit && <th className="px-4 py-3 text-right font-medium text-neutral-500 dark:text-neutral-400">{t("patients.actions")}</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {patients.map((patient) => (
-                    <tr
-                      key={patient.id}
-                      className="border-b border-neutral-100 transition-colors hover:bg-neutral-50 dark:border-neutral-800 dark:hover:bg-neutral-900"
-                    >
-                      <td className="px-4 py-3 font-mono text-sm">{patient.external_id}</td>
-                      <td className="px-4 py-3">{patient.name || <span className="text-neutral-400 italic dark:text-neutral-500">—</span>}</td>
-                      <td className="px-4 py-3">{patient.age ?? <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
-                      <td className="px-4 py-3">{patient.email || <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate">{patient.address || <span className="text-neutral-400 dark:text-neutral-500">—</span>}</td>
-                      <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">
-                        {formatDate(patient.created_at)}
-                      </td>
-                      {canEdit && (
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEdit(patient)}
-                            title={t("patients.editInfo")}
-                          >
-                            <Pen className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable<Patient>
+            columns={columns}
+            data={patients}
+            keyExtractor={(p) => p.id}
+            isLoading={isLoading}
+            emptyIcon={<User className="mx-auto h-10 w-10" />}
+            emptyMessage={t("patients.emptyTitle")}
+            emptyHint={search ? t("patients.emptySearch") : t("patients.emptyAuto")}
+            onEdit={canEdit ? handleEdit : undefined}
+          />
         </CardContent>
       </Card>
 

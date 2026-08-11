@@ -2,19 +2,12 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  createColumnHelper,
-  useReactTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getSortedRowModel,
-} from "@tanstack/react-table";
 import { Trash2 } from "lucide-react";
 import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { HttpTherapyRepo } from "../../data/repos/http-therapy-repo";
 import { useAuthStore } from "../../store/auth-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
-import { DataTable } from "../../ui/components/DataTable";
+import { DataTable, type Column } from "../../ui/components/DataTable";
 import { ConfirmDialog } from "../../ui/components/ConfirmDialog";
 import { formatDuration } from "../../core/utils/time";
 import { formatDateTime } from "../../core/utils/format";
@@ -33,18 +26,7 @@ interface TherapyHistoryRow {
   ended_at: string | null;
 }
 
-/* ── Helpers ──────────────────────────────────────────────────── */
-
-/** Hide the type/end columns on narrow viewports. */
-function hideSm(columnId: string): string {
-  return ["therapy_type", "ended_at"].includes(columnId)
-    ? "hidden md:table-cell"
-    : "";
-}
-
 /* ── Component ────────────────────────────────────────────────── */
-
-const columnHelper = createColumnHelper<TherapyHistoryRow>();
 
 export default function TherapiesHistoryPage() {
   const { t } = useTranslation();
@@ -105,48 +87,52 @@ export default function TherapiesHistoryPage() {
     },
   });
 
-  const columns = useMemo(
+  const columns = useMemo<Column<TherapyHistoryRow>[]>(
     () => [
-      columnHelper.accessor("patient_name", {
-        header: t("history.patient"),
-        cell: (i) => (
-          <span className="font-medium text-gray-900 dark:text-gray-100">{i.getValue()}</span>
+      {
+        key: "patient_name",
+        label: t("history.patient"),
+        render: (r) => (
+          <span className="font-medium text-gray-900 dark:text-gray-100">{r.patient_name}</span>
         ),
-      }),
-      columnHelper.accessor("machine_label", {
-        header: t("history.machine"),
-      }),
-      columnHelper.accessor("therapy_type", {
-        header: t("history.type"),
-        cell: (i) => i.getValue() ?? "-",
-      }),
-      columnHelper.accessor("started_at", {
-        header: t("history.start"),
-        cell: (i) => formatDateTime(i.getValue()),
-      }),
-      columnHelper.accessor("ended_at", {
-        header: t("history.end"),
-        cell: (i) => formatDateTime(i.getValue()),
-      }),
-      columnHelper.display({
-        id: "duration",
-        header: t("history.duration"),
-        enableSorting: false,
-        cell: ({ row }) => (
+      },
+      { key: "machine_label", label: t("history.machine") },
+      {
+        key: "therapy_type",
+        label: t("history.type"),
+        render: (r) => r.therapy_type ?? "-",
+        hideSm: true,
+      },
+      {
+        key: "started_at",
+        label: t("history.start"),
+        render: (r) => formatDateTime(r.started_at),
+      },
+      {
+        key: "ended_at",
+        label: t("history.end"),
+        render: (r) => formatDateTime(r.ended_at),
+        hideSm: true,
+      },
+      {
+        key: "duration",
+        label: t("history.duration"),
+        sortable: false,
+        render: (r) => (
           <span className="tabular-nums">
-            {formatDuration(row.original.started_at, row.original.ended_at)}
+            {formatDuration(r.started_at, r.ended_at)}
           </span>
         ),
-      }),
-      columnHelper.display({
-        id: "actions",
-        header: "",
-        enableSorting: false,
-        cell: ({ row }) => (
+      },
+      {
+        key: "actions",
+        label: "",
+        sortable: false,
+        render: (r) => (
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={() => navigate(`/history/${row.original.therapy_id}`)}
+              onClick={() => navigate(`/history/${r.therapy_id}`)}
               className="rounded bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/15 focus:outline-none focus:ring-2 focus:ring-accent/60 focus:ring-offset-1 transition-colors"
             >
               {t("common.view")}
@@ -155,9 +141,9 @@ export default function TherapiesHistoryPage() {
               <button
                 type="button"
                 title={t("history.deleteFromHistory")}
-                aria-label={t("history.deleteFromHistory", { id: row.original.therapy_id })}
+                aria-label={t("history.deleteFromHistory", { id: r.therapy_id })}
                 onClick={() => {
-                  setDeleteTarget(row.original);
+                  setDeleteTarget(r);
                   setDeleteReason("");
                 }}
                 className="rounded p-1.5 text-xs font-medium text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors dark:text-red-400 dark:hover:bg-red-950/60 dark:focus:ring-red-400"
@@ -167,18 +153,10 @@ export default function TherapiesHistoryPage() {
             )}
           </div>
         ),
-      }),
+      },
     ],
     [navigate, isAdmin, t],
   );
-
-  const table = useReactTable({
-    data: rows,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
 
   return (
     <div className="space-y-6">
@@ -186,11 +164,12 @@ export default function TherapiesHistoryPage() {
         title={t("history.title")}
         description={t("history.completedDescription")}
       />
-      <DataTable
-        table={table}
+      <DataTable<TherapyHistoryRow>
+        columns={columns}
+        data={rows}
+        keyExtractor={(r) => r.therapy_id}
         isLoading={isLoading}
         emptyMessage={t("history.empty")}
-        hideSm={hideSm}
       />
 
       <ConfirmDialog

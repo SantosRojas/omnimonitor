@@ -6,6 +6,8 @@ import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent } from "../../ui/primitives/card";
 import { Button } from "../../ui/primitives/button";
 import { Input } from "../../ui/primitives/input";
+import { DataTable } from "../../ui/components/DataTable";
+import type { Column } from "../../ui/components/DataTable";
 
 const equivalenceRepo = new HttpEquivalenceRepo();
 
@@ -63,6 +65,11 @@ export default function EquivalenceConfig() {
     }
   };
 
+  const columns: Column<Equivalence>[] = [
+    { key: "input_value", label: t("admin.inputValue"), className: "font-mono", sortable: false },
+    { key: "output_value", label: t("admin.outputValue"), className: "font-mono", sortable: false },
+  ];
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -98,37 +105,15 @@ export default function EquivalenceConfig() {
         </Card>
       )}
 
-      {isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("common.loading")}</CardContent></Card>
-      ) : !rules || rules.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("admin.noEquivalenceRules")}</CardContent></Card>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 dark:bg-neutral-900">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.inputValue")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.outputValue")}</th>
-                <th className="px-4 py-3 text-right font-medium text-neutral-500">{t("common.actions")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {(rules as Equivalence[]).map((r) => (
-                <tr key={r.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                  <td className="px-4 py-3 font-mono text-sm">{r.input_value}</td>
-                  <td className="px-4 py-3 font-mono text-sm">{r.output_value}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(r)}>{t("common.edit")}</Button>
-                      <Button variant="ghost" size="sm" className="text-red-500" onClick={() => { if (confirm(t("admin.deleteRuleConfirm"))) deleteMutation.mutate(r.id); }}>{t("common.delete")}</Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<Equivalence>
+        columns={columns}
+        data={(rules as Equivalence[]) ?? []}
+        keyExtractor={(r) => r.id}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noEquivalenceRules")}
+        onEdit={handleEdit}
+        onDelete={(r) => { if (window.confirm(t("admin.deleteRuleConfirm"))) deleteMutation.mutate(r.id); }}
+      />
     </div>
   );
 }

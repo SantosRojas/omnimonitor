@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { HttpSignalRepo } from "../../data/repos/http-signal-repo";
 import { PageHeader } from "../../ui/layouts/PageHeader";
-import { Card, CardContent } from "../../ui/primitives/card";
 import { Input } from "../../ui/primitives/input";
 import { Switch } from "../../ui/primitives/switch";
+import { DataTable } from "../../ui/components/DataTable";
+import type { Column } from "../../ui/components/DataTable";
 
 const signalRepo = new HttpSignalRepo();
 
@@ -43,6 +44,28 @@ export default function SignalConfig() {
     s.internal_name?.toLowerCase().includes(search.toLowerCase()),
   );
 
+  const columns: Column<SignalWithVisibility>[] = [
+    {
+      key: "display_label",
+      label: t("admin.signal"),
+      className: "font-medium",
+      render: (s) => s.display_label ?? s.internal_name,
+    },
+    { key: "unit", label: t("admin.unit"), render: (s) => s.unit ?? "—" },
+    { key: "phase", label: t("admin.phase"), render: (s) => s.phase ?? "—" },
+    {
+      key: "is_visible",
+      label: t("admin.visible"),
+      sortable: false,
+      render: (s) => (
+        <Switch
+          checked={s.is_visible ?? true}
+          onChange={(e) => visibilityMutation.mutate({ id: s.id, visible: e.target.checked })}
+        />
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -52,39 +75,13 @@ export default function SignalConfig() {
 
       <Input placeholder={t("admin.searchSignals")} value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
 
-      {isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("admin.loadingSignals")}</CardContent></Card>
-      ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("admin.noSignalsFound")}</CardContent></Card>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 dark:bg-neutral-900">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.signal")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.unit")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.phase")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.visible")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {filtered.map((s) => (
-                <tr key={s.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                  <td className="px-4 py-3 font-medium">{s.display_label ?? s.internal_name}</td>
-                  <td className="px-4 py-3 text-neutral-500">{s.unit ?? "—"}</td>
-                  <td className="px-4 py-3 text-neutral-500">{s.phase ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Switch
-                      checked={s.is_visible ?? true}
-                      onChange={(e) => visibilityMutation.mutate({ id: s.id, visible: e.target.checked })}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable<SignalWithVisibility>
+        columns={columns}
+        data={filtered}
+        keyExtractor={(s) => s.id}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noSignalsFound")}
+      />
     </div>
   );
 }

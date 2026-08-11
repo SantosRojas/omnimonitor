@@ -6,9 +6,11 @@ import { HttpAdminRepo } from "../../data/repos/http-admin-repo";
 import { wsManager } from "../../data/ws-manager";
 import { useMachineStatusStore } from "../../store/machine-status-store";
 import { useBridgeStatusStore } from "../../store/bridge-status-store";
-import { useScadaStore, type TelemetryReading } from "../scada/domain/scada-store";
+import { useScadaStore, type TelemetryReading, type ScadaMachineState } from "../scada/domain/scada-store";
 import { PageHeader } from "../../ui/layouts/PageHeader";
 import { Card, CardContent } from "../../ui/primitives/card";
+import { DataTable } from "../../ui/components/DataTable";
+import type { Column } from "../../ui/components/DataTable";
 import { PRESSURE_GAUGES, FLOW_INDICATORS } from "../scada/signal-configs";
 import type { Machine } from "../../core/types/machine";
 import type { Bridge } from "../../core/types/bridge";
@@ -20,6 +22,11 @@ const adminRepo = new HttpAdminRepo();
 function formatReading(r: TelemetryReading | undefined): string {
   if (!r || r.value === null || r.value === undefined) return "—";
   return r.unit ? `${r.value} ${r.unit}` : String(r.value);
+}
+
+interface MachineRow extends Machine {
+  liveStatus: string;
+  telemetry: ScadaMachineState | undefined;
 }
 
 export default function ConnectionMonitor() {
@@ -52,7 +59,7 @@ export default function ConnectionMonitor() {
       const status = live?.status?.status ?? m.status ?? "unknown";
       return { ...m, liveStatus: status, telemetry: scadaMachines[String(m.id)] };
     })
-    .filter((m) => m.liveStatus === "online");
+    .filter((m) => m.liveStatus === "online") as MachineRow[];
 
   // Subscribe to live broadcasts for every online machine — not just the ones
   // with an active therapy — so pre/post-therapy phases are observable.
@@ -79,6 +86,76 @@ export default function ConnectionMonitor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machines, rows.map((m) => m.id).join(",")]);
 
+  const columns: Column<MachineRow>[] = [
+    {
+      key: "label",
+      label: t("scada.connection.machine"),
+      className: "font-medium",
+      render: (m) => m.label ?? t("scada.connection.machineFallback", { id: m.id }),
+    },
+    {
+      key: "serial_number",
+      label: t("admin.serial"),
+      render: (m) => m.serial_number ?? "—",
+    },
+    {
+      key: "pressures",
+      label: t("scada.layout.pressures"),
+      sortable: false,
+      render: (m) => (
+        <div className="space-y-0.5 whitespace-nowrap">
+          {PRESSURE_GAUGES.map((g) => (
+            <span key={g.key} className="block">
+              {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatReading(m.telemetry?.pressures[g.key])}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "flows",
+      label: t("scada.layout.flows"),
+      sortable: false,
+      render: (m) => (
+        <div className="space-y-0.5 whitespace-nowrap">
+          {FLOW_INDICATORS.map((f) => (
+            <span key={f.key} className="block">
+              {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatReading(m.telemetry?.flows[f.key])}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: "bridgeLabel",
+      label: t("scada.connection.bridgeLabel"),
+      render: (m) => {
+        const bridge = m.ip_address ? bridgeByIp.get(m.ip_address) : undefined;
+        return bridge?.label ?? bridge?.ip_address ?? "—";
+      },
+    },
+    {
+      key: "failures",
+      label: t("scada.connection.failures"),
+      sortable: false,
+      render: (m) => {
+        const bridge = m.ip_address ? bridgeByIp.get(m.ip_address) : undefined;
+        const bridgeStatus = bridge ? bridgeStatuses[bridge.id] : undefined;
+        return (
+          <span
+            className={
+              bridgeStatus && bridgeStatus.failure_count > 0
+                ? "font-mono font-semibold text-red-500"
+                : "font-mono text-neutral-600"
+            }
+          >
+            {bridgeStatus ? bridgeStatus.failure_count : "—"}
+          </span>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <PageHeader title={t("scada.connection.title")} description={t("scada.connection.description")} />
@@ -99,71 +176,14 @@ export default function ConnectionMonitor() {
             </button>
           </CardContent>
         </Card>
-      ) : isLoading ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("scada.connection.loadingMachines")}</CardContent></Card>
-      ) : rows.length === 0 ? (
-        <Card><CardContent className="py-8 text-center text-neutral-400">{t("scada.connection.noOnlineMachines")}</CardContent></Card>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 dark:bg-neutral-900">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.machine")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("admin.serial")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.layout.pressures")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.layout.flows")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.bridgeLabel")}</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500">{t("scada.connection.failures")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {rows.map((m: any) => {
-                const bridge: Bridge | undefined = m.ip_address
-                  ? bridgeByIp.get(m.ip_address)
-                  : undefined;
-                const bridgeStatus = bridge ? bridgeStatuses[bridge.id] : undefined;
-                return (
-                  <tr key={m.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3 font-medium">{m.label ?? t("scada.connection.machineFallback", { id: m.id })}</td>
-                    <td className="px-4 py-3 text-neutral-500">{m.serial_number ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="space-y-0.5 whitespace-nowrap">
-                        {PRESSURE_GAUGES.map((g) => (
-                          <span key={g.key} className="block">
-                            {t(`scada.signal.${g.key}`, { defaultValue: g.label })}: {formatReading(m.telemetry?.pressures[g.key])}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="space-y-0.5 whitespace-nowrap">
-                        {FLOW_INDICATORS.map((f) => (
-                          <span key={f.key} className="block">
-                            {t(`scada.signal.${f.key}`, { defaultValue: f.label })}: {formatReading(m.telemetry?.flows[f.key])}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-neutral-500">
-                      {bridge?.label ?? bridge?.ip_address ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          bridgeStatus && bridgeStatus.failure_count > 0
-                            ? "font-mono font-semibold text-red-500"
-                            : "font-mono text-neutral-600"
-                        }
-                      >
-                        {bridgeStatus ? bridgeStatus.failure_count : "—"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<MachineRow>
+          columns={columns}
+          data={rows}
+          keyExtractor={(m) => m.id}
+          isLoading={isLoading}
+          emptyMessage={t("scada.connection.noOnlineMachines")}
+        />
       )}
     </div>
   );
