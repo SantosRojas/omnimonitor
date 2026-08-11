@@ -16,6 +16,9 @@ export {
 export { Input } from "./input";
 export type { InputProps } from "./input";
 
+export { Modal } from "./modal";
+export type { ModalProps } from "./modal";
+
 export { Select } from "./select";
 export type { SelectProps } from "./select";
 

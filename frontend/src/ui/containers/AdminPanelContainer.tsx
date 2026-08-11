@@ -12,7 +12,7 @@ import { HttpMachineRepo } from "../../data/repos/http-machine-repo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User, Bridge, Machine, ApiError } from "../../core/types";
 import { PageHeader } from "../layouts/PageHeader";
-import { Card, CardContent } from "../primitives/card";
+import { Modal } from "../primitives/modal";
 import { Button } from "../primitives/button";
 import { Input } from "../primitives/input";
 import { formatDate, formatDateTime } from "../../core/utils/format";
@@ -107,7 +107,7 @@ function UsersSection() {
 
   const formFields: Field[] = [
     { name: "username", label: t("admin.username"), type: "text" },
-    { name: "password", label: t("admin.password"), type: "text" },
+    { name: "password", label: t("admin.password"), type: "password" },
     { name: "email", label: t("admin.email"), type: "email", optional: true },
     { name: "role", label: t("admin.role"), type: "select", options: [{ value: "admin", label: t("admin.roleAdmin") }, { value: "operator", label: t("admin.roleOperator") }, { value: "viewer", label: t("admin.roleViewer") }] },
   ];
@@ -120,52 +120,57 @@ function UsersSection() {
 
   return (
     <SectionShell title={t("admin.users")} onCreate={() => { resetFormState(); setState({ formOpen: true, editing: null, deleting: null }); }}>
-      {!state.formOpen ? (
-        <Table<User>
-          columns={columns}
-          data={users}
-          keyExtractor={(u) => u.id}
-          isLoading={isLoading}
-          emptyMessage={t("admin.noUsers")}
-          filterableColumns={["username", "email", "role"]}
-          onEdit={(row) => { resetFormState(); setState({ formOpen: true, editing: row, deleting: null }); }}
-          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      <Table<User>
+        columns={columns}
+        data={users}
+        keyExtractor={(u) => u.id}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noUsers")}
+        filterableColumns={["username", "email", "role"]}
+        onEdit={(row) => { resetFormState(); setState({ formOpen: true, editing: row, deleting: null }); }}
+        onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      />
+      <Modal
+        open={state.formOpen}
+        title={state.editing ? t("admin.editUser") : t("admin.createUser")}
+        onClose={() => { resetFormState(); setState(initialCrudState); }}
+        size="lg"
+      >
+        <AdminCrudForm
+          fields={state.editing ? editFields : formFields}
+          initialValues={state.editing ? { id: state.editing.id, username: state.editing.username, email: state.editing.email ?? "", role: state.editing.role } : undefined}
+          onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+          error={formError}
+          onCancel={() => { resetFormState(); setState(initialCrudState); }}
         />
-      ) : (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? t("admin.editUser") : t("admin.createUser")}</h3>
-            <AdminCrudForm fields={state.editing ? editFields : formFields} initialValues={state.editing ? { id: state.editing.id, username: state.editing.username, email: state.editing.email ?? "", role: state.editing.role } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} error={formError} />
-            {state.editing && (
-              <div className="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-700">
-                <h4 className="mb-2 text-sm font-semibold text-neutral-900 dark:text-white">{t("admin.resetPasswordTitle")}</h4>
-                <div className="flex items-end gap-3">
-                  <div className="flex-1">
-                    <label htmlFor="crud-reset-password" className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("admin.newPassword")}</label>
-                    <Input
-                      id="crud-reset-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => { setNewPassword(e.target.value); setResetSuccess(false); }}
-                      placeholder={t("admin.newPassword")}
-                    />
-                  </div>
-                  <Button size="sm" disabled={!newPassword || resetPasswordMutation.isPending} onClick={() => state.editing && resetPasswordMutation.mutate(state.editing.id)}>
-                    {resetPasswordMutation.isPending ? t("common.saving") : t("admin.resetPassword")}
-                  </Button>
-                </div>
-                {resetPasswordMutation.isError && (
-                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{t("admin.passwordResetFailed")}</p>
-                )}
-                {resetSuccess && (
-                  <p className="mt-2 text-xs text-green-600 dark:text-green-400">{t("admin.passwordResetSuccess")}</p>
-                )}
+        {state.editing && (
+          <div className="mt-6 border-t border-neutral-200 pt-4 dark:border-neutral-700">
+            <h4 className="mb-2 text-sm font-semibold text-neutral-900 dark:text-white">{t("admin.resetPasswordTitle")}</h4>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label htmlFor="crud-reset-password" className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">{t("admin.newPassword")}</label>
+                <Input
+                  id="crud-reset-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => { setNewPassword(e.target.value); setResetSuccess(false); }}
+                  placeholder={t("admin.newPassword")}
+                />
               </div>
+              <Button size="sm" disabled={!newPassword || resetPasswordMutation.isPending} onClick={() => state.editing && resetPasswordMutation.mutate(state.editing.id)}>
+                {resetPasswordMutation.isPending ? t("common.saving") : t("admin.resetPassword")}
+              </Button>
+            </div>
+            {resetPasswordMutation.isError && (
+              <p className="mt-2 text-xs text-red-600 dark:text-red-400">{t("admin.passwordResetFailed")}</p>
             )}
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => { resetFormState(); setState(initialCrudState); }}>{t("common.cancel")}</Button>
-          </CardContent>
-        </Card>
-      )}
+            {resetSuccess && (
+              <p className="mt-2 text-xs text-green-600 dark:text-green-400">{t("admin.passwordResetSuccess")}</p>
+            )}
+          </div>
+        )}
+      </Modal>
       <ConfirmDialog open={state.deleting !== null} title={t("admin.deleteUser")} message={t("admin.deleteUserMessage", { username: state.deleting?.username ?? "" })} onConfirm={() => state.deleting && deleteMutation.mutate(state.deleting.id)} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
     </SectionShell>
   );
@@ -228,26 +233,29 @@ function EquivalencesSection() {
 
   return (
     <SectionShell title={t("admin.equivalences")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
-      {state.formOpen ? (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">{state.editing ? t("admin.editEquivalence") : t("admin.createEquivalence")}</h3>
-            <AdminCrudForm fields={formFields} initialValues={state.editing ? { id: state.editing.id as number, from: state.editing.from as string, to: state.editing.to as string } : undefined} onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }} isLoading={createMutation.isPending || updateMutation.isPending} />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Table<Record<string, unknown>>
-          columns={columns}
-          data={equivalences as Record<string, unknown>[]}
-          keyExtractor={(row) => row.id as number}
-          isLoading={isLoading}
-          emptyMessage={t("admin.noEquivalences")}
-          filterableColumns={["from", "to"]}
-          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
-          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      <Table<Record<string, unknown>>
+        columns={columns}
+        data={equivalences as Record<string, unknown>[]}
+        keyExtractor={(row) => row.id as number}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noEquivalences")}
+        filterableColumns={["from", "to"]}
+        onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+        onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      />
+      <Modal
+        open={state.formOpen}
+        title={state.editing ? t("admin.editEquivalence") : t("admin.createEquivalence")}
+        onClose={() => setState(initialCrudState)}
+      >
+        <AdminCrudForm
+          fields={formFields}
+          initialValues={state.editing ? { id: state.editing.id as number, from: state.editing.from as string, to: state.editing.to as string } : undefined}
+          onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+          onCancel={() => setState(initialCrudState)}
         />
-      )}
+      </Modal>
       <ConfirmDialog open={state.deleting !== null} title={t("admin.deleteEquivalence")} message={t("admin.deleteEquivalenceMessage", { from: state.deleting?.from ?? "", to: state.deleting?.to ?? "" })} onConfirm={() => state.deleting && deleteMutation.mutate(Number(state.deleting.id))} onCancel={() => setState(initialCrudState)} isLoading={deleteMutation.isPending} />
     </SectionShell>
   );
@@ -333,33 +341,29 @@ function BridgesSection() {
 
   return (
     <SectionShell title={t("admin.bridges")} onCreate={() => setState({ formOpen: true, editing: null, deleting: null })}>
-      {!state.formOpen ? (
-        <Table<Bridge>
-          columns={columns}
-          data={bridges}
-          keyExtractor={(b) => b.id}
-          isLoading={isLoading}
-          emptyMessage={t("admin.noBridges")}
-          filterableColumns={["ip_address", "label", "status"]}
-          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
-          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      <Table<Bridge>
+        columns={columns}
+        data={bridges}
+        keyExtractor={(b) => b.id}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noBridges")}
+        filterableColumns={["ip_address", "label", "status"]}
+        onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+        onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      />
+      <Modal
+        open={state.formOpen}
+        title={state.editing ? t("admin.editBridge", { ip: state.editing.ip_address }) : t("admin.registerBridge")}
+        onClose={() => setState(initialCrudState)}
+      >
+        <AdminCrudForm
+          fields={state.editing ? editFields : formFields}
+          initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", authorized: state.editing.authorized ? "true" : "false" } : undefined}
+          onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+          onCancel={() => setState(initialCrudState)}
         />
-      ) : (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-              {state.editing ? t("admin.editBridge", { ip: state.editing.ip_address }) : t("admin.registerBridge")}
-            </h3>
-            <AdminCrudForm
-              fields={state.editing ? editFields : formFields}
-              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", authorized: state.editing.authorized ? "true" : "false" } : undefined}
-              onSubmit={(vals) => { if (state.editing) updateMutation.mutate(vals); else createMutation.mutate(vals); }}
-              isLoading={createMutation.isPending || updateMutation.isPending}
-            />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
-          </CardContent>
-        </Card>
-      )}
+      </Modal>
       <ConfirmDialog
         open={state.deleting !== null}
         title={t("admin.deleteBridge")}
@@ -423,33 +427,29 @@ function MachinesSection() {
 
   return (
     <SectionShell title={t("admin.machines")}>
-      {!state.formOpen ? (
-        <Table<Machine>
-          columns={columns}
-          data={machines}
-          keyExtractor={(m) => m.id}
-          isLoading={isLoading}
-          emptyMessage={t("admin.noMachines")}
-          filterableColumns={["serial_number", "ip_address", "label", "status"]}
-          onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
-          onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      <Table<Machine>
+        columns={columns}
+        data={machines}
+        keyExtractor={(m) => m.id}
+        isLoading={isLoading}
+        emptyMessage={t("admin.noMachines")}
+        filterableColumns={["serial_number", "ip_address", "label", "status"]}
+        onEdit={(row) => setState({ formOpen: true, editing: row, deleting: null })}
+        onDelete={(row) => setState({ formOpen: false, editing: null, deleting: row })}
+      />
+      <Modal
+        open={state.formOpen}
+        title={t("admin.editMachine", { serial: state.editing?.serial_number ?? "" })}
+        onClose={() => setState(initialCrudState)}
+      >
+        <AdminCrudForm
+          fields={editFields}
+          initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", ip_address: state.editing.ip_address ?? "" } : undefined}
+          onSubmit={(vals) => { updateMutation.mutate(vals); }}
+          isLoading={updateMutation.isPending}
+          onCancel={() => setState(initialCrudState)}
         />
-      ) : (
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="mb-4 text-base font-semibold text-neutral-900 dark:text-white">
-              {state.editing ? t("admin.editMachine", { serial: state.editing.serial_number }) : ""}
-            </h3>
-            <AdminCrudForm
-              fields={editFields}
-              initialValues={state.editing ? { id: state.editing.id, label: state.editing.label ?? "", ip_address: state.editing.ip_address ?? "" } : undefined}
-              onSubmit={(vals) => { updateMutation.mutate(vals); }}
-              isLoading={updateMutation.isPending}
-            />
-            <Button variant="ghost" size="sm" className="mt-3" onClick={() => setState(initialCrudState)}>{t("common.cancel")}</Button>
-          </CardContent>
-        </Card>
-      )}
+      </Modal>
       <ConfirmDialog
         open={state.deleting !== null}
         title={t("admin.deleteMachine")}

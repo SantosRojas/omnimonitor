@@ -1,9 +1,12 @@
 import { type FormEvent, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "../primitives/button";
+import { Input } from "../primitives/input";
+import { Select } from "../primitives/select";
 
 /* ── Public types ─────────────────────────────────────────────── */
 
-export type FieldType = "text" | "select" | "number" | "email";
+export type FieldType = "text" | "select" | "number" | "email" | "password";
 
 export interface Field {
   /** Field name (used as the key in form values). */
@@ -27,8 +30,10 @@ export interface AdminCrudFormProps {
   initialValues?: Record<string, string | number>;
   /** Whether the form is currently submitting. */
   isLoading: boolean;
-  /** Server-side error message surfaced above the submit button (e.g. a 409 conflict). */
+  /** Server-side error message surfaced above the actions (e.g. a 409 conflict). */
   error?: string | null;
+  /** Called when the user dismisses the form (Cancel button). */
+  onCancel?: () => void;
 }
 
 /* ── Component ────────────────────────────────────────────────── */
@@ -36,9 +41,10 @@ export interface AdminCrudFormProps {
 /**
  * Reusable admin CRUD form.
  *
- * Renders a TailwindCSS-styled form with support for text, number, and
- * select field types. Displays inline validation errors for required fields.
- * Used for both create and edit operations.
+ * Renders a TailwindCSS-styled form with support for text, password, number,
+ * email, and select field types. Displays inline validation errors for
+ * required fields, wired up with `aria-invalid` / `aria-describedby`. Used
+ * for both create and edit operations, typically inside a modal.
  */
 export function AdminCrudForm({
   fields,
@@ -46,6 +52,7 @@ export function AdminCrudForm({
   initialValues,
   isLoading,
   error,
+  onCancel,
 }: AdminCrudFormProps) {
   const { t } = useTranslation();
   const [values, setValues] = useState<
@@ -113,6 +120,12 @@ export function AdminCrudForm({
     }
   }
 
+  /* ── Field rendering helpers ─────────────────────────────────── */
+  const isInvalid = (name: string) => errors[name] !== undefined;
+  const errorId = (name: string) => `crud-${name}-error`;
+  const invalidClassName =
+    "border-red-500 focus-visible:ring-red-500 dark:border-red-500";
+
   /* ── Render ──────────────────────────────────────────────────── */
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -120,42 +133,47 @@ export function AdminCrudForm({
         <div key={field.name}>
           <label
             htmlFor={`crud-${field.name}`}
-            className="block text-sm font-medium text-gray-700"
+            className="block text-sm font-medium text-neutral-700 dark:text-neutral-300"
           >
             {field.label}
           </label>
 
           {field.type === "select" && field.options ? (
-            <select
+            <Select
               id={`crud-${field.name}`}
               value={String(values[field.name] ?? "")}
               onChange={(e) => setValue(field.name, e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">{t("admin.form.select", { label: field.label })}</option>
-              {field.options.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              options={field.options}
+              placeholder={t("admin.form.select", { label: field.label })}
+              aria-invalid={isInvalid(field.name) || undefined}
+              aria-describedby={
+                isInvalid(field.name) ? errorId(field.name) : undefined
+              }
+              className={isInvalid(field.name) ? invalidClassName : undefined}
+            />
           ) : (
-            <input
+            <Input
               id={`crud-${field.name}`}
-              type={field.type === "number" ? "number" : field.type === "email" ? "email" : "text"}
+              type={field.type}
               value={String(values[field.name] ?? "")}
               onChange={(e) => setValue(field.name, e.target.value)}
-              className={`mt-1 block w-full rounded-md border px-3 py-2 text-sm shadow-sm placeholder-gray-400 focus:outline-none focus:ring-1 ${
-                errors[field.name]
-                  ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                  : "border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-              }`}
               placeholder={t("admin.form.enter", { label: field.label.toLowerCase() })}
+              aria-invalid={isInvalid(field.name) || undefined}
+              aria-describedby={
+                isInvalid(field.name) ? errorId(field.name) : undefined
+              }
+              className={isInvalid(field.name) ? invalidClassName : undefined}
             />
           )}
 
           {errors[field.name] && (
-            <p className="mt-1 text-xs text-red-600">{errors[field.name]}</p>
+            <p
+              id={errorId(field.name)}
+              aria-live="polite"
+              className="mt-1 text-xs text-red-600 dark:text-red-400"
+            >
+              {errors[field.name]}
+            </p>
           )}
         </div>
       ))}
@@ -167,15 +185,21 @@ export function AdminCrudForm({
         </p>
       )}
 
-      {/* ── Submit ──────────────────────────────────────────────── */}
-      <div className="flex justify-end gap-3 pt-2">
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-        >
+      {/* ── Actions ─────────────────────────────────────────────── */}
+      <div className="flex justify-end gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-700">
+        {onCancel && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={isLoading}
+          >
+            {t("common.cancel")}
+          </Button>
+        )}
+        <Button type="submit" disabled={isLoading}>
           {isLoading ? t("common.saving") : t("common.save")}
-        </button>
+        </Button>
       </div>
     </form>
   );
