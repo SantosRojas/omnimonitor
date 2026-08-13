@@ -24,15 +24,26 @@
 
 ### 2.0 Generar el paquete (máquina de desarrollo)
 
-Desde la raíz del proyecto, con Docker/Podman instalado:
+> Elegí el script según el sistema operativo de tu **máquina de desarrollo**
+> (la que compila), NO según el servidor. El resultado es el mismo:
+> `omni-pdms-server.tar` con backend + frontend compilados en la imagen.
 
-```bash
-# Linux / macOS
-chmod +x deploy.sh && ./deploy.sh
+**Máquina de desarrollo Windows** (PowerShell):
 
-# Windows (PowerShell)
+```powershell
 .\deploy.ps1
 ```
+
+> Requiere Docker Desktop (o Podman) instalado en Windows. La imagen que se
+> genera es **Linux** aunque compiles en Windows — las stages del Dockerfile
+> usan `node:20-alpine` y `rust:1-slim-bookworm`, y Docker Desktop las ejecuta
+> en una VM interna. El `.tar` es 100% compatible con el servidor Linux.
+
+**Máquina de desarrollo Linux / macOS** (terminal):
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
 
 Esto crea `omni-pdms-server.tar` (backend + frontend compilado en la imagen).
 

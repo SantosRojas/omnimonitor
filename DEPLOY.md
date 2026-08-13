@@ -133,14 +133,22 @@ El flujo de producción tiene dos máquinas:
 
 ### Paso 1: Compilar y empaquetar (máquina de desarrollo)
 
-Ejecutar el script de despliegue desde la raíz del proyecto:
+> Elegí el script según el sistema operativo de tu **máquina de desarrollo**
+> (la que compila), NO según el servidor.
 
-**Windows:**
+**Máquina de desarrollo Windows** (PowerShell):
+
 ```powershell
 .\deploy.ps1
 ```
 
-**Linux / macOS:**
+> Requiere Docker Desktop (o Podman) en Windows. Aunque compiles en Windows,
+> la imagen generada es **Linux** (stages `node:20-alpine` y
+> `rust:1-slim-bookworm` corriendo en la VM interna de Docker Desktop), por lo
+> que el `.tar` funciona igual en el servidor Linux.
+
+**Máquina de desarrollo Linux / macOS** (terminal):
+
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
