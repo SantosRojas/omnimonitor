@@ -279,7 +279,88 @@ curl http://localhost:9001/health
 
 ---
 
-## 7. Recordatorios
+## 7. Compartir para pruebas — demo en Windows con Docker Desktop
+
+> Para que otros usuarios de Windows prueben el sistema **sin recibir el código
+> fuente**: solo se comparte la imagen precompilada + el compose + un `.env` de
+> prueba. La imagen (distroless) contiene el binario compilado, la SPA y las
+> migraciones embebidas — no incluye código fuente ni toolchain.
+
+### 7.1 Archivos a compartir
+
+| Archivo | Contenido | ¿Código fuente? |
+|---|---|---|
+| `omni-pdms-server.tar` | Imagen completa (backend + frontend) | No |
+| `docker-compose.yml` | Receta de servicios (postgres + server) | No |
+| `.env` | Configuración **de prueba** (ver abajo) | No |
+
+Generar el `.tar` con `.\deploy.ps1` (ver sección 2.0). Compartir los 3
+archivos por USB, carpeta compartida, WeTransfer, etc.
+
+> **Seguridad**: el `.env` que se comparte debe tener valores DE PRUEBA
+> (`JWT_SECRET` aleatorio, `ADMIN_PASSWORD` simple, `DB_PASSWORD` cualquiera).
+> **NUNCA** compartir el `.env` de producción con secretos reales.
+
+### 7.2 Pasos del usuario que recibe (Windows + Docker Desktop)
+
+1. Instalar **Docker Desktop** (https://www.docker.com/products/docker-desktop/) y abrirlo.
+
+2. Crear una carpeta (el nombre ya no importa — el compose usa el tag fijo
+   `omni-pdms-server:latest`) y copiar los 3 archivos:
+
+   ```powershell
+   mkdir C:\omni-pdms-demo
+   cd C:\omni-pdms-demo
+   # copiar aquí omni-pdms-server.tar, docker-compose.yml y .env
+   ```
+
+3. Cargar la imagen:
+
+   ```powershell
+   docker load -i omni-pdms-server.tar
+   ```
+
+4. Levantar los servicios (`postgres:16-alpine` se descarga de Docker Hub
+   automáticamente):
+
+   ```powershell
+   docker compose up -d
+   ```
+
+5. Verificar:
+
+   ```powershell
+   curl http://localhost:9001/health
+   # → {"status":"ok"}
+   ```
+
+6. Abrir en el navegador: `http://localhost:9001`
+   (usuario `admin`, contraseña `ADMIN_PASSWORD` del `.env` que compartiste).
+
+### 7.3 Detener la demo
+
+```powershell
+docker compose down
+```
+
+Los datos quedan en el volumen `pgdata`. Para borrarlo todo (demo limpia):
+
+```powershell
+docker compose down -v
+```
+
+### 7.4 Notas
+
+- El usuario NO necesita Rust, Node ni el código fuente — solo Docker Desktop.
+- `docker compose up -d` usa la imagen ya cargada porque el compose declara
+  `image: omni-pdms-server:latest`; si ese tag no existiera, Compose intentaría
+  compilar y fallaría (por eso el fix es obligatorio).
+- Para distribuir a más de 2–3 personas, mejor subir la imagen a un registro
+  privado (GHCR / Docker Hub) — ver DEPLOY.md.
+
+---
+
+## 8. Recordatorios
 
 - **Datos**: el volumen `pgdata` guarda la base de datos. No borrarlo salvo
   rollback estructural planificado.

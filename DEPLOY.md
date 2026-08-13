@@ -188,6 +188,8 @@ sudo docker load -i omni-pdms-server.tar
 #    .env debe tener JWT_SECRET y ADMIN_PASSWORD configurados
 
 # 5. Iniciar los servicios
+#    El compose declara `image: omni-pdms-server:latest`, así que usa la
+#    imagen ya cargada SIN intentar compilar (no hay código en el servidor).
 sudo docker compose up -d
 ```
 

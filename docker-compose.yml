@@ -11,6 +11,11 @@
 #    2. docker compose up -d
 #    3. curl http://localhost:9001/health
 #
+#  Sin código fuente (imagen precompilada):
+#    docker load -i omni-pdms-server.tar
+#    docker compose up -d
+#    (el tag fijo `omni-pdms-server:latest` evita que Compose intente compilar)
+#
 #  Frontend:
 #    The SPA is built INSIDE the Dockerfile (frontend-build stage) and baked
 #    into the runtime image at /app/frontend/dist — no separate build step or
@@ -40,6 +45,10 @@ services:
   # ── Server (Axum backend) ──────────────────────────────────────────────────
   server:
     build: .
+    # Imagen FIJA: `docker load -i omni-pdms-server.tar` + `docker compose up -d`
+    # funcionan en CUALQUIER carpeta (no depende del nombre del directorio).
+    # En desarrollo `docker compose build` produce el mismo tag.
+    image: omni-pdms-server:latest
     restart: unless-stopped
     ports:
       - "${PORT:-9001}:${PORT:-9001}"
