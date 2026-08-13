@@ -107,19 +107,23 @@ El script `run.sh` construye el frontend y arranca el servidor con `cargo run -p
 
 ## Variables de entorno
 
+> Guía rápida de pasos para el servidor: ver [SERVER.md](SERVER.md).
+
 | Variable | Requerida | Default | Descripción |
 |---|---|---|---|
 | `JWT_SECRET` | **SÍ** | — | Clave secreta para firmar tokens JWT. Generar con `openssl rand -hex 32` |
 | `ADMIN_PASSWORD` | **SÍ** | — | Contraseña del usuario administrador (se crea automáticamente al iniciar) |
-| `DB_HOST` | No | `localhost` | Host de PostgreSQL (en docker-compose se inyecta `postgres`) |
+| `DB_HOST` | No | `localhost` | Host de PostgreSQL. En Docker/Podman es **fijo** al servicio `postgres` (el compose lo inyecta, no se configura) |
 | `DB_PORT` | No | `5432` | Puerto de PostgreSQL |
 | `DB_DATABASE` | No | `omni_pdms` | Nombre de la base de datos |
 | `DB_USERNAME` | No | `omni_user` | Usuario de base de datos |
 | `DB_PASSWORD` | No | `<change-this>` | Contraseña de base de datos |
 | `PORT` | No | `9001` | Puerto del servidor backend |
-| `CORS_ORIGINS` | No | `http://localhost:5173` | Orígenes permitidos CORS (separados por coma) |
+| `CORS_ORIGINS` | No | `http://localhost:5173` | Orígenes permitidos CORS (separados por coma). El compose lo sobreescribe a `http://localhost:9001` |
 | `FRONTEND_DIST` | No | `frontend/dist` | Ruta al frontend compilado. Dentro del contenedor la imagen lo ubica en `/app/frontend/dist` vía env |
 | `SEED_LANG` | No | `es` | Idioma de las descripciones generadas (`es` o `en`) |
+| `SEED_REFRESH` | No | `false` | `true` re-aplica el seed en cada reinicio (solo desarrollo) |
+| `PERSISTENCE_INTERVAL_SECS` | No | `30` | Segundos entre flushes de lecturas a la base. `0` = inmediato |
 
 ---
 
