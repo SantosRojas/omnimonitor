@@ -19,3 +19,7 @@ bridge/*.zip
 
 *.zip
 
+# Python (scripts/generate_seed.py)
+__pycache__/
+*.pyc
+

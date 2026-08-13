@@ -22,6 +22,20 @@
 
 ## 2. Primera instalación
 
+### 2.0 Generar el paquete (máquina de desarrollo)
+
+Desde la raíz del proyecto, con Docker/Podman instalado:
+
+```bash
+# Linux / macOS
+chmod +x deploy.sh && ./deploy.sh
+
+# Windows (PowerShell)
+.\deploy.ps1
+```
+
+Esto crea `omni-pdms-server.tar` (backend + frontend compilado en la imagen).
+
 ### 2.1 Crear el directorio de la aplicación
 
 ```bash
