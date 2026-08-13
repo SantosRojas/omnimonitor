@@ -1,7 +1,7 @@
 //! Server binary: REST + dual WebSocket server for omni-pdms-v2.
 //!
 //! Usage:
-//!   cargo run -p server [--port 9000] [--db-url "postgres://override:..."]
+//!   cargo run -p server [--port 9001] [--db-url "postgres://override:..."]
 //!
 //! DB config via .env (Laravel-style):
 //!   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD
@@ -9,7 +9,6 @@
 #![allow(clippy::print_stdout)]
 
 use std::net::SocketAddr;
-use std::path::Path;
 use std::sync::Arc;
 
 use sqlx::migrate::Migrator;
@@ -46,9 +45,9 @@ struct Args {
 fn build_db_url() -> String {
     let host = std::env::var("DB_HOST").unwrap_or_else(|_| "localhost".to_string());
     let port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".to_string());
-    let database = std::env::var("DB_DATABASE").unwrap_or_else(|_| "pdms".to_string());
-    let username = std::env::var("DB_USERNAME").unwrap_or_else(|_| "postgres".to_string());
-    let password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| "postgres".to_string());
+    let database = std::env::var("DB_DATABASE").unwrap_or_else(|_| "omni_pdms".to_string());
+    let username = std::env::var("DB_USERNAME").unwrap_or_else(|_| "omni_user".to_string());
+    let password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| "<change-this>".to_string());
     format!("postgres://{username}:{password}@{host}:{port}/{database}")
 }
 
@@ -58,7 +57,7 @@ fn parse_args() -> Args {
     let mut port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(9000);
+        .unwrap_or(9001);
     let jwt_secret = std::env::var("JWT_SECRET")
         .expect("JWT_SECRET must be set in environment");
     let admin_password = std::env::var("ADMIN_PASSWORD")
@@ -76,10 +75,10 @@ fn parse_args() -> Args {
                 }
             }
             "--port" => {
-                if let Some(v) = args.next() {
-                    if let Ok(p) = v.parse() {
-                        port = p;
-                    }
+                if let Some(v) = args.next()
+                    && let Ok(p) = v.parse()
+                {
+                    port = p;
                 }
             }
             "--frontend-dist" => {
@@ -103,14 +102,15 @@ fn parse_args() -> Args {
 // ───────────────────────────────────────────────
 //  Migration runner — sqlx::Migrator tracks state
 //  via the _sqlx_migrations table.
-//  Path is baked at compile time via CARGO_MANIFEST_DIR.
-//  Files read at runtime → no recompile needed on SQL changes.
+//  Migrations are embedded in the binary at compile time (`sqlx::migrate!`),
+//  so the server is self-contained: no external `migrations/` directory is
+//  needed at runtime (Docker runtime image, native binary copy, etc.).
 // ───────────────────────────────────────────────
 
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+
 async fn run_migrations(pool: &sqlx::PgPool) -> Result<(), sqlx::migrate::MigrateError> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-    let migrator = Migrator::new(dir).await?;
-    migrator.run(pool).await
+    MIGRATOR.run(pool).await
 }
 
 /// Health check handler with DB ping.

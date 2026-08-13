@@ -20,6 +20,17 @@ En el servidor del hospital (Linux recomendado) se necesita:
   sudo apt install docker-compose-plugin
   ```
 
+- **Podman** (alternativa a Docker)  
+  Opcional. El mismo `docker-compose.yml` funciona con Podman (no usa
+  `condition: service_healthy`). Instalar según la distribución:
+  ```bash
+  # RHEL / Fedora
+  sudo dnf install podman podman-docker docker-compose-plugin
+
+  # Debian / Ubuntu
+  sudo apt install podman docker-compose
+  ```
+
 - **Git** (solo si se compila desde código directamente en el servidor)  
   ```bash
   sudo apt install git
@@ -30,6 +41,9 @@ En el servidor del hospital (Linux recomendado) se necesita:
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
   sudo apt install nodejs
   ```
+  > Nota: con Docker/Podman el frontend se compila **dentro de la imagen**
+  > (stage `frontend-build`), por lo que Node.js solo es necesario para el
+  > desarrollo local o el despliegue nativo.
 
 ---
 
@@ -44,16 +58,34 @@ Para probar el sistema rápidamente en un entorno local o de staging:
 cp .env.example .env
 # Editar .env: JWT_SECRET, ADMIN_PASSWORD, DB_PASSWORD
 
-# 2. Construir frontend
-cd frontend && npm install && npm run build && cd ..
-
-# 3. Iniciar servicios
+# 2. Iniciar servicios (la imagen compila el frontend y el backend)
 docker compose up -d
 
-# 4. Verificar
+# 3. Verificar
 curl http://localhost:9001/health
 # → {"status":"ok"}
 ```
+
+### Con Podman
+
+El mismo `docker-compose.yml` funciona con Podman. Hay tres opciones:
+
+```bash
+# Opción 1 (recomendada): plugin docker-compose vía podman compose
+cp .env.example .env
+# Editar .env: JWT_SECRET, ADMIN_PASSWORD, DB_PASSWORD
+podman compose up -d
+
+# Opción 2: si existe docker-compose-plugin, usar el socket de Podman
+DOCKER_HOST=unix:///run/podman/podman.sock docker compose up -d
+
+# Opción 3: podman-compose (python)
+podman-compose up -d
+```
+
+> **Nota**: las tres funcionan porque el compose **ya no usa**
+> `condition: service_healthy` (que rompía `podman-compose`). El backend
+> reintenta la conexión a la base de datos con backoff al arrancar.
 
 ### Sin Docker (desarrollo directo)
 
@@ -79,14 +111,14 @@ El script `run.sh` construye el frontend y arranca el servidor con `cargo run -p
 |---|---|---|---|
 | `JWT_SECRET` | **SÍ** | — | Clave secreta para firmar tokens JWT. Generar con `openssl rand -hex 32` |
 | `ADMIN_PASSWORD` | **SÍ** | — | Contraseña del usuario administrador (se crea automáticamente al iniciar) |
-| `DB_HOST` | No | `postgres` | Host de PostgreSQL (nombre del servicio en docker-compose) |
+| `DB_HOST` | No | `localhost` | Host de PostgreSQL (en docker-compose se inyecta `postgres`) |
 | `DB_PORT` | No | `5432` | Puerto de PostgreSQL |
 | `DB_DATABASE` | No | `omni_pdms` | Nombre de la base de datos |
 | `DB_USERNAME` | No | `omni_user` | Usuario de base de datos |
-| `DB_PASSWORD` | No | `<cambiar>` | Contraseña de base de datos |
+| `DB_PASSWORD` | No | `<change-this>` | Contraseña de base de datos |
 | `PORT` | No | `9001` | Puerto del servidor backend |
-| `CORS_ORIGINS` | No | `http://localhost:9001` | Orígenes permitidos CORS (separados por coma) |
-| `FRONTEND_DIST` | No | `/app/frontend/dist` | Ruta al frontend compilado (dentro del contenedor) |
+| `CORS_ORIGINS` | No | `http://localhost:5173` | Orígenes permitidos CORS (separados por coma) |
+| `FRONTEND_DIST` | No | `frontend/dist` | Ruta al frontend compilado. Dentro del contenedor la imagen lo ubica en `/app/frontend/dist` vía env |
 | `SEED_LANG` | No | `es` | Idioma de las descripciones generadas (`es` o `en`) |
 
 ---
@@ -111,8 +143,7 @@ chmod +x deploy.sh
 ```
 
 Esto produce:
-- `omni-pdms-server.tar` — imagen Docker completa del backend
-- `frontend/dist/` — frontend compilado (SPA estática)
+- `omni-pdms-server.tar` — imagen completa del backend **con el frontend integrado** (la SPA se compila dentro de la imagen, stage `frontend-build`)
 
 ### Paso 2: Copiar al servidor del hospital
 
@@ -275,15 +306,27 @@ como un binario nativo + servicio systemd.
 - **Rust toolchain** para compilar el servidor (solo una vez, o compilar
   desde la máquina de desarrollo con compilación cruzada)
 
+### Preparar PostgreSQL (sin Docker)
+
+El backend espera un rol y una base de datos creados de antemano:
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE omni_user LOGIN PASSWORD '<cambiar>';"
+sudo -u postgres psql -c "CREATE DATABASE omni_pdms OWNER omni_user;"
+```
+
+Ajustar `DB_PASSWORD` en el `.env` al valor usado en el `CREATE ROLE`.
+
 ### Compilar y preparar
 
-**Opción A — compilar en el servidor:**
+**Opción A — compilar en el servidor (recomendada):**
 
 ```bash
 # Instalar Rust (solo una vez)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Compilar servidor
+# Compilar servidor (las migraciones van EMBEBIDAS en el binario,
+# no hace falta copiar server/migrations)
 cargo build --release -p server
 
 # Compilar frontend
@@ -293,18 +336,29 @@ cd frontend && npm install && npm run build && cd ..
 **Opción B — compilar desde máquina de desarrollo y copiar:**
 
 ```bash
-# Compilar para Linux x86_64 (desde WSL, Linux o macOS)
+# Compilar para Linux x86_64 (desde Linux o WSL, o con toolchain cruzada)
 cargo build --release -p server --target x86_64-unknown-linux-gnu
 
-# Empaquetar
+# Empaquetar (el binario queda en target/<target>/release/server)
 tar czf omni-pdms-native.tar.gz \
-    target/release/server \
+    target/x86_64-unknown-linux-gnu/release/server \
     frontend/dist \
     .env.example
 
 # Copiar al servidor
 scp omni-pdms-native.tar.gz usuario@hospital:/opt/omni-pdms/
 ```
+
+> **Advertencia honesta sobre la compilación cruzada**: compilar para
+> `x86_64-unknown-linux-gnu` desde **macOS o Windows** requiere toolchain
+> cruzada (p. ej. `cargo-zigbuild` o `cross`); sin ella, el binario no es
+> ejecutable en el servidor Linux. En esas plataformas, compilar directamente
+> en el servidor (**Opción A**) o instalar la toolchain cruzada.
+
+> **Nota sobre `FRONTEND_DIST`**: el valor `/app/frontend/dist` del
+> `.env.example` es la ruta DENTRO del contenedor. En despliegue nativo ese
+> valor rompe la SPA → setear `FRONTEND_DIST=frontend/dist` (relativo al
+> `WorkingDirectory` de systemd) o la ruta absoluta del `dist`.
 
 ### Instalar como servicio systemd
 
@@ -318,7 +372,9 @@ tar xzf omni-pdms-native.tar.gz
 
 # 3. Configurar .env
 cp .env.example .env
-# Editar .env con las credenciales de producción
+# Editar .env con las credenciales de producción.
+# IMPORTANTE: setear FRONTEND_DIST=frontend/dist (ver nota arriba), no el
+# valor /app/frontend/dist del ejemplo (es la ruta de contenedor).
 
 # 4. Crear servicio systemd
 sudo tee /etc/systemd/system/omni-pdms.service > /dev/null <<'SERVICE'

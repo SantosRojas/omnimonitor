@@ -12,18 +12,15 @@ Sistema hospitalario de monitoreo de pacientes en diálisis (PDMS) con supervisi
    cd omni-pdms-v2
    cp .env.example .env   # editar secretos: JWT_SECRET, ADMIN_PASSWORD, DB_PASSWORD
    ```
-2. Compilar el frontend (la SPA no se compila dentro de Docker):
-   ```bash
-   cd frontend && npm install && npm run build && cd ..
-   ```
-3. Levantar base de datos y backend:
+2. Levantar base de datos y backend (el frontend se compila dentro de la imagen):
    ```bash
    docker compose up -d
    ```
-4. Verificar que el servicio responde:
+3. Verificar que el servicio responde:
    ```bash
    curl http://localhost:9001/health
    ```
+   > El mismo compose funciona con Podman: `podman compose up -d`.
 
 ## Arquitectura
 

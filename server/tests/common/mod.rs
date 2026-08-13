@@ -11,8 +11,6 @@
 use axum::Router;
 use axum::routing::get;
 use sqlx::PgPool;
-use sqlx::migrate::Migrator;
-use std::path::Path;
 use std::sync::Arc;
 
 use server::api::{AppState, build_router};
@@ -31,14 +29,9 @@ use server::infrastructure::postgres::{
 use server::infrastructure::ws_hub::WsHubState;
 
 /// Apply all migrations to the test database.
-/// Uses the same runner as `server/src/main.rs` (sqlx::Migrator on the
-/// `migrations/` directory).
+/// Uses the same embedded migrations as `server/src/main.rs` (`sqlx::migrate!`).
 pub async fn setup_db(pool: &PgPool) {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-    let migrator = Migrator::new(dir)
-        .await
-        .expect("Failed to load migrations in test setup");
-    migrator
+    sqlx::migrate!("./migrations")
         .run(pool)
         .await
         .expect("Failed to apply migration in test setup");

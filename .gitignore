@@ -17,3 +17,5 @@ node_modules/
 bridge/*.exe
 bridge/*.zip
 
+*.zip
+
