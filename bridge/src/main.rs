@@ -95,23 +95,23 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
     if let Ok(v) = std::env::var("BRIDGE_PORT") {
         config.port = v;
     }
-    if let Ok(v) = std::env::var("BRIDGE_BAUD") {
-        if let Ok(n) = v.parse() {
-            config.baud = n;
-        }
+    if let Ok(v) = std::env::var("BRIDGE_BAUD")
+        && let Ok(n) = v.parse()
+    {
+        config.baud = n;
     }
-    if let Ok(v) = std::env::var("BRIDGE_SRC_ADDR") {
-        if let Ok(n) = v.parse() {
-            config.src_addr = n;
-        }
+    if let Ok(v) = std::env::var("BRIDGE_SRC_ADDR")
+        && let Ok(n) = v.parse()
+    {
+        config.src_addr = n;
     }
     if let Ok(v) = std::env::var("BRIDGE_WS_URL") {
         config.ws_url = v;
     }
-    if let Ok(v) = std::env::var("BRIDGE_DST_ADDR") {
-        if let Ok(n) = v.parse() {
-            config.dst_addr = n;
-        }
+    if let Ok(v) = std::env::var("BRIDGE_DST_ADDR")
+        && let Ok(n) = v.parse()
+    {
+        config.dst_addr = n;
     }
     if let Ok(v) = std::env::var("SERIAL_MAX_FAILURES") {
         tracing::info!("Using SERIAL_MAX_FAILURES from env: {}", v);
@@ -119,19 +119,19 @@ pub fn load_config(args: &[String]) -> BridgeConfig {
             config.max_failures = n;
         }
     }
-    if let Ok(v) = std::env::var("BRIDGE_TIMEOUT_SECS") {
-        if let Ok(n) = v.parse() {
-            config.timeout_secs = n;
-        }
+    if let Ok(v) = std::env::var("BRIDGE_TIMEOUT_SECS")
+        && let Ok(n) = v.parse()
+    {
+        config.timeout_secs = n;
     }
     if let Ok(v) = std::env::var("BRIDGE_DEVELOPER_MODE") {
         config.developer_mode =
             v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("1") || v == "yes";
     }
-    if let Ok(v) = std::env::var("BRIDGE_CYCLE_INTERVAL") {
-        if let Ok(n) = v.parse() {
-            config.cycle_interval_ms = n;
-        }
+    if let Ok(v) = std::env::var("BRIDGE_CYCLE_INTERVAL")
+        && let Ok(n) = v.parse()
+    {
+        config.cycle_interval_ms = n;
     }
 
     // ── Override from CLI args ──
@@ -401,11 +401,8 @@ async fn main() {
     // The bridge IP is always auto-detected (no manual configuration).
     // It is used for IP-based register auth against the server.
     let detected = local_ip_address::local_ip().ok().map(|ip| ip.to_string());
-    if detected.is_some() {
-        tracing::info!(
-            "auto-detected local IP: {}",
-            detected.as_ref().unwrap()
-        );
+    if let Some(ip) = &detected {
+        tracing::info!("auto-detected local IP: {}", ip);
     } else {
         tracing::warn!("local IP auto-detection failed");
     }
@@ -676,8 +673,10 @@ mod tests {
 
     #[test]
     fn apply_detected_ip_overwrites_existing_value() {
-        let mut config = BridgeConfig::default();
-        config.bridge_ip = "192.168.1.50".into();
+        let mut config = BridgeConfig {
+            bridge_ip: "192.168.1.50".into(),
+            ..Default::default()
+        };
         apply_detected_ip(&mut config, Some("10.0.0.5".into()));
         assert_eq!(config.bridge_ip, "10.0.0.5");
     }

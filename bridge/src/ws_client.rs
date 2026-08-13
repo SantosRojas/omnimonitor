@@ -140,7 +140,7 @@ pub async fn connect_and_run(
         let (mut write, mut read) = ws_stream.split();
 
         // Drain buffer first, oldest first
-        let buffered: Vec<BridgeFrame> = buffer.drain(..).collect();
+        let buffered: Vec<BridgeFrame> = std::mem::take(&mut buffer);
         for frame in &buffered {
             let json = match serde_json::to_string(frame) {
                 Ok(j) => j,

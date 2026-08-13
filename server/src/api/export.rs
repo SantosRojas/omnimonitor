@@ -110,7 +110,7 @@ async fn export_readings(
 
     // Filter to records within the therapy window
     let readings: Vec<Reading> = readings.into_iter()
-        .filter(|r| r.recorded_at.map_or(false, |t| t <= until))
+        .filter(|r| r.recorded_at.is_some_and(|t| t <= until))
         .collect();
 
     let fmt = params.format.as_deref().unwrap_or("csv");

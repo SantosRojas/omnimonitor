@@ -255,7 +255,7 @@ fn get_data_handles(device: &mut impl DeviceCommunicator) -> Result<Vec<u16>, St
 
     let resp_cmd = u16::from_le_bytes(data[0..2].try_into().unwrap());
     if resp_cmd == CMD_CODE_NAK {
-        return Err(format!("NAK in get_data_handles"));
+        return Err("NAK in get_data_handles".to_string());
     }
 
     let num_handles = u16::from_le_bytes(data[2..4].try_into().unwrap()) as usize;
@@ -560,22 +560,22 @@ fn read_cyclical_values(
                 .insert(attr.internal_name.clone(), value);
 
             // Special: patient_id_str for therapy setup convenience
-            if attr.internal_name == "g_patient_id_str" {
-                if let TelemetryValue::String(ref s) = physical_value {
-                    let trimmed = s.trim().to_string();
-                    if !trimmed.is_empty() {
-                        state.patient_id_str = trimmed;
-                    }
+            if attr.internal_name == "g_patient_id_str"
+                && let TelemetryValue::String(ref s) = physical_value
+            {
+                let trimmed = s.trim().to_string();
+                if !trimmed.is_empty() {
+                    state.patient_id_str = trimmed;
                 }
             }
 
             // Special: serial number for machine discovery
-            if attr.internal_name == "d_serial_number_to_odi" {
-                if let TelemetryValue::String(ref s) = physical_value {
-                    let trimmed = s.trim().to_string();
-                    if !trimmed.is_empty() {
-                        state.serial_number_str = Some(trimmed);
-                    }
+            if attr.internal_name == "d_serial_number_to_odi"
+                && let TelemetryValue::String(ref s) = physical_value
+            {
+                let trimmed = s.trim().to_string();
+                if !trimmed.is_empty() {
+                    state.serial_number_str = Some(trimmed);
                 }
             }
 
@@ -725,6 +725,10 @@ impl MetadataTracker {
 /// * `tx_readings` - Channel to send outgoing `BridgeFrame`s to the WS client.
 /// * `rx_commands` - Channel to receive incoming `ServerFrame`s from the WS client.
 /// * `bridge_ip` - The bridge's own IP address for IP-based register auth.
+#[allow(clippy::too_many_arguments)]
+// Injected dependencies (device, manager, channels, ws state) plus a few
+// configuration values — not cohesive row data, so grouping them in a struct
+// would only add indirection across the call sites without real benefit.
 pub async fn run_bridge(
     device: &mut impl DeviceCommunicator,
     manager: &SerialReaderManager,
@@ -926,12 +930,9 @@ pub async fn run_bridge(
     loop {
         // Process server commands (e.g. therapy closed from the UI).
         while let Ok(cmd) = rx_commands.try_recv() {
-            match cmd {
-                ServerFrame::TherapyClosed { therapy_id } => {
-                    tracing::info!("[bridge] server closed therapy {therapy_id}, resetting for next setup");
-                    manager.request_therapy_close(therapy_id).await;
-                }
-                _ => {}
+            if let ServerFrame::TherapyClosed { therapy_id } = cmd {
+                tracing::info!("[bridge] server closed therapy {therapy_id}, resetting for next setup");
+                manager.request_therapy_close(therapy_id).await;
             }
         }
 
@@ -965,7 +966,7 @@ pub async fn run_bridge(
         }
 
         // ── Auto-reconnect check ──
-        if state.cycle > 0 && state.cycle % 50 == 0 {
+        if state.cycle > 0 && state.cycle.is_multiple_of(50) {
             let cf = manager.get_cyclical_failures().await;
             if cf >= MAX_CYCLICAL_FAILURES_BEFORE_RECONNECT {
                 tracing::warn!(

@@ -14,7 +14,7 @@ use server::infrastructure::postgres::readings_repo::ReadingsRepo;
 use server::infrastructure::postgres::signal_repo::SignalRepo;
 use server::infrastructure::postgres::therapy_repo::TherapyRepo;
 use server::infrastructure::postgres::user_repo::UserRepo;
-use server::infrastructure::postgres::version_repo::{InitAttribute, InitDictionary, VersionRepo};
+use server::infrastructure::postgres::version_repo::{InitAttribute, InitDictionary, VersionInit, VersionRepo};
 use server::infrastructure::postgres::RepoError;
 
 mod common;
@@ -902,23 +902,23 @@ async fn version_save_and_retrieve(pool: PgPool) {
         },
     ];
 
+    let version_init = VersionInit {
+        fingerprint: "fp_test_v1".into(),
+        language_id: Some(1),
+        system_sw: Some("SW1.0".into()),
+        dss_fw: Some("FW2.0".into()),
+        dss_hw: Some("HW3.0".into()),
+        css_fw: Some("FW4.0".into()),
+        css_hw: Some("HW5.0".into()),
+        pss_fw: Some("FW6.0".into()),
+        pss_hw: Some("HW7.0".into()),
+        language1: Some("Lang1".into()),
+        language2: None,
+        language3: None,
+    };
+
     let version_id = repo
-        .save_initialization(
-            "fp_test_v1",
-            Some(1),
-            Some("SW1.0"),
-            Some("FW2.0"),
-            Some("HW3.0"),
-            Some("FW4.0"),
-            Some("HW5.0"),
-            Some("FW6.0"),
-            Some("HW7.0"),
-            Some("Lang1"),
-            None,
-            None,
-            &attrs,
-            &dict,
-        )
+        .save_initialization(&version_init, &attrs, &dict)
         .await
         .unwrap();
 
@@ -960,15 +960,24 @@ async fn version_save_reinitialization(pool: PgPool) {
         internal_name: "sig_a".into(),
     }];
 
-    repo.save_initialization(
-        "fp_reinit",
-        Some(1),
-        None, None, None, None, None, None, None, None, None, None,
-        &attrs_v1,
-        &[],
-    )
-    .await
-    .unwrap();
+    let version_init_v1 = VersionInit {
+        fingerprint: "fp_reinit".into(),
+        language_id: Some(1),
+        system_sw: None,
+        dss_fw: None,
+        dss_hw: None,
+        css_fw: None,
+        css_hw: None,
+        pss_fw: None,
+        pss_hw: None,
+        language1: None,
+        language2: None,
+        language3: None,
+    };
+
+    repo.save_initialization(&version_init_v1, &attrs_v1, &[])
+        .await
+        .unwrap();
 
     // Re-init with different attributes (upsert + replace)
     let attrs_v2 = vec![InitAttribute {
@@ -982,15 +991,24 @@ async fn version_save_reinitialization(pool: PgPool) {
         internal_name: "sig_b".into(),
     }];
 
-    repo.save_initialization(
-        "fp_reinit",
-        Some(1),
-        None, None, None, None, None, None, None, None, None, None,
-        &attrs_v2,
-        &[],
-    )
-    .await
-    .unwrap();
+    let version_init_v2 = VersionInit {
+        fingerprint: "fp_reinit".into(),
+        language_id: Some(1),
+        system_sw: None,
+        dss_fw: None,
+        dss_hw: None,
+        css_fw: None,
+        css_hw: None,
+        pss_fw: None,
+        pss_hw: None,
+        language1: None,
+        language2: None,
+        language3: None,
+    };
+
+    repo.save_initialization(&version_init_v2, &attrs_v2, &[])
+        .await
+        .unwrap();
 
     // Retrieve version by fingerprint first, then get attributes
     let version = repo.get_by_fingerprint("fp_reinit").await.unwrap().unwrap();

@@ -30,6 +30,23 @@ pub struct DictionaryEntryRow {
     pub text: Option<String>,
 }
 
+/// Version fields for `save_initialization` — one row of `software_versions`.
+#[derive(Debug, Clone)]
+pub struct VersionInit {
+    pub fingerprint: String,
+    pub language_id: Option<i32>,
+    pub system_sw: Option<String>,
+    pub dss_fw: Option<String>,
+    pub dss_hw: Option<String>,
+    pub css_fw: Option<String>,
+    pub css_hw: Option<String>,
+    pub pss_fw: Option<String>,
+    pub pss_hw: Option<String>,
+    pub language1: Option<String>,
+    pub language2: Option<String>,
+    pub language3: Option<String>,
+}
+
 /// Repository for software version caching and initialization.
 #[derive(Debug, Clone)]
 pub struct VersionRepo {
@@ -80,18 +97,7 @@ impl VersionRepo {
     /// Save a full initialization bundle (version + attributes + dictionary) in a single transaction.
     pub async fn save_initialization(
         &self,
-        fingerprint: &str,
-        language_id: Option<i32>,
-        system_sw: Option<&str>,
-        dss_fw: Option<&str>,
-        dss_hw: Option<&str>,
-        css_fw: Option<&str>,
-        css_hw: Option<&str>,
-        pss_fw: Option<&str>,
-        pss_hw: Option<&str>,
-        language1: Option<&str>,
-        language2: Option<&str>,
-        language3: Option<&str>,
+        version: &VersionInit,
         attributes: &[InitAttribute],
         dictionary: &[InitDictionary],
     ) -> Result<i64, RepoError> {
@@ -117,18 +123,18 @@ impl VersionRepo {
             RETURNING id
             "#,
         )
-        .bind(fingerprint)
-        .bind(language_id)
-        .bind(system_sw)
-        .bind(dss_fw)
-        .bind(dss_hw)
-        .bind(css_fw)
-        .bind(css_hw)
-        .bind(pss_fw)
-        .bind(pss_hw)
-        .bind(language1)
-        .bind(language2)
-        .bind(language3)
+        .bind(version.fingerprint.as_str())
+        .bind(version.language_id)
+        .bind(version.system_sw.as_deref())
+        .bind(version.dss_fw.as_deref())
+        .bind(version.dss_hw.as_deref())
+        .bind(version.css_fw.as_deref())
+        .bind(version.css_hw.as_deref())
+        .bind(version.pss_fw.as_deref())
+        .bind(version.pss_hw.as_deref())
+        .bind(version.language1.as_deref())
+        .bind(version.language2.as_deref())
+        .bind(version.language3.as_deref())
         .fetch_one(&mut *tx)
         .await?;
 

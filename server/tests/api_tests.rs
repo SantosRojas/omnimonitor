@@ -441,7 +441,7 @@ async fn patients_get_with_therapy_count(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/patients/{}", patient_id))
+                .uri(format!("/api/patients/{}", patient_id))
                 .method(Method::GET)
                 .header("authorization", format!("Bearer {}", &token))
                 .body(Body::empty())
@@ -483,7 +483,7 @@ async fn patients_update(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/patients/{}", patient_id))
+                .uri(format!("/api/patients/{}", patient_id))
                 .method(Method::PUT)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", &token))
@@ -727,7 +727,7 @@ async fn signals_full_crud(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/signals/{}", signal_id))
+                .uri(format!("/api/signals/{}", signal_id))
                 .method(Method::PUT)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", &token))
@@ -747,7 +747,7 @@ async fn signals_full_crud(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/signals/{}/mappings", signal_id))
+                .uri(format!("/api/signals/{}/mappings", signal_id))
                 .method(Method::POST)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", &token))
@@ -767,7 +767,7 @@ async fn signals_full_crud(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/signals/{}/mappings/{}", signal_id, mapping_id))
+                .uri(format!("/api/signals/{}/mappings/{}", signal_id, mapping_id))
                 .method(Method::DELETE)
                 .header("authorization", format!("Bearer {}", &token))
                 .body(Body::empty())
@@ -782,7 +782,7 @@ async fn signals_full_crud(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/signals/{}", signal_id))
+                .uri(format!("/api/signals/{}", signal_id))
                 .method(Method::DELETE)
                 .header("authorization", format!("Bearer {}", &token))
                 .body(Body::empty())
@@ -857,7 +857,7 @@ async fn dashboards_therapy_timeseries_empty(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/therapy/{}/timeseries", therapy.id))
+                .uri(format!("/api/dashboards/therapy/{}/timeseries", therapy.id))
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -936,7 +936,7 @@ async fn export_readings_csv_empty(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/export/readings?therapy_id={}&format=csv", therapy.id))
+                .uri(format!("/api/export/readings?therapy_id={}&format=csv", therapy.id))
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -969,7 +969,7 @@ async fn export_readings_json_empty(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/export/readings?therapy_id={}&format=json", therapy.id))
+                .uri(format!("/api/export/readings?therapy_id={}&format=json", therapy.id))
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -1047,7 +1047,7 @@ async fn bridges_admin_update_and_delete(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/admin/bridges/{}", id))
+                .uri(format!("/api/admin/bridges/{}", id))
                 .method(Method::PATCH)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", token))
@@ -1068,7 +1068,7 @@ async fn bridges_admin_update_and_delete(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/admin/bridges/{}", id))
+                .uri(format!("/api/admin/bridges/{}", id))
                 .method(Method::DELETE)
                 .header("authorization", format!("Bearer {}", token))
                 .body(Body::empty())
@@ -1199,7 +1199,7 @@ async fn admin_update_user_email(pool: PgPool) {
     let response = app
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/admin/users/{}", id))
+                .uri(format!("/api/admin/users/{}", id))
                 .method(Method::PATCH)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", token))
@@ -1227,7 +1227,7 @@ async fn admin_reset_user_password(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/admin/users/{}/password", id))
+                .uri(format!("/api/admin/users/{}/password", id))
                 .method(Method::PUT)
                 .header("content-type", "application/json")
                 .header("authorization", format!("Bearer {}", token))

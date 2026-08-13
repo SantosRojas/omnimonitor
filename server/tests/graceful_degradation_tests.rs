@@ -297,7 +297,7 @@ async fn graceful_bridge_disconnect_reconnect_data_integrity(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -380,7 +380,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -414,7 +414,7 @@ async fn graceful_server_restart_preserves_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -515,7 +515,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_a))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_a))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -542,7 +542,7 @@ async fn graceful_multiple_bridges_independent_data(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_b))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_b))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),

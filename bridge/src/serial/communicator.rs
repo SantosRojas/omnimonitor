@@ -63,7 +63,7 @@ impl SerialDeviceCommunicator {
         let process_len = n_bytes - 2;
 
         let num_words = (process_len & 0xFFFE) / 2;
-        let is_odd = process_len % 2 != 0;
+        let is_odd = !process_len.is_multiple_of(2);
 
         for i in 0..num_words {
             let hbit = crc & 0x8000;

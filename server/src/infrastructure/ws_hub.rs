@@ -24,7 +24,7 @@ use crate::infrastructure::postgres::{
     readings_repo::ReadingsRepo,
     signal_repo::SignalRepo,
     therapy_repo::TherapyRepo,
-    version_repo::{InitAttribute, InitDictionary, VersionRepo},
+    version_repo::{InitAttribute, InitDictionary, VersionInit, VersionRepo},
     RepoError,
 };
 
@@ -277,6 +277,9 @@ pub struct WsHubState {
 }
 
 impl WsHubState {
+    #[allow(clippy::too_many_arguments)]
+    // 8 repos + persistence_interval_secs: injected dependencies, not data —
+    // grouping them in a struct would only add indirection across 6 call sites.
     pub fn new(
         machine_repo: MachineRepo,
         patient_repo: PatientRepo,
@@ -312,10 +315,10 @@ impl WsHubState {
 
         let mut units = HashMap::with_capacity(signals.len());
         for sig in &signals {
-            if let Some(unit) = &sig.unit {
-                if !unit.is_empty() {
-                    units.insert(sig.id, unit.clone());
-                }
+            if let Some(unit) = &sig.unit
+                && !unit.is_empty()
+            {
+                units.insert(sig.id, unit.clone());
             }
         }
 
@@ -445,10 +448,10 @@ pub fn enrich_readings_from_catalog(
     readings: &mut [BridgeTelemetryReading],
 ) {
     for r in readings.iter_mut() {
-        if r.unit.is_empty() {
-            if let Some(unit) = catalog.units.get(&r.signal_id) {
-                r.unit = unit.clone();
-            }
+        if r.unit.is_empty()
+            && let Some(unit) = catalog.units.get(&r.signal_id)
+        {
+            r.unit = unit.clone();
         }
     }
 }
@@ -506,11 +509,11 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
                 // Once the bridge identifies a machine, register its outbound
                 // sender so the server can push frames to it (TherapyClosed).
                 // Overwriting on re-identify is harmless.
-                if is_machine_identify {
-                    if let Some(mid) = current_machine_id {
-                        state.bridge_senders.write().await.insert(mid, bridge_tx.clone());
-                        info!("Registered bridge sender for machine {}", mid);
-                    }
+                if is_machine_identify
+                    && let Some(mid) = current_machine_id
+                {
+                    state.bridge_senders.write().await.insert(mid, bridge_tx.clone());
+                    info!("Registered bridge sender for machine {}", mid);
                 }
 
                 match response {
@@ -551,10 +554,10 @@ pub async fn handle_bridge_connection(mut ws: WebSocket, state: Arc<WsHubState>)
         }
     }
 
-    if let Some(bridge_id) = current_bridge_id {
-        if let Err(e) = state.bridge_repo.set_offline(bridge_id).await {
-            error!("Failed to set bridge {} offline on disconnect: {}", bridge_id, e);
-        }
+    if let Some(bridge_id) = current_bridge_id
+        && let Err(e) = state.bridge_repo.set_offline(bridge_id).await
+    {
+        error!("Failed to set bridge {} offline on disconnect: {}", bridge_id, e);
     }
 
     info!("Bridge connection closed");
@@ -714,22 +717,22 @@ pub async fn handle_bridge_frame(
             // first Readings frame after that means the session is running, so
             // promote it to 'active' (which also backfills started_at).
             let mut therapy_activated = false;
-            if let Some(therapy) = &active_therapy {
-                if therapy.status.as_deref() == Some("planned") {
-                    match state.therapy_repo.update_status(therapy.id, "active").await {
-                        Ok(_) => {
-                            therapy_activated = true;
-                            info!(
-                                "Promoted therapy {} to active on first telemetry (machine {})",
-                                therapy.id, machine_id
-                            );
-                        }
-                        Err(e) => {
-                            error!(
-                                "Failed to promote therapy {} to active for machine {}: {}",
-                                therapy.id, machine_id, e
-                            );
-                        }
+            if let Some(therapy) = &active_therapy
+                && therapy.status.as_deref() == Some("planned")
+            {
+                match state.therapy_repo.update_status(therapy.id, "active").await {
+                    Ok(_) => {
+                        therapy_activated = true;
+                        info!(
+                            "Promoted therapy {} to active on first telemetry (machine {})",
+                            therapy.id, machine_id
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to promote therapy {} to active for machine {}: {}",
+                            therapy.id, machine_id, e
+                        );
                     }
                 }
             }
@@ -738,24 +741,24 @@ pub async fn handle_bridge_frame(
             // Resolvemos la terapia activa para vincular los readings con su FK.
             // En estados sin terapia activa (preparación, finalizada, etc.)
             // solo se hace broadcast en vivo.
-            if state.check_persist_interval(*machine_id).await {
-                if !domain_readings.is_empty() {
-                    if let Some(therapy) = &active_therapy {
-                        // Vincular readings con la terapia activa
-                        let linked: Vec<Reading> = domain_readings.iter().map(|r| Reading {
-                            therapy_id: Some(therapy.id),
-                            ..r.clone()
-                        }).collect();
+            if state.check_persist_interval(*machine_id).await
+                && !domain_readings.is_empty()
+            {
+                if let Some(therapy) = &active_therapy {
+                    // Vincular readings con la terapia activa
+                    let linked: Vec<Reading> = domain_readings.iter().map(|r| Reading {
+                        therapy_id: Some(therapy.id),
+                        ..r.clone()
+                    }).collect();
 
-                        if let Err(e) = state.readings_repo.insert_batch(&linked).await {
-                            error!("Failed to insert readings for machine {}: {}", machine_id, e);
-                        } else if state.persistence_interval_secs > 0 {
-                            debug!("[persist] snapshot {} readings (machine {}, therapy {})",
-                                linked.len(), machine_id, therapy.id);
-                        }
-                    } else {
-                        debug!("[persist] skip — no active therapy for machine {}", machine_id);
+                    if let Err(e) = state.readings_repo.insert_batch(&linked).await {
+                        error!("Failed to insert readings for machine {}: {}", machine_id, e);
+                    } else if state.persistence_interval_secs > 0 {
+                        debug!("[persist] snapshot {} readings (machine {}, therapy {})",
+                            linked.len(), machine_id, therapy.id);
                     }
+                } else {
+                    debug!("[persist] skip — no active therapy for machine {}", machine_id);
                 }
             }
 
@@ -880,25 +883,24 @@ pub async fn handle_bridge_frame(
                 .collect();
 
             let fingerprint = compute_fingerprint(version);
+            let version_init = VersionInit {
+                fingerprint: fingerprint.clone(),
+                language_id: Some(version.language_id),
+                system_sw: Some(version.system_sw.clone()),
+                dss_fw: Some(version.dss_fw.clone()),
+                dss_hw: Some(version.dss_hw.clone()),
+                css_fw: Some(version.css_fw.clone()),
+                css_hw: Some(version.css_hw.clone()),
+                pss_fw: Some(version.pss_fw.clone()),
+                pss_hw: Some(version.pss_hw.clone()),
+                language1: Some(version.language1.clone()),
+                language2: Some(version.language2.clone()),
+                language3: Some(version.language3.clone()),
+            };
 
             state
                 .version_repo
-                .save_initialization(
-                    &fingerprint,
-                    Some(version.language_id),
-                    Some(&version.system_sw),
-                    Some(&version.dss_fw),
-                    Some(&version.dss_hw),
-                    Some(&version.css_fw),
-                    Some(&version.css_hw),
-                    Some(&version.pss_fw),
-                    Some(&version.pss_hw),
-                    Some(&version.language1),
-                    Some(&version.language2),
-                    Some(&version.language3),
-                    &attrs,
-                    &dict,
-                )
+                .save_initialization(&version_init, &attrs, &dict)
                 .await?;
 
             info!("Stored initialization for fingerprint {}", fingerprint);

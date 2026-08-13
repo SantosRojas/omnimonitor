@@ -180,13 +180,13 @@ async fn register(
             Err((StatusCode::CONFLICT, Json(json!({"error": msg}))))
         }
         Err(RepoError::Database(e)) => {
-            if let Some(sqlx_err) = e.as_database_error() {
-                if sqlx_err.constraint() == Some("users_username_key") {
-                    return Err((
-                        StatusCode::CONFLICT,
-                        Json(json!({"error": "Username already exists"})),
-                    ));
-                }
+            if let Some(sqlx_err) = e.as_database_error()
+                && sqlx_err.constraint() == Some("users_username_key")
+            {
+                return Err((
+                    StatusCode::CONFLICT,
+                    Json(json!({"error": "Username already exists"})),
+                ));
             }
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -273,7 +273,7 @@ async fn e2e_bridge_sends_readings_via_ws_stored_in_pg_queryable_via_rest(pool: 
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -337,7 +337,7 @@ async fn e2e_heartbeat_keeps_machine_online(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/machines/{}", machine_id))
+                .uri(format!("/api/machines/{}", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
@@ -507,7 +507,7 @@ async fn e2e_ip_auth_registered_ip_full_flow(pool: PgPool) {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(&format!("/api/dashboards/machine/{}/summary", machine_id))
+                .uri(format!("/api/dashboards/machine/{}/summary", machine_id))
                 .header("Authorization", format!("Bearer {}", token))
                 .body(Body::empty())
                 .unwrap(),
