@@ -154,7 +154,121 @@ sudo docker compose up -d
 
 ---
 
-## 6. Recordatorios
+## 6. Servidor Windows (despliegue nativo)
+
+> En Windows Server **NO se usa Docker**: las imágenes del proyecto son Linux
+> (`rust:1-slim-bookworm`, `distroless/cc-debian12`) y Windows Server no las
+> ejecuta. El despliegue correcto es el binario nativo (`server.exe`) con
+> PostgreSQL instalado en Windows y el proceso administrado con **NSSM**.
+
+### 6.1 Requisitos
+
+- Windows Server 2019/2022 (64 bits)
+- [PostgreSQL 16](https://www.postgresql.org/download/windows/) — el instalador crea el servicio de Windows automáticamente
+- [Node.js ≥ 20](https://nodejs.org/) — solo para compilar el frontend
+- [Rust toolchain](https://rustup.rs/) — solo para compilar el servidor
+- [NSSM](https://nssm.cc/) — Non-Sucking Service Manager (copiar `nssm.exe` a `C:\Windows\System32`)
+
+### 6.2 Preparar PostgreSQL
+
+Abrir **SQL Shell (psql)** y ejecutar:
+
+```sql
+CREATE ROLE omni_user LOGIN PASSWORD '<cambiar>';
+CREATE DATABASE omni_pdms OWNER omni_user;
+```
+
+> El servicio `postgresql-x64-16` se inicia solo. Verificar con:
+> `Get-Service postgresql*`
+
+### 6.3 Compilar (en la máquina de desarrollo)
+
+```powershell
+# 1. Servidor — las migraciones van EMBEBIDAS en el binario,
+#    no hace falta copiar server/migrations
+cargo build --release -p server
+
+# 2. Frontend
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+### 6.4 Instalar en el servidor
+
+```powershell
+# 1. Copiar a la máquina Windows Server:
+#    - target\release\server.exe
+#    - frontend\dist\  (carpeta completa)
+#    - .env.example    (como .env)
+
+# 2. Estructura final de la carpeta:
+#    C:\omni-pdms\
+#      server.exe
+#      .env
+#      frontend\dist\...
+
+# 3. Crear C:\omni-pdms\.env (¡ajustar valores!)
+#    DB_HOST=localhost
+#    DB_PORT=5432
+#    DB_DATABASE=omni_pdms
+#    DB_USERNAME=omni_user
+#    DB_PASSWORD=<cambiar>
+#    PORT=9001
+#    JWT_SECRET=<generar con openssl rand -hex 32>
+#    ADMIN_PASSWORD=<contraseña fuerte>
+#    FRONTEND_DIST=frontend/dist
+```
+
+### 6.5 Registrar como servicio (NSSM)
+
+```powershell
+nssm install omni-pdms "C:\omni-pdms\server.exe"
+nssm set omni-pdms AppDirectory "C:\omni-pdms"
+nssm set omni-pdms AppStdout "C:\omni-pdms\server.log"
+nssm set omni-pdms AppStderr "C:\omni-pdms\server-error.log"
+nssm set omni-pdms Start SERVICE_AUTO_START
+nssm start omni-pdms
+```
+
+> `AppDirectory` debe apuntar a la carpeta que contiene el `.env` — el server
+> lo lee desde el directorio de trabajo.
+
+### 6.6 Abrir el puerto en el firewall
+
+```powershell
+netsh advfirewall firewall add rule name="omni-pdms 9001" dir=in action=allow protocol=TCP localport=9001
+```
+
+### 6.7 Verificar
+
+```powershell
+curl http://localhost:9001/health
+# → {"status":"ok"}
+```
+
+Abrir en el navegador: `http://<ip-del-servidor>:9001`
+(usuario `admin`, contraseña `ADMIN_PASSWORD` del `.env`).
+
+### 6.8 Actualizar (versión nueva)
+
+```powershell
+# 1. Backup de la base de datos
+pg_dump -U omni_user omni_pdms > pre-deploy-backup.sql
+
+# 2. Detener, reemplazar binario + frontend, iniciar
+nssm stop omni-pdms
+# Copiar el nuevo server.exe y frontend\dist sobre C:\omni-pdms
+nssm start omni-pdms
+
+# 3. Verificar
+curl http://localhost:9001/health
+```
+
+---
+
+## 7. Recordatorios
 
 - **Datos**: el volumen `pgdata` guarda la base de datos. No borrarlo salvo
   rollback estructural planificado.

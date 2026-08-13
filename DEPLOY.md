@@ -300,6 +300,10 @@ sudo docker compose exec postgres pg_dump -U omni_user omni_pdms > pre-deploy-ba
 
 ## Despliegue sin Docker (compilación nativa)
 
+> **¿Servidor Windows?** Ver la sección 6 de [SERVER.md](SERVER.md):
+> despliegue nativo con `server.exe` + PostgreSQL en Windows + NSSM.
+> Las imágenes Docker del proyecto son Linux y no corren en Windows Server.
+
 Si el servidor del hospital no tiene Docker, se puede desplegar el backend
 como un binario nativo + servicio systemd.
 
